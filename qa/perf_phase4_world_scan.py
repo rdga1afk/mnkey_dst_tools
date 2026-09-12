@@ -56,6 +56,11 @@ USAGE:
   #      ninja -C build_release monkey_dust
   # 2. run this script (it launches+drives+shuts down the process itself):
   python3 tools/qa/perf_phase4_world_scan.py --out tools/qa/reports/phase4_world_scan.csv
+  # 3. --tpg on|off (2026-09-13, TerrainProjectedGrid A/B): same 18-zone x
+  #    2-pose sweep with md.set_terrain_projected_grid() forced to a fixed
+  #    state for the whole run -- run once per state, diff the two CSVs.
+  python3 tools/qa/perf_phase4_world_scan.py --tpg off --out tools/qa/reports/phase4_world_scan_tpg_off.csv
+  python3 tools/qa/perf_phase4_world_scan.py --tpg on  --out tools/qa/reports/phase4_world_scan_tpg_on.csv
 """
 
 import argparse
@@ -117,6 +122,10 @@ def main() -> int:
     ap.add_argument("--out", default="tools/qa/reports/phase4_world_scan.csv")
     ap.add_argument("--exe", default=str(RELEASE_EXE))
     ap.add_argument("--limit", type=int, default=0, help="stop after N points (0=all), for a quick smoke test")
+    ap.add_argument("--tpg", choices=["off", "on"], default="off",
+                     help="md.set_terrain_projected_grid() state for the whole sweep "
+                          "(TerrainProjectedGrid A/B, docs/TERRAIN_PROJECTED_GRID.md); "
+                          "unconditionally registered, works in MONKEY_DUST_EDITOR=OFF builds")
     args = ap.parse_args()
 
     valid_zones = parse_valid_zones(CONFIG_PATH)
@@ -136,7 +145,7 @@ def main() -> int:
     out_path = REPO_ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_f = open(out_path, "w")
-    out_f.write("zone_x,zone_z,world_x,world_z,pose,gpu_ms_median,gpu_ms_p95,gpu_ms_min,gpu_ms_max,n_samples\n")
+    out_f.write("zone_x,zone_z,world_x,world_z,pose,gpu_ms_median,gpu_ms_p95,gpu_ms_min,gpu_ms_max,n_samples,tpg_capped_corners\n")
     out_f.flush()
 
     d = Driver(exe=args.exe)
@@ -151,6 +160,14 @@ def main() -> int:
         print(f"[phase4] ERROR: set_gpu_sync_timing failed: {r}", file=sys.stderr)
         d.shutdown()
         return 1
+
+    tpg_on = (args.tpg == "on")
+    ok, r = d.send(f"md.set_terrain_projected_grid({'true' if tpg_on else 'false'})")
+    if not ok:
+        print(f"[phase4] ERROR: set_terrain_projected_grid failed: {r}", file=sys.stderr)
+        d.shutdown()
+        return 1
+    print(f"[phase4] terrain_projected_grid_ = {tpg_on}")
 
     idx = 0
     t0 = time.monotonic()
@@ -176,11 +193,13 @@ def main() -> int:
                     lo, hi = min(samples), max(samples)
                 else:
                     med = p95 = lo = hi = 0.0
-                out_f.write(f"{zx},{zz},{wx:.1f},{wz:.1f},{label},{med:.4f},{p95:.4f},{lo:.4f},{hi:.4f},{len(samples)}\n")
+                capped, _ = d.get_number("md.granite_terrain_stats().tpg_capped_corners")
+                capped_i = int(capped) if capped is not None else -1
+                out_f.write(f"{zx},{zz},{wx:.1f},{wz:.1f},{label},{med:.4f},{p95:.4f},{lo:.4f},{hi:.4f},{len(samples)},{capped_i}\n")
                 out_f.flush()
                 elapsed = time.monotonic() - t0
                 eta_min = (elapsed / idx) * (total - idx) / 60.0 if idx else 0.0
-                print(f"[{idx}/{total}] zone({zx},{zz}) {label}: median={med:.2f}ms n={len(samples)}  (eta {eta_min:.0f}min)")
+                print(f"[{idx}/{total}] zone({zx},{zz}) {label}: median={med:.2f}ms n={len(samples)} capped={capped_i}  (eta {eta_min:.0f}min)")
     finally:
         out_f.close()
         d.shutdown()
