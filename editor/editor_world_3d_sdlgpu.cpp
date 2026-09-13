@@ -16,7 +16,6 @@
 #include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #include <monkey_dust/render/terrain_shading_projected.h>
-#include <monkey_dust/render/terrain_vt_page_cache.h>
 #include <monkey_dust/render/terrain_quadtree_renderer.h>
 #include <monkey_dust/world/terrain_quadtree.h>
 #include <monkey_dust/render/prop_renderer.h>
@@ -74,10 +73,8 @@ static PropRenderer       s_props;
 // [0,extent) convention TerrainWorldHeightmap uses natively, so unlike
 // the game side (SceneRender::GraniteAbsCam) no local-to-absolute camera
 // translation is needed here at all.
-// VT page-grid unit, metres -- purely a page-cache/debug-tool concept now
-// (matched the deleted TerrainPatchGrid's patch size when that system fed
-// VT's visibility; kept as a plain constant since terrain_vt_page_cache.h's
-// page grid is still measured in these units).
+// Patch-grid unit, metres -- matched the deleted TerrainPatchGrid's patch
+// size; kept as the world-heightmap's chunking constant.
 static constexpr float kGranitePatchSize = 300.f;
 static TerrainWorldHeightmap s_granite_hmap;
 // Variant A (screen-space decoupled shading) -- matches the game's sole
@@ -89,17 +86,6 @@ static TerrainWorldHeightmap s_granite_hmap;
 // reason about/fix, per direct user request.
 static TerrainShadingProjected s_terrain_shading;
 static bool  s_granite_ready = false;
-
-// terrain-vt Phase 1/2 -- see VtDebugFill/VtDebugDump's doc comment
-// (editor_world_3d_sdlgpu.h). Its RequestPage/FlushFillQueue feed
-// (previously driven by s_granite_grid's per-frame visibility loop) has
-// no call site since this cutover, same as the game side -- see
-// scene_render.h's terrain_vt_cache doc comment for why this was already
-// fully inert before the cutover (shading resolve never actually reads
-// the VT atlas/indirection, per a 2026-08-09 user directive baked into
-// shaders/terrain_shading_screenspace.frag).
-static TerrainVtPageCache s_vt_cache;
-static bool s_vt_cache_ready = false;
 
 // Ogre-quadtree (geomorph+skirts) terrain -- THE sole geometry system.
 // No per-frame LOD-update step (unlike the old patch-grid's UpdateLOD):
@@ -122,14 +108,6 @@ static void s_rebuild_granite_hmap() {
     bool hmap_ok = s_granite_hmap.Init(dev);
     s_granite_ready = hmap_ok;
     if (hmap_ok) {
-        // terrain-vt Phase 2: init the page cache alongside the rest of
-        // the terrain pipeline -- ONCE only (this function can re-run on
-        // terrain edits/R-key refresh; re-Init()ing the cache each time
-        // would either leak or need an explicit Shutdown+Init cycle for
-        // no benefit, since a stale cached page after an edit is a known,
-        // deferred problem -- Phase 7's real invalidation, not something
-        // to half-solve here).
-        if (!s_vt_cache_ready) s_vt_cache_ready = s_vt_cache.Init(dev, kGranitePatchSize, s_granite_hmap);
         s_granite_ready = s_granite_ready && s_quadtree_renderer.IsReady();
 
         // Fixed-depth tiling needs real height data for the distance-cull
@@ -540,8 +518,6 @@ void Shutdown() {
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     s_quadtree_renderer.Shutdown(dev);
     s_quadtree_ready = false;
-    s_vt_cache.Shutdown(dev);
-    s_vt_cache_ready = false;
     s_terrain_shading.Shutdown();
     s_props.Shutdown();
     s_terrain.Shutdown();
@@ -805,7 +781,7 @@ static void DrawSkyAndResolve(md::GpuCommandBufferHandle cmd, const World3DFrame
             s_terrain_shading.DrawShadingResolve(rp, cmd, sun, ctx.eye_x, ctx.eye_y, ctx.eye_z,
                 WCX, WCZ, W2UV,
                 60000.f, kFogColor, 0.f,
-                s_terrain, s_vt_cache);
+                s_terrain);
         }
 
         cb.EndPass();
@@ -993,58 +969,6 @@ int GetChunksTotal()  { return 1; }
 void SetCameraPos(float x, float y, float z, float yaw, float pitch) {
     s_cx = x; s_cy = y; s_cz = z;
     s_yaw = yaw; s_pitch = pitch;
-}
-
-int VtDebugFill() {
-    if (!s_granite_ready) return -1;
-    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
-    if (!dev) return -1;
-    if (!s_vt_cache_ready) {
-        s_vt_cache_ready = s_vt_cache.Init(dev, kGranitePatchSize, s_granite_hmap);
-        if (!s_vt_cache_ready) return -1;
-    }
-
-    // Small neighborhood of pages around the current camera position, all
-    // at tier 0 -- enough to exercise page allocation + compute dispatch +
-    // indirection upload end-to-end without real visibility wiring (Phase 2).
-    // terrain-vt clipmap fix: tier 0 now exercises the NEW subdivided
-    // (FINE_SUBDIV x FINE_SUBDIV sub-page) path -- the most-changed code
-    // path this debug helper should actually be smoke-testing, now that
-    // every tier is cacheable (no more MIN_CACHEABLE_TIER floor).
-    int ix0 = (int)(s_cx / kGranitePatchSize);
-    int iz0 = (int)(s_cz / kGranitePatchSize);
-    for (int dz = -3; dz <= 3; ++dz)
-        for (int dx = -3; dx <= 3; ++dx)
-            s_vt_cache.RequestPage(ix0 + dx, iz0 + dz, /*tier=*/0);
-
-    md::GpuCommandBufferHandle cmd = SDL_AcquireGPUCommandBuffer(dev);
-    if (!cmd) return -1;
-    s_vt_cache.FlushFillQueue(dev, cmd, s_granite_hmap, s_terrain);
-    // Debug-only diagnostic: fence-wait so a subsequent VtDebugDump call
-    // (separate command buffer) can never race the compute writes above --
-    // isolates whether a visible-content bug is really about the dispatch
-    // itself vs. cross-command-buffer ordering.
-    md::GpuFenceHandle fence = md::GpuDevice::Get().SubmitAndAcquireFence(cmd);
-    if (fence) {
-        md::GpuDevice::Get().WaitForFence(fence);
-        md::GpuDevice::Get().ReleaseFence(fence);
-    }
-    return s_vt_cache.ResidentCount();
-}
-
-bool VtDebugDump(const char* out_png_path) {
-    if (!s_vt_cache_ready) return false;
-    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
-    if (!dev) return false;
-    return s_vt_cache.DebugDumpAtlas(dev, out_png_path);
-}
-
-int VtResidentCount() {
-    return s_vt_cache_ready ? s_vt_cache.ResidentCount() : -1;
-}
-
-int VtEvictionCount() {
-    return s_vt_cache_ready ? (int)s_vt_cache.EvictionCount() : -1;
 }
 
 } // namespace WorldEditor3D_SDLGPU
