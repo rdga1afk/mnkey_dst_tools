@@ -61,6 +61,17 @@ USAGE:
   #    state for the whole run -- run once per state, diff the two CSVs.
   python3 tools/qa/perf_phase4_world_scan.py --tpg off --out tools/qa/reports/phase4_world_scan_tpg_off.csv
   python3 tools/qa/perf_phase4_world_scan.py --tpg on  --out tools/qa/reports/phase4_world_scan_tpg_on.csv
+
+DRIFT (2026-09-13, terrain-next Stage 0): a same-config recheck sweep
+run ~1.5h after this script's own earlier run (many rebuild+sweep
+cycles in between, no idle gap) came back +28.9% slower on average --
+real CPU RAPL PL1 thermal drift accumulated over the SESSION, not a
+per-benchmark artifact (see feedback_pl1_throttle_28s_window memory).
+A baseline point is now re-measured every --recheck-every points
+(default 12, ~0 to disable) and logged with is_recheck=1 -- if that
+recheck drifts >10% from its own first measurement, DO NOT trust
+deltas against an out-of-window baseline; rerun the comparison config
+in the same window instead.
 """
 
 import argparse
@@ -126,6 +137,11 @@ def main() -> int:
                      help="md.set_terrain_projected_grid() state for the whole sweep "
                           "(TerrainProjectedGrid A/B, docs/TERRAIN_PROJECTED_GRID.md); "
                           "unconditionally registered, works in MONKEY_DUST_EDITOR=OFF builds")
+    ap.add_argument("--recheck-every", type=int, default=12,
+                     help="re-measure the FIRST point every N measurements as an "
+                          "in-window drift sanity check (0=disable). See module "
+                          "doc comment, DRIFT section -- a same-session +28.9% "
+                          "thermal drift was caught this way on 2026-09-13.")
     args = ap.parse_args()
 
     valid_zones = parse_valid_zones(CONFIG_PATH)
@@ -145,7 +161,7 @@ def main() -> int:
     out_path = REPO_ROOT / args.out
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_f = open(out_path, "w")
-    out_f.write("zone_x,zone_z,world_x,world_z,pose,gpu_ms_median,gpu_ms_p95,gpu_ms_min,gpu_ms_max,n_samples,tpg_capped_corners\n")
+    out_f.write("zone_x,zone_z,world_x,world_z,pose,gpu_ms_median,gpu_ms_p95,gpu_ms_min,gpu_ms_max,n_samples,tpg_capped_corners,node_count,is_recheck\n")
     out_f.flush()
 
     d = Driver(exe=args.exe)
@@ -169,37 +185,67 @@ def main() -> int:
         return 1
     print(f"[phase4] terrain_projected_grid_ = {tpg_on}")
 
+    def measure_point(zx, zz, wx, wz, label, pitch, dist):
+        d.send(f"md.teleport_camera({wx:.1f}, {wz:.1f})")
+        d.send(f"md.teleport_player({wx:.1f}, {wz:.1f})")
+        d.send(f"md.set_camera_orbit(0.0, {pitch}, {dist})")
+        time.sleep(SETTLE_S)
+        samples = []
+        for _ in range(SAMPLES_PER_POINT):
+            val, err = d.get_number("md.get_gpu_ms()")
+            if val is not None and val > 0:
+                samples.append(val)
+            time.sleep(SAMPLE_INTERVAL_S)
+        if samples:
+            med = median(samples)
+            p95 = percentile(samples, 0.95)
+            lo, hi = min(samples), max(samples)
+        else:
+            med = p95 = lo = hi = 0.0
+        capped, _ = d.get_number("md.granite_terrain_stats().tpg_capped_corners")
+        capped_i = int(capped) if capped is not None else -1
+        nc, _ = d.get_number("md.granite_terrain_stats().node_count")
+        nc_i = int(nc) if nc is not None else -1
+        return med, p95, lo, hi, len(samples), capped_i, nc_i
+
+    def write_row(zx, zz, wx, wz, label, med, p95, lo, hi, n, capped_i, nc_i, is_recheck):
+        out_f.write(f"{zx},{zz},{wx:.1f},{wz:.1f},{label},{med:.4f},{p95:.4f},{lo:.4f},{hi:.4f},"
+                     f"{n},{capped_i},{nc_i},{1 if is_recheck else 0}\n")
+        out_f.flush()
+
     idx = 0
     t0 = time.monotonic()
+    ref = None          # (zx, zz, wx, wz, label, pitch, dist) -- first point measured
+    ref_first_med = None
+    measured_since_recheck = 0
     try:
         for (zx, zz) in points:
             wx = (zx + 0.5) * CHUNK_SIZE
             wz = (zz + 0.5) * CHUNK_SIZE
-            d.send(f"md.teleport_camera({wx:.1f}, {wz:.1f})")
-            d.send(f"md.teleport_player({wx:.1f}, {wz:.1f})")
             for (label, pitch, dist) in POSES:
                 idx += 1
-                d.send(f"md.set_camera_orbit(0.0, {pitch}, {dist})")
-                time.sleep(SETTLE_S)
-                samples = []
-                for _ in range(SAMPLES_PER_POINT):
-                    val, err = d.get_number("md.get_gpu_ms()")
-                    if val is not None and val > 0:
-                        samples.append(val)
-                    time.sleep(SAMPLE_INTERVAL_S)
-                if samples:
-                    med = median(samples)
-                    p95 = percentile(samples, 0.95)
-                    lo, hi = min(samples), max(samples)
-                else:
-                    med = p95 = lo = hi = 0.0
-                capped, _ = d.get_number("md.granite_terrain_stats().tpg_capped_corners")
-                capped_i = int(capped) if capped is not None else -1
-                out_f.write(f"{zx},{zz},{wx:.1f},{wz:.1f},{label},{med:.4f},{p95:.4f},{lo:.4f},{hi:.4f},{len(samples)},{capped_i}\n")
-                out_f.flush()
+                med, p95, lo, hi, n, capped_i, nc_i = measure_point(zx, zz, wx, wz, label, pitch, dist)
+                write_row(zx, zz, wx, wz, label, med, p95, lo, hi, n, capped_i, nc_i, is_recheck=False)
                 elapsed = time.monotonic() - t0
                 eta_min = (elapsed / idx) * (total - idx) / 60.0 if idx else 0.0
-                print(f"[{idx}/{total}] zone({zx},{zz}) {label}: median={med:.2f}ms n={len(samples)} capped={capped_i}  (eta {eta_min:.0f}min)")
+                print(f"[{idx}/{total}] zone({zx},{zz}) {label}: median={med:.2f}ms n={n} "
+                      f"capped={capped_i} node_count={nc_i}  (eta {eta_min:.0f}min)")
+
+                if ref is None:
+                    ref = (zx, zz, wx, wz, label, pitch, dist)
+                    ref_first_med = med
+                measured_since_recheck += 1
+
+                if args.recheck_every > 0 and measured_since_recheck >= args.recheck_every:
+                    measured_since_recheck = 0
+                    rzx, rzz, rwx, rwz, rlabel, rpitch, rdist = ref
+                    rmed, rp95, rlo, rhi, rn, rcapped_i, rnc_i = measure_point(
+                        rzx, rzz, rwx, rwz, rlabel, rpitch, rdist)
+                    write_row(rzx, rzz, rwx, rwz, rlabel, rmed, rp95, rlo, rhi, rn, rcapped_i, rnc_i, is_recheck=True)
+                    drift_pct = (rmed - ref_first_med) / ref_first_med * 100.0 if ref_first_med else 0.0
+                    flag = "  <-- DRIFT >10%, see module doc" if abs(drift_pct) > 10.0 else ""
+                    print(f"[RECHECK] zone({rzx},{rzz}) {rlabel}: median={rmed:.2f}ms "
+                          f"(first={ref_first_med:.2f}ms, drift={drift_pct:+.1f}%){flag}")
     finally:
         out_f.close()
         d.shutdown()
