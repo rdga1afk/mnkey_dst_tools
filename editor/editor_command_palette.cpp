@@ -1,7 +1,6 @@
 #ifdef MONKEY_DUST_EDITOR
 #include "editor_command_palette.h"
 #include "editor_toolbar.h"
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/editor/cmd_registry.h>
 #include "editor_std_commands.h"

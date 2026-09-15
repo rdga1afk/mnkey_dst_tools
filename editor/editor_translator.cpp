@@ -1,7 +1,6 @@
 #ifdef MONKEY_DUST_EDITOR
 #include "editor_translator.h"
 #include "editor_core.h"
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/platform/window.h>

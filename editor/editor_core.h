@@ -7,7 +7,6 @@
 #  include "backends/imgui_impl_opengl3.h"
 #include "imgui.h"
 #include "editor_history.h"
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/render/md_camera.h>
 
 enum class EditorGizmoOp    { TRANSLATE = 0, ROTATE = 1, SCALE = 2 };

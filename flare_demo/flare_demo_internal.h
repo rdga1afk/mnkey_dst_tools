@@ -40,7 +40,6 @@
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/bt_components.h>
 #include <monkey_dust/components/sense_component.h>
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/ecs/engine_context.h>
 #include <monkey_dust/world/world_transform.h>
