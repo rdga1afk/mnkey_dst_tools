@@ -4,7 +4,6 @@
 // Include AFTER npc_archetype_editor.h.
 #include "npc_archetype_editor.h"
 #include "editor_core.h"
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/world/transform_soa.h>

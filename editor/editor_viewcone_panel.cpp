@@ -2,7 +2,6 @@
 #include "editor_viewcone_panel.h"
 #include "editor_core.h"
 #include "imgui.h"
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/ai/sense_registry.h>

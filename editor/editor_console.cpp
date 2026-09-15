@@ -2,7 +2,6 @@
 #include "editor_console.h"
 #include "editor_core.h"
 #include <string>
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/components/ai_agent.h>

@@ -3,7 +3,6 @@
 #include "editor_core.h"
 #include "imgui.h"
 #include "imnodes.h"
-#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/scripting/flow_graph.h>
 #include <monkey_dust/ai/fnv.h>
