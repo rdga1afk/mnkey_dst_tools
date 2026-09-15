@@ -15,7 +15,7 @@
 #  endif
 #else
 #  include <monkey_dust/render/gpu_device.h>
-#  include <monkey_dust/render/gpu_hal.h>
+#  include <monkey_dust/render/gpu_sampler_texture.h>
 #endif
 #include "editor_ui.h"
 #include <stb_image.h>

@@ -2,7 +2,7 @@
 #include "font_loader.h"
 #include <monkey_dust/platform/input.h>
 #include <monkey_dust/render/gpu_device.h>
-#include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_pipeline.h>
 #include <monkey_dust/render/granite_backend.h>
 #include "editor_granite_imgui_bridge.h"
 #include <monkey_dust/render/light_system.h>

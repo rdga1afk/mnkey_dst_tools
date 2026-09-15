@@ -2,7 +2,9 @@
 #ifndef MD_SDL_GPU
 #  include "glad.h"
 #else
-#  include <monkey_dust/render/gpu_hal.h>
+#  include <monkey_dust/render/gpu_pipeline.h>
+#  include <monkey_dust/render/gpu_depth_texture.h>
+#  include <monkey_dust/render/gpu_hal_free_functions.h>
 #endif
 #include <monkey_dust/flare/tile_map.h>
 

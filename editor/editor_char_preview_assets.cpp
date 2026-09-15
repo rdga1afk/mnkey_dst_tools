@@ -1,7 +1,11 @@
 #include "editor_char_preview_sdlgpu_internal.h"
 #ifdef MD_SDL_GPU
-#include <monkey_dust/render/gpu_hal.h>
-
+#include <monkey_dust/render/gpu_hal_types.h>
+#include <monkey_dust/render/gpu_pipeline.h>
+#include <monkey_dust/render/gpu_copy_pass.h>
+#include <monkey_dust/render/gpu_sampler_texture.h>
+#include <monkey_dust/render/gpu_static_buffer.h>
+#include <monkey_dust/render/gpu_hal_free_functions.h>
 // Public API state (extern-declared in editor_char_preview_sdlgpu.h, accessed
 // directly by character_editor.h) -- definitions live here, hair/clothing-
 // asset-loading related.

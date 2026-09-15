@@ -5,7 +5,7 @@
 #  endif
 #else
 #  include <monkey_dust/render/gpu_device.h>
-#  include <monkey_dust/render/gpu_hal.h>
+#  include <monkey_dust/render/gpu_depth_texture.h>
 #  include <monkey_dust/render/backend/sdl_gpu_backend.h>
 #  include <SDL3/SDL_gpu.h>
 #  include <memory>

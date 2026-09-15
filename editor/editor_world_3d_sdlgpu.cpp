@@ -20,7 +20,10 @@
 #include <monkey_dust/world/terrain_quadtree.h>
 #include <monkey_dust/render/prop_renderer.h>
 #include <monkey_dust/render/gpu_device.h>
-#include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_pipeline.h>
+#include <monkey_dust/render/gpu_copy_pass.h>
+#include <monkey_dust/render/gpu_pass_view.h>
+#include <monkey_dust/render/gpu_hal_free_functions.h>
 #include <monkey_dust/render/light_system.h>
 #include <monkey_dust/render/backend/sdl_gpu_backend.h>
 #include <monkey_dust/world/terrain_gen.h>

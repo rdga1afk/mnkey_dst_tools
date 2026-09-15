@@ -19,7 +19,9 @@
 #include <monkey_dust/platform/window.h>   // _wnd::ptr() for SDL_WarpMouseInWindow
 #include <monkey_dust/render/hair_shading.h>
 #include <monkey_dust/render/gpu_device.h>
-#include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_pipeline.h>
+#include <monkey_dust/render/gpu_sampler_texture.h>
+#include <monkey_dust/render/gpu_static_buffer.h>
 #include <monkey_dust/render/skin_mesh.h>
 #include <monkey_dust/render/char_customization.h>
 #include <monkey_dust/render/ozz_animator.h>

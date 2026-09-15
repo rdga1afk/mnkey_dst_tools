@@ -1,4 +1,6 @@
 #include <monkey_dust/render/backend/sdl_gpu_backend.h>
+#include <monkey_dust/render/gpu_copy_pass.h>
+#include <monkey_dust/render/gpu_pass_view.h>
 #include <memory>
 #include "editor_char_preview_sdlgpu_internal.h"
 #ifdef MD_SDL_GPU
