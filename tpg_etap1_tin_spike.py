@@ -104,13 +104,22 @@ def build_baseline_mesh(height: np.ndarray, stride: int):
     return pts, z, tri.simplices
 
 
-def build_tin_mesh(height: np.ndarray, max_error_m: float, point_budget: int, cand_step: int = 4):
+def build_tin_mesh(height: np.ndarray, max_error_m: float, point_budget: int, cand_step: int = 4,
+                    batch: int = 60):
     """Greedy error-driven adaptive triangulation -- Recast buildPolyDetail-style.
 
-    Start from the 4 corners + midpoints of edges (boundary must be present
-    so the whole zone is covered), then repeatedly: interpolate the current
-    triangulation's height at every raw grid sample, find the sample with
-    max |interpolated - real| error, insert it as a new point, re-triangulate.
+    Start from the 4 corners, then repeatedly: interpolate the current
+    triangulation's height at every raw grid sample, find the WORST-ERROR
+    candidates (batch of up to `batch` per round, not just one -- a single-
+    point-per-round greedy loop needs O(budget) full re-triangulation +
+    interpolation passes to converge, which is why the first version of
+    this function never converged within a reasonable point budget: it was
+    spending its budget one point at a time instead of refining where error
+    is actually concentrated). Batch insertion is the standard fix for this
+    class of algorithm (Garland-Heckbert-style greedy insertion, also how
+    Recast's own detail-mesh refinement amortizes cost). Points within
+    `min_spacing` texels of an already-queued point in the same batch are
+    skipped so one bad region doesn't hog the whole batch.
     Stop when max error < max_error_m or point_budget is reached.
     """
     from scipy.spatial import Delaunay
@@ -120,15 +129,14 @@ def build_tin_mesh(height: np.ndarray, max_error_m: float, point_budget: int, ca
     corners = np.array([[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]], dtype=np.float64)
     pts = list(corners)
 
-    # Coarse candidate grid to search for max-error insertion points (every
-    # raw texel would be correct but slow in pure Python for a 257x257
-    # patch across many iterations -- sample every 4th texel as candidates,
-    # which is still a real error signal, not synthetic).
     cx, cy = np.meshgrid(np.arange(0, w, cand_step), np.arange(0, h, cand_step))
     cand = np.column_stack([cx.ravel(), cy.ravel()]).astype(np.float64)
     cand_z = height[cy.ravel(), cx.ravel()]
 
+    min_spacing = max(2, cand_step)
     t0 = time.time()
+    worst_err = float("inf")
+    rounds = 0
     while len(pts) < point_budget:
         P = np.array(pts)
         Z = np.array([height[int(round(p[1])), int(round(p[0]))] for p in pts])
@@ -137,19 +145,35 @@ def build_tin_mesh(height: np.ndarray, max_error_m: float, point_budget: int, ca
         est = interp(cand)
         est = np.nan_to_num(est, nan=0.0)
         err = np.abs(est - cand_z)
-        worst = int(np.argmax(err))
-        worst_err = err[worst]
+        worst_err = float(err.max())
+        rounds += 1
         if worst_err <= max_error_m:
             print(f"[spike] TIN converged: max_error={worst_err:.3f}m <= {max_error_m}m, "
-                  f"{len(pts)} points")
+                  f"{len(pts)} points, {rounds} rounds")
             break
-        pts.append(cand[worst])
+        # batch: take the top-`batch` worst offenders, greedily skipping any
+        # candidate too close to one already accepted this round (avoids
+        # clustering all new points in one small bad spot).
+        order = np.argsort(-err)
+        accepted = []
+        for idx in order:
+            if err[idx] <= max_error_m:
+                break
+            c = cand[idx]
+            if any(abs(c[0] - a[0]) < min_spacing and abs(c[1] - a[1]) < min_spacing
+                   for a in accepted):
+                continue
+            accepted.append(c)
+            if len(accepted) >= batch or len(pts) + len(accepted) >= point_budget:
+                break
+        pts.extend(accepted)
     else:
         print(f"[spike] TIN stopped at point_budget={point_budget}, "
-              f"max_error still {worst_err:.3f}m")
+              f"max_error still {worst_err:.3f}m, {rounds} rounds")
     P = np.array(pts)
     Z = np.array([height[int(round(p[1])), int(round(p[0]))] for p in pts])
     tri = Delaunay(P)
+    print(f"[spike] {len(pts)-4} points inserted, {time.time()-t0:.1f}s, {rounds} rounds")
     print(f"[spike] TIN build took {time.time()-t0:.1f}s, {len(pts)} points, "
           f"{len(tri.simplices)} triangles")
     return P, Z, tri.simplices
@@ -191,6 +215,9 @@ def main():
     ap.add_argument("--cand-step", type=int, default=4,
                      help="candidate-point sampling stride for TIN insertion search; "
                           "1 = every raw texel (slower, accuracy ceiling removed)")
+    ap.add_argument("--batch", type=int, default=60,
+                     help="worst-error candidates inserted per refinement round "
+                          "(1 = old single-point-per-round behaviour, slow to converge)")
     args = ap.parse_args()
 
     zx, zz = args.zone
@@ -204,7 +231,7 @@ def main():
 
     print("\n=== TIN (adaptive Delaunay, error-driven) ===")
     tp, tz, ttri = build_tin_mesh(height, max_error_m=args.max_error, point_budget=args.point_budget,
-                                   cand_step=args.cand_step)
+                                   cand_step=args.cand_step, batch=args.batch)
     t_rmse, t_cov = compute_rmse(height, tp, tz, ttri)
     print(f"[spike] TIN:      {len(ttri)} triangles, RMSE={t_rmse:.4f}m, coverage={t_cov*100:.1f}%")
 
