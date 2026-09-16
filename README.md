@@ -3,7 +3,7 @@ id: kb-tools-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-09-12
+updated: 2026-09-17
 repo: tools
 tags: [tools, readme, editor, public-repo, shader-hot-reload]
 summary: "Public tools/ README: editor panels, shader hot-reload, QA scripts, build targets, repo architecture"
@@ -170,6 +170,60 @@ Converts FLARE engine `.ini` tileset / map files to the monkey\_dust JSON format
 
 ---
 
+### `tools/qa/game_cmd_driver.py` — Live Game Command Driver
+
+Reusable driver for an already-running `monkey_dust` game process via `tmp_/game_cmd/`
+(`game/src/ui_driver/game_cmd_file.cpp`) — the reliable way to self-verify visual
+terrain/shader bugs (screenshot, camera positioning) without depending on the editor's
+`--exec` scenario mode.
+
+```bash
+python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png \
+    --camera 10148.7,40.0,15657.6,26.6,22.0
+```
+
+> **Footgun:** the CLI `--camera` flag (and `Driver.screenshot(camera=..., editor_open=False)`)
+> silently discards the camera placement — `editor_open=False` also switches `main.cpp` back to
+> the default player-orbit camera, which overwrites the fly-cam position set moments earlier.
+> Use `Driver.screenshot(camera=..., editor_open=True)` (accepts the F3 panel covering part of
+> the frame) or, more reliably, `md.teleport_player(x, z)` + a screenshot with no camera override
+> at all (the default orbit-follow camera is the well-tested path).
+
+---
+
+### `tin_etap1_spike.py` — Delaunay/TIN Terrain Mesh Feasibility Spike
+
+Adaptive Delaunay triangulation of real Kenshi heightmap data (`fullmap.tif`), batch
+error-driven point insertion (same algorithm class as Recast's `buildPolyDetail`, not a
+port), compared against the current `TerrainQuadtree` baseline on triangle count and RMSE.
+
+```bash
+python3 tools/tin_etap1_spike.py --zone 28,16 --max-error 0.3 --point-budget 6000
+```
+
+Result: GO verdict (`docs/TIN_ETAP1_SPIKE_RESULT.md`) — 64–65% triangle reduction at
+equal-or-better RMSE on 2 real zones (mountain cluster + flat terrain). Stage-0 spike only,
+not integrated into the engine.
+
+---
+
+### `krok3_decompose_spike.py` — Detail-Texture Color/Structure Decompose Feasibility
+
+Offline numerical + visual check: does separating a flat per-layer colour tint from an
+achromatic brightness/structure detail texture (Dagor Engine's `land_micro_detail.dshl`
+packing convention as reference, not a port) preserve colour well enough on real Kenshi
+ground textures to justify the format change.
+
+```bash
+python3 tools/krok3_decompose_spike.py
+```
+
+Result: GO on the format (`docs/KROK3_DECOMPOSE_SPIKE_RESULT.md`) — mean hue error 0.0059
+across 6 real layers. Feasibility check only; the actual re-bake/engine integration is a
+separate, larger follow-up.
+
+---
+
 ### `md_flare_demo` — Standalone Flare Tile + 3D World Viewer
 
 Renders a FLARE map file using the engine's `TileMapRenderer` without the game layer.
@@ -223,6 +277,9 @@ tools/
   md_biome_import.py   ← Biome map JSON import
   md_heightmap_import.py ← Raw heightmap → atlas format
   md_stitch_terrain.py ← Post-process zone edge stitching
+  tin_etap1_spike.py   ← Delaunay/TIN adaptive terrain-mesh feasibility spike (GO)
+  krok3_decompose_spike.py ← Detail-texture colour/structure decompose feasibility (GO)
+  qa/game_cmd_driver.py ← Live command/screenshot driver for a running game process
   flare_convert/       ← FLARE INI converter
   flare_demo/          ← Standalone tile viewer
   flare_2d_render.py   ← Python helper: renders a map frame to PNG (offline preview)
