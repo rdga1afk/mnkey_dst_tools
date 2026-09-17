@@ -17,6 +17,8 @@
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #include <monkey_dust/render/terrain_shading_projected.h>
 #include <monkey_dust/render/terrain_quadtree_renderer.h>
+#include <monkey_dust/render/terrain_tin_mesh.h>
+#include <monkey_dust/render/terrain_tin_renderer.h>
 #include <monkey_dust/world/terrain_quadtree.h>
 #include <monkey_dust/render/prop_renderer.h>
 #include <monkey_dust/render/gpu_device.h>
@@ -96,6 +98,21 @@ static bool  s_granite_ready = false;
 static TerrainQuadtree         s_quadtree;
 static TerrainQuadtreeRenderer s_quadtree_renderer;
 static bool s_quadtree_ready = false;
+
+// TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): mirrors the game's
+// SceneRender::terrain_tin_mesh_/terrain_tin_renderer_ -- same single
+// baked debug zone (kTinDebugZoneX/Z), same presence-gated load, defaults
+// ON to match the game's tin_debug_zone_enabled_ default flip (owner
+// decision, 2026-09-17). This viewport's own EDITOR_TNKN=64 (full-world)
+// window means the "zone outside streamed window" footgun the game hit
+// on zone(28,16) does not apply here -- every zone's height data is
+// always resident.
+static TerrainTinMesh     s_tin_mesh;
+static TerrainTinRenderer s_tin_renderer;
+static bool  s_tin_debug_zone_enabled = true;
+static constexpr int   kTinDebugZoneX = 27;
+static constexpr int   kTinDebugZoneZ = 25;
+static constexpr float kTinChunkSizeM = 460.8f;
 
 // Builds/rebuilds the static world heightmap from TerrainAtlas's CURRENT
 // contents -- called once at Init() and again whenever s_terrain_dirty's
@@ -439,6 +456,13 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         // regression once the aerial view's true (tens-of-thousands) tile
         // count stopped being silently truncated.
         s_quadtree_renderer.InitBatched(md::GpuDevice::Get().SDLDevice());
+        // TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): presence-gated --
+        // no-op if the bake hasn't been run for kTinDebugZoneX/Z.
+        s_tin_renderer.Init(md::GpuDevice::Get().SDLDevice());
+        char tin_path[256];
+        snprintf(tin_path, sizeof(tin_path), "game/data/terrain_tin_baked/zone_%d_%d.bin",
+                  kTinDebugZoneX, kTinDebugZoneZ);
+        s_tin_mesh.Init(md::GpuDevice::Get().SDLDevice(), tin_path);
         // Placeholder size -- DrawImGui's ensure_rtt-adjacent EnsureSize call
         // resizes this to the real viewport dims on the first frame the
         // panel is actually shown (this thread doesn't know the ImGui
@@ -522,6 +546,8 @@ void Shutdown() {
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     s_quadtree_renderer.Shutdown(dev);
     s_quadtree_ready = false;
+    s_tin_renderer.Shutdown(dev);
+    s_tin_mesh.Shutdown();
     s_terrain_shading.Shutdown();
     s_props.Shutdown();
     s_terrain.Shutdown();
@@ -672,6 +698,25 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
                                               s_visible_nodes, TerrainQuadtree::kMaxNodesPublic,
                                               kAerialMaxRenderDistance);
 
+    // TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): same compact-out-then-
+    // draw-once pattern as the game's npc_render_frame_prep.cpp -- see
+    // that call site's own doc comment for why this is in-place
+    // compaction, not a std::vector filter.
+    if (s_tin_debug_zone_enabled && s_tin_mesh.IsReady()) {
+        float zone_min_x = kTinDebugZoneX * kTinChunkSizeM;
+        float zone_min_z = kTinDebugZoneZ * kTinChunkSizeM;
+        float zone_max_x = zone_min_x + kTinChunkSizeM;
+        float zone_max_z = zone_min_z + kTinChunkSizeM;
+        int kept = 0;
+        for (int i = 0; i < qt_count; ++i) {
+            const auto& n = s_visible_nodes[i];
+            bool in_tin_zone = n.origin_x >= zone_min_x && n.origin_x < zone_max_x &&
+                                n.origin_z >= zone_min_z && n.origin_z < zone_max_z;
+            if (!in_tin_zone) s_visible_nodes[kept++] = n;
+        }
+        qt_count = kept;
+    }
+
     // task БОРГ-VISUAL-3 follow-up (2026-09-06, FPS investigation): this
     // viewport used to draw ONE individual (non-instanced, non-batched)
     // DrawNode call per visible tile -- fine when the max_render_distance/
@@ -712,6 +757,14 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
                 s_quadtree_renderer.DrawNode(gbuf_pass, cmd, s_granite_hmap, ctx.vp.m,
                     s_visible_nodes[i], ctx.eye_x, ctx.eye_y, ctx.eye_z);
             }
+        }
+
+        // TIN Etap 2 Stage 1: draw the baked TIN mesh once, replacing the
+        // zone's tiles compacted out of s_visible_nodes above.
+        if (s_tin_debug_zone_enabled && s_tin_mesh.IsReady()) {
+            s_tin_renderer.DrawMesh(gbuf_pass, cmd, s_tin_mesh, ctx.vp.m,
+                kTinDebugZoneX * kTinChunkSizeM, kTinDebugZoneZ * kTinChunkSizeM,
+                ctx.eye_x, ctx.eye_y, ctx.eye_z);
         }
         SDL_EndGPURenderPass(gbuf_pass);
     }
