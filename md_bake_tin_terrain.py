@@ -122,6 +122,40 @@ def write_binary(path: str, zx: int, zz: int, positions: np.ndarray,
           f"({os.path.getsize(path)} bytes)")
 
 
+def bake_zone(zx: int, zz: int, max_error: float = 0.5, point_budget: int = 6000,
+              cand_step: int = 4, batch: int = 60,
+              out_dir: str = "game/data/terrain_tin_baked",
+              no_boundary_stitch: bool = False) -> str:
+    """Bake one zone end-to-end (load -> triangulate -> fix winding -> write
+    .bin), returning the output path. Extracted from main() so
+    md_bake_tin_terrain_batch.py can call this directly per-zone in a worker
+    process instead of shelling out to a fresh CLI invocation per zone
+    (avoids ~1s of Python/numpy/scipy import overhead repeated per zone --
+    real at batch scale, e.g. 4096 zones)."""
+    height = load_zone_heights(zx, zz)
+    px_to_m = CHUNK_SIZE_M / (height.shape[0] - 1)
+
+    boundary_spacing_texels = None
+    if not no_boundary_stitch:
+        boundary_spacing_texels = round(QUADTREE_BOUNDARY_SPACING_M / px_to_m)
+        remainder = (height.shape[0] - 1) % boundary_spacing_texels
+        assert remainder == 0, (
+            f"boundary_spacing_texels={boundary_spacing_texels} doesn't evenly divide "
+            f"{height.shape[0]-1} texels -- zone edge wouldn't land exactly on both corners")
+        print(f"[bake] zone({zx},{zz}) boundary stitch: {QUADTREE_BOUNDARY_SPACING_M}m = "
+              f"{boundary_spacing_texels} texels (px_to_m={px_to_m:.4f})")
+
+    pts, z, tris = build_tin_mesh(height, max_error_m=max_error, point_budget=point_budget,
+                                   cand_step=cand_step, batch=batch,
+                                   boundary_spacing=boundary_spacing_texels)
+    positions, normals, tris = fix_winding_and_normals(pts, z, tris, px_to_m)
+
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"zone_{zx}_{zz}.bin")
+    write_binary(out_path, zx, zz, positions, normals, tris)
+    return out_path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--zone", nargs=2, type=int, required=True, help="zone grid x,z")
@@ -136,28 +170,9 @@ def main():
     args = ap.parse_args()
 
     zx, zz = args.zone
-    height = load_zone_heights(zx, zz)
-    px_to_m = CHUNK_SIZE_M / (height.shape[0] - 1)
-
-    boundary_spacing_texels = None
-    if not args.no_boundary_stitch:
-        boundary_spacing_texels = round(QUADTREE_BOUNDARY_SPACING_M / px_to_m)
-        remainder = (height.shape[0] - 1) % boundary_spacing_texels
-        assert remainder == 0, (
-            f"boundary_spacing_texels={boundary_spacing_texels} doesn't evenly divide "
-            f"{height.shape[0]-1} texels -- zone edge wouldn't land exactly on both corners")
-        print(f"[bake] boundary stitch: {QUADTREE_BOUNDARY_SPACING_M}m = "
-              f"{boundary_spacing_texels} texels (px_to_m={px_to_m:.4f})")
-
-    pts, z, tris = build_tin_mesh(height, max_error_m=args.max_error,
-                                   point_budget=args.point_budget,
-                                   cand_step=args.cand_step, batch=args.batch,
-                                   boundary_spacing=boundary_spacing_texels)
-    positions, normals, tris = fix_winding_and_normals(pts, z, tris, px_to_m)
-
-    os.makedirs(args.out_dir, exist_ok=True)
-    out_path = os.path.join(args.out_dir, f"zone_{zx}_{zz}.bin")
-    write_binary(out_path, zx, zz, positions, normals, tris)
+    bake_zone(zx, zz, max_error=args.max_error, point_budget=args.point_budget,
+              cand_step=args.cand_step, batch=args.batch, out_dir=args.out_dir,
+              no_boundary_stitch=args.no_boundary_stitch)
 
 
 if __name__ == "__main__":
