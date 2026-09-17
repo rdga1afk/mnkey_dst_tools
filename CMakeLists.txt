@@ -11,6 +11,9 @@ endif()
 # ── monkey_dust_editor ────────────────────────────────────
 # Standalone 3D editor. UI: Dear ImGui via imgui_impl_sdl3/sdlgpu3 (SDL_GPU=Vulkan).
 # Same backend as the game — enables full TerrainRenderer/PropRenderer reuse.
+# Single binary — no dlopen/hot-reload .so (removed 2026-09-17, owner
+# decision: repeated stale-.so debugging confusion outweighed the ~5-10s
+# panels-only rebuild it saved -- see tools/editor/CLAUDE.md).
 
 # All editor panel .cpp files (map_view + all wicked-style panels).
 file(GLOB EDITOR_PANEL_SOURCES "editor/*.cpp")
@@ -102,78 +105,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(monkey_dust_editor PRIVATE -O2 -march=native)
 endif()
 
-# ── editor_panels hot-reload .so ─────────────────────────────────────────────
-# Optional: cmake -DMONKEY_DUST_EDITOR_HOT_RELOAD=ON
-# Produces: build/hot/libeditor_panels.so
-# Reload:   edit any editor/*.cpp → ninja monkey_dust_editor_panels (~5-10s)
-#           → F5 in editor reloads panels without closing the window.
-option(MONKEY_DUST_EDITOR_HOT_RELOAD "Build libeditor_panels.so for editor hot-reload" ON)
-if(MONKEY_DUST_EDITOR_HOT_RELOAD)
-    # Panel .cpp files — same set as EDITOR_PANEL_SOURCES (minus main.cpp)
-    # + entry point + third-party panels + game-side sources used by panels.
-    # Note: many editor panels are header-only (faction_editor.h, item_editor.h, etc.)
-    # and are pulled in transitively — no explicit listing needed.
-    file(GLOB _EDITOR_PANELS_CPP CONFIGURE_DEPENDS "editor/*.cpp")
-    list(REMOVE_ITEM _EDITOR_PANELS_CPP "${CMAKE_CURRENT_SOURCE_DIR}/editor/main.cpp")
-    # ui_smoke_tests.cpp (Phase 5) needs the imgui_test_engine include paths/
-    # defines set up below under MD_UI_TESTS — those are only added to the
-    # monkey_dust_editor target, not this hot-reload .so, so building this
-    # target with MD_UI_TESTS=ON would otherwise fail on a missing header.
-    list(REMOVE_ITEM _EDITOR_PANELS_CPP "${CMAKE_CURRENT_SOURCE_DIR}/editor/ui_smoke_tests.cpp")
-    set(EDITOR_PANELS_HOT_SRCS
-        ${_EDITOR_PANELS_CPP}
-        # Engine sources needed by panels (not pulled via static lib at dlopen time)
-        ${CMAKE_SOURCE_DIR}/engine/src/render/char_customization.cpp
-        # Third-party panels
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes/imnodes.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/ImGuiColorTextEdit/TextEditor.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-flame-graph/imgui_widget_flamegraph.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src/ImSequencer.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src/ImGradient.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor_api.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_canvas.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/crude_json.cpp
-    )
-    add_library(monkey_dust_editor_panels SHARED ${EDITOR_PANELS_HOT_SRCS})
-    target_compile_definitions(monkey_dust_editor_panels PRIVATE
-        MONKEY_DUST_STANDALONE_EDITOR MONKEY_DUST_EDITOR
-        MD_SDL_GPU USE_SDL3 IMGUI_DEFINE_MATH_OPERATORS USE_GLM MD_LOG_NO_RAYLIB
-        DEBUG  # MONKEY_DUST_EDITOR always enables DEBUG (see engine/CMakeLists.txt)
-        $<$<BOOL:${USE_GRANITE}>:IMGUI_IMPL_VULKAN_NO_PROTOTYPES>)
-    target_include_directories(monkey_dust_editor_panels PRIVATE
-        editor/
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/backends
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor
-        ${CMAKE_SOURCE_DIR}/tools/third_party/ImGuiColorTextEdit
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-flame-graph
-        ${CMAKE_SOURCE_DIR}/engine/include
-        ${CMAKE_SOURCE_DIR}/engine/src/vendor
-        ${CMAKE_SOURCE_DIR}/engine/src/render
-        ${CMAKE_SOURCE_DIR}/engine/src/audio
-        ${CMAKE_SOURCE_DIR}/engine/third_party/gaia-ecs/single_include
-        ${CMAKE_SOURCE_DIR}/engine/third_party/glm
-        ${CMAKE_SOURCE_DIR}/engine/third_party/JoltPhysics
-        ${CMAKE_SOURCE_DIR}/engine/third_party/ozz-animation/include
-        ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Recast/Include
-        ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Detour/Include
-        ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/DetourCrowd/Include
-    )
-    # Symbols resolved from host exe at dlopen time (host built with --export-dynamic).
-    target_link_options(monkey_dust_editor_panels PRIVATE -Wl,--allow-shlib-undefined)
-    target_link_options(monkey_dust_editor PRIVATE -Wl,--export-dynamic)
-    target_compile_definitions(monkey_dust_editor PRIVATE MONKEY_DUST_EDITOR_HOT_RELOAD)
-    set_target_properties(monkey_dust_editor_panels PROPERTIES
-        POSITION_INDEPENDENT_CODE ON
-        OUTPUT_NAME              "editor_panels"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/hot"
-    )
-    message(STATUS "[monkey_dust_editor] hot-reload: libeditor_panels.so → build/hot/")
-endif()
-
 # ── ImGui Test Engine panel smoke tests ──────────────────────────────────────
 # EDITOR_AUTOMATION_PLAN_v1.md Phase 5. Vendored under
 # third_party/imgui_test_engine/ (submodule, pinned to v1.92.8 — matches
@@ -181,8 +112,11 @@ endif()
 # License" (free for individuals/hobby/open-source use — see
 # third_party/imgui_test_engine/imgui_test_engine/LICENSE.txt Article 1.1;
 # this project qualifies, not a concern here per explicit project decision).
-# Requires MONKEY_DUST_EDITOR_HOT_RELOAD=ON (the default) — see main.cpp's
-# MD_UI_TESTS branch doc comment for why.
+# 2026-09-17: BROKEN since the hot-reload panels .so removal above --
+# ui_smoke_tests.cpp calls editor_panels_init/build_ui/render/shutdown,
+# which no longer exist as a separate module. Left OFF (default) and
+# unfixed -- rework needed if this is wanted again, out of scope for the
+# hot-reload removal itself.
 option(MD_UI_TESTS "Build ImGui Test Engine panel smoke tests into monkey_dust_editor" OFF)
 if(MD_UI_TESTS AND MONKEY_DUST_TOOLS_NEED_SDL3)
     set(_ITE_DIR ${CMAKE_SOURCE_DIR}/tools/third_party/imgui_test_engine/imgui_test_engine)
@@ -253,7 +187,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     message(STATUS "[monkey_dust_editor] PCH: ENABLED (imgui + SDL_GPU)")
 endif()
 
-endif() # MONKEY_DUST_TOOLS_NEED_SDL3 — editor + hot-reload panels end here
+endif() # MONKEY_DUST_TOOLS_NEED_SDL3 — editor ends here
 
 # ── md_flare_convert ─────────────────────────────────────
 # Standalone INI→JSON converter — no SDL3, no engine, no third_party.

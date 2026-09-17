@@ -1,18 +1,18 @@
 # tools/editor/ — CLAUDE.md
 
-## dlopen hot-reload — критичні інваріанти
-`build/hot/libeditor_panels.so` — ОКРЕМА ninja-ціль
-(`monkey_dust_editor_panels`), яку `monkey_dust_editor` `dlopen()`-ить при
-старті. Rebuilding `monkey_dust_editor` саму по собі лишає `.so` застарілим
-→ `dlopen` undefined-symbol → Lua API мовчки зникає. Завжди білдити ОБИДВА:
-```
-ninja -C build monkey_dust_editor monkey_dust_editor_panels
-```
-Жодних кешованих ID/вказівників, що переживають F5-reload (той самий
-інваріант, що в `EcsReflectBridge`). Фонові треди (`s_loader_thread`
-тощо) — `.join()`, НІКОЛИ `.detach()`: `GpuDevice::Shutdown()` може
-знищити Vulkan-device поки detached-тред ще вивантажує текстуру
-(SIGSEGV, підтверджено coredump'ом 2026-07-26).
+## Єдиний бінарник (hot-reload видалено 2026-09-17)
+`monkey_dust_editor` — звичайний одинарний виконуваний файл, БЕЗ
+`dlopen`/`build/hot/libeditor_panels.so`. Рішення власника: повторний
+стан "панелі .so застаріле відносно engine .a" (ninja dependency
+tracking для link-кроку shared lib не бачив зміни в .a) спричиняв
+довгу плутанину під час діагностики — простіше видалити механізм, ніж
+далі латати. `ninja -C build monkey_dust_editor` — єдина ціль,
+нічого більше білдити не треба, редактор одразу підхоплює всі зміни.
+
+Фонові треди (`s_loader_thread` тощо) — `.join()`, НІКОЛИ `.detach()`:
+`GpuDevice::Shutdown()` може знищити Vulkan-device поки detached-тред
+ще вивантажує текстуру (SIGSEGV, підтверджено coredump'ом 2026-07-26) —
+цей інваріант лишається чинним і без hot-reload.
 
 ## `DrawContent()` invariant
 Кожна панель: `Draw()` (Begin/End + visibility guard) і `DrawContent()`

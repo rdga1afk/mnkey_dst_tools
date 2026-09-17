@@ -15,7 +15,6 @@
 #include "imgui.h"
 #include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/render/terrain_world_heightmap.h>
-#include <monkey_dust/render/terrain_shading_projected.h>
 #include <monkey_dust/render/terrain_quadtree_renderer.h>
 #include <monkey_dust/render/terrain_tin_mesh.h>
 #include <monkey_dust/render/terrain_tin_renderer.h>
@@ -82,14 +81,6 @@ static PropRenderer       s_props;
 // size; kept as the world-heightmap's chunking constant.
 static constexpr float kGranitePatchSize = 300.f;
 static TerrainWorldHeightmap s_granite_hmap;
-// Variant A (screen-space decoupled shading) -- matches the game's sole
-// terrain shading path (game/src/render/scene_render.h's own field,
-// TerrainShadingProjected class doc comment for the full history/why).
-// The editor's World3D viewport previously kept the forward path
-// (TerrainPatchRenderer::DrawBatch, Variant B) after the game switched --
-// this consolidates both onto ONE shading path so there's only one to
-// reason about/fix, per direct user request.
-static TerrainShadingProjected s_terrain_shading;
 static bool  s_granite_ready = false;
 
 // Ogre-quadtree (geomorph+skirts) terrain -- THE sole geometry system.
@@ -113,6 +104,30 @@ static bool  s_tin_debug_zone_enabled = true;
 static constexpr int   kTinDebugZoneX = 27;
 static constexpr int   kTinDebugZoneZ = 25;
 static constexpr float kTinChunkSizeM = 460.8f;
+
+// WARNING (2026-09-17, unresolved): live-verified real GPU HANG (not just
+// VK_ERROR_DEVICE_LOST -- a `timeout 55` process wrapper failed to kill it
+// after 4+ minutes stuck) navigating DIRECTLY to this zone in the editor's
+// 3D World tab (md.editor_select_zone(27, 25) as the FIRST zone visited).
+// A prior visit to a DIFFERENT zone then switching to 27,25 also device-
+// losts (non-fatal that time). Zone-switch to any OTHER zone (e.g. 23,29 ->
+// 30,30) is stable. TIN mesh WIREFRAME draw is already disabled (see
+// s_wire_visible_count's doc comment in DrawTerrainGBuffer) -- this hang
+// happens even so, root cause NOT found (suspect: s_tin_mesh's loaded-but-
+// unused GPU buffers, or a camera/height quirk specific to these
+// coordinates). Do not navigate here in --exec scenarios until this is
+// root-caused.
+
+// 2026-09-17 (owner decision): editor's 3D World tab replaces textured
+// terrain shading (TerrainShadingProjected G-buffer+resolve) with a
+// wireframe-only view -- textures aren't needed for editing work here, and
+// this removes the desert/rock-texture-on-dunes class of bug from this
+// viewport entirely (the shading code itself is untouched -- still the
+// game's real path). DrawTerrainGBuffer (below) now only selects+uploads
+// visible nodes; DrawSkyAndResolve draws the wireframe using these.
+static TerrainQuadtree::VisibleNode s_wire_visible_nodes[TerrainQuadtree::kMaxNodesPublic];
+static int  s_wire_visible_count = 0;
+static bool s_wire_use_batched   = false;
 
 // Builds/rebuilds the static world heightmap from TerrainAtlas's CURRENT
 // contents -- called once at Init() and again whenever s_terrain_dirty's
@@ -399,6 +414,14 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         sd.raster.depth_write = false;
         sd.raster.cull_back   = false;
         sd.layout.count       = 0;
+        // 2026-09-17: was left INVALID (falls back to swapchain format) --
+        // this pass draws into the OFF-SCREEN s_color RTT (ensure_rtt,
+        // R8G8B8A8_UNORM), not the swapchain. Pre-existing mismatch
+        // (VUID-vkCmdDraw-renderPass-02684, confirmed via
+        // VK_LAYER_KHRONOS_validation) the driver silently tolerated until
+        // the terrain wireframe pipelines below added enough load in the
+        // same incompatible pass to trigger a real VK_ERROR_DEVICE_LOST.
+        sd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         s_sky_pipeline.Create(sd);
     }
 
@@ -456,18 +479,21 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         // regression once the aerial view's true (tens-of-thousands) tile
         // count stopped being silently truncated.
         s_quadtree_renderer.InitBatched(md::GpuDevice::Get().SDLDevice());
+        // Wireframe-only 3D World tab (owner decision, 2026-09-17, see
+        // s_wire_visible_nodes' own doc comment): batched path first (must
+        // run after InitBatched -- reuses its node_data_tex_/sampler), the
+        // per-node path as fallback for the rare case batched init fails.
+        s_quadtree_renderer.InitBatchedWireframe(md::GpuDevice::Get().SDLDevice());
+        s_quadtree_renderer.InitWireframe(md::GpuDevice::Get().SDLDevice());
         // TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): presence-gated --
-        // no-op if the bake hasn't been run for kTinDebugZoneX/Z.
+        // no-op if the bake hasn't been run for kTinDebugZoneX/Z. Not
+        // InitWireframe -- live-verified VK_ERROR_DEVICE_LOST, disabled,
+        // see s_wire_visible_count's doc comment (DrawTerrainGBuffer).
         s_tin_renderer.Init(md::GpuDevice::Get().SDLDevice());
         char tin_path[256];
         snprintf(tin_path, sizeof(tin_path), "game/data/terrain_tin_baked/zone_%d_%d.bin",
                   kTinDebugZoneX, kTinDebugZoneZ);
         s_tin_mesh.Init(md::GpuDevice::Get().SDLDevice(), tin_path);
-        // Placeholder size -- DrawImGui's ensure_rtt-adjacent EnsureSize call
-        // resizes this to the real viewport dims on the first frame the
-        // panel is actually shown (this thread doesn't know the ImGui
-        // panel's size yet, same reason ensure_rtt itself isn't called here).
-        s_terrain_shading.Init(md::GpuDevice::Get().SDLDevice(), 64, 64);
         s_props.Init("game/data/props/rock_01.glb", 0.f); // no-op if missing; 0=rock diffuse
         s_terrain.InitKenshiOverlay(op);
         s_terrain.InitGroundTextureArray();
@@ -548,7 +574,6 @@ void Shutdown() {
     s_quadtree_ready = false;
     s_tin_renderer.Shutdown(dev);
     s_tin_mesh.Shutdown();
-    s_terrain_shading.Shutdown();
     s_props.Shutdown();
     s_terrain.Shutdown();
     s_granite_hmap.Shutdown(dev);
@@ -654,17 +679,17 @@ struct World3DFrameCtx {
     float asp = 1.f;
 };
 
-// RENDER-BACKEND-STAGE-2g: Variant A G-buffer pass -- must run in its OWN
-// render pass, BEFORE the main color pass below (TerrainShadingProjected's
-// doc comment). Nothing else in this viewport draws into the shared depth
-// before or after terrain (s_props is loaded but never drawn), so unlike
-// game/src/render/npc_render.cpp's CullAndPrepass this doesn't need a
-// separate depth-only Early-Z prepass into the shared `s_depth`: it's
-// still at its LOAD_OP_CLEAR 1.0 when the resolve pass below runs, so its
-// gl_FragDepth-forwarded depth test trivially passes everywhere real
-// terrain exists. Registered as s_backend's GBufferPass callback.
+// Node selection + batched-node upload only -- no G-buffer render pass at
+// all anymore (removed alongside TerrainShadingProjected, see
+// s_wire_visible_nodes' doc comment): wireframe drawing needs no G-buffer
+// texture data, only the same visible-node list, which DrawSkyAndResolve
+// reads back below. UploadNodeData still needs its OWN copy pass BEFORE any
+// render pass opens (SDL_GPU disallows nesting a copy pass inside an active
+// render pass) -- that's the only GPU work left here. Registered as
+// s_backend's GBufferPass callback (kept as the pre-color-pass hook point;
+// the name is now legacy).
 static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFrameCtx& ctx) {
-    if (!(s_granite_ready && s_terrain.IsReady())) return;
+    if (!(s_granite_ready && s_terrain.IsReady())) { s_wire_visible_count = 0; return; }
     // Minimal-variant Part B (per-tile culling): same Gribb & Hartmann
     // plane extraction as MdCamera::FrustumPlanes (engine/include/
     // monkey_dust/render/md_camera.h) applied directly to this viewport's
@@ -678,10 +703,6 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
         frustum_planes[ 8]=m[3]-m[1]; frustum_planes[ 9]=m[7]-m[5]; frustum_planes[10]=m[11]-m[ 9]; frustum_planes[11]=m[15]-m[13];
         frustum_planes[12]=m[3]+m[1]; frustum_planes[13]=m[7]+m[5]; frustum_planes[14]=m[11]+m[ 9]; frustum_planes[15]=m[15]+m[13];
     }
-    // Ogre-quadtree: static, not a stack array -- see the game-side call
-    // site's own comment (npc_render_frame_prep.cpp) for why kMaxNodesPublic
-    // entries must not live on the stack.
-    static TerrainQuadtree::VisibleNode s_visible_nodes[TerrainQuadtree::kMaxNodesPublic];
     float cam_pos[3] = { ctx.eye_x, ctx.eye_y, ctx.eye_z };
     // task БОРГ-VISUAL-3 (2026-09-06): TerrainQuadtree::
     // kGameplayMaxRenderDistance (3000m, fog-tied) culled EVERY zone at
@@ -695,27 +716,23 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
     // of the gameplay default.
     constexpr float kAerialMaxRenderDistance = 60000.f;
     int qt_count = s_quadtree.SelectVisible(cam_pos, frustum_planes,
-                                              s_visible_nodes, TerrainQuadtree::kMaxNodesPublic,
+                                              s_wire_visible_nodes, TerrainQuadtree::kMaxNodesPublic,
                                               kAerialMaxRenderDistance);
 
-    // TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): same compact-out-then-
-    // draw-once pattern as the game's npc_render_frame_prep.cpp -- see
-    // that call site's own doc comment for why this is in-place
-    // compaction, not a std::vector filter.
-    if (s_tin_debug_zone_enabled && s_tin_mesh.IsReady()) {
-        float zone_min_x = kTinDebugZoneX * kTinChunkSizeM;
-        float zone_min_z = kTinDebugZoneZ * kTinChunkSizeM;
-        float zone_max_x = zone_min_x + kTinChunkSizeM;
-        float zone_max_z = zone_min_z + kTinChunkSizeM;
-        int kept = 0;
-        for (int i = 0; i < qt_count; ++i) {
-            const auto& n = s_visible_nodes[i];
-            bool in_tin_zone = n.origin_x >= zone_min_x && n.origin_x < zone_max_x &&
-                                n.origin_z >= zone_min_z && n.origin_z < zone_max_z;
-            if (!in_tin_zone) s_visible_nodes[kept++] = n;
-        }
-        qt_count = kept;
-    }
+    // TIN Etap 2 Stage 1 wireframe (docs/TIN_ETAP2_PLAN.md): DISABLED
+    // (2026-09-17) -- live-verified crash, VK_ERROR_DEVICE_LOST, isolated
+    // via VK_LAYER_KHRONOS_validation to specifically TerrainTinRenderer::
+    // DrawMeshWireframe (the quadtree's OWN batched-wireframe path alone,
+    // same LINE fillmode, is stable -- proven via a same-zone double-
+    // screenshot isolation test). Root cause not yet found (suspect: LINE
+    // fillmode + a REAL vertex buffer, vs. the quadtree's procedural VTF-
+    // sampled vertex-buffer-less draw, may hit a distinct, undocumented
+    // Gen9 ANV driver bug -- unconfirmed, needs a RenderDoc capture before
+    // any real fix). Leaving the TIN zone's quadtree tiles compacted IN
+    // (no zone-hole) until this is investigated -- tests/editor_scenarios/
+    // verify_w3d_tin_only.lua / verify_w3d_double_shot_baseline.lua
+    // capture the isolation repro.
+    s_wire_visible_count = qt_count;
 
     // task БОРГ-VISUAL-3 follow-up (2026-09-06, FPS investigation): this
     // viewport used to draw ONE individual (non-instanced, non-batched)
@@ -727,48 +744,22 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
     // those falling through DrawBatched's per-node fallback before
     // kMaxBatchedNodes was raised below -- confirmed as the direct cause
     // of a 6 FPS regression, NOT texture resolution as first suspected).
-    // Switched to the SAME instanced-batched path the game's G-buffer
-    // pass already uses (npc_render_frame_prep.cpp) -- upload all node
-    // data in ONE copy pass BEFORE opening the render pass (SDL_GPU
-    // disallows nesting a copy pass inside an active render pass), then
-    // ONE instanced draw call covers every node. kMaxBatchedNodes now
-    // equals kMaxNodesPublic exactly, so there is no per-node fallback
-    // path left to fall into at all.
-    bool use_batched = s_quadtree_renderer.IsBatchedReady() && qt_count > 0;
-    if (use_batched) {
+    // The wireframe pipeline reuses this SAME batched-instanced path
+    // (InitBatchedWireframe/BeginBatchedWireframe, engine/include/
+    // monkey_dust/render/terrain_quadtree_renderer.h) so switching to
+    // wireframe-only does not reopen that regression.
+    s_wire_use_batched = s_quadtree_renderer.IsBatchedWireframeReady() && qt_count > 0;
+    if (s_wire_use_batched) {
         GpuCopyPass node_cp;
         node_cp.Begin(cmd);
         if (node_cp.SDLPass()) {
             s_quadtree_renderer.UploadNodeData(
-                md::GpuDevice::Get().SDLDevice(), node_cp.SDLPass(), s_visible_nodes, qt_count);
+                md::GpuDevice::Get().SDLDevice(), node_cp.SDLPass(), s_wire_visible_nodes, qt_count);
             node_cp.End();
         } else {
-            use_batched = false;
+            s_wire_use_batched = false;
         }
     }
-
-    SDL_GPURenderPass* gbuf_pass = s_terrain_shading.BeginGBufferPass(cmd);
-    if (gbuf_pass) {
-        if (use_batched) {
-            s_quadtree_renderer.BeginBatched(gbuf_pass, cmd, s_granite_hmap, ctx.vp.m, ctx.eye_x, ctx.eye_y, ctx.eye_z);
-            s_quadtree_renderer.DrawBatched(gbuf_pass, cmd, qt_count);
-        } else {
-            for (int i = 0; i < qt_count; ++i) {
-                s_quadtree_renderer.DrawNode(gbuf_pass, cmd, s_granite_hmap, ctx.vp.m,
-                    s_visible_nodes[i], ctx.eye_x, ctx.eye_y, ctx.eye_z);
-            }
-        }
-
-        // TIN Etap 2 Stage 1: draw the baked TIN mesh once, replacing the
-        // zone's tiles compacted out of s_visible_nodes above.
-        if (s_tin_debug_zone_enabled && s_tin_mesh.IsReady()) {
-            s_tin_renderer.DrawMesh(gbuf_pass, cmd, s_tin_mesh, ctx.vp.m,
-                kTinDebugZoneX * kTinChunkSizeM, kTinDebugZoneZ * kTinChunkSizeM,
-                ctx.eye_x, ctx.eye_y, ctx.eye_z);
-        }
-        SDL_EndGPURenderPass(gbuf_pass);
-    }
-    s_terrain_shading.EndGBufferPass();
 }
 
 // RENDER-BACKEND-STAGE-2g: sky + Variant A resolve into s_color. This IS
@@ -813,32 +804,26 @@ static void DrawSkyAndResolve(md::GpuCommandBufferHandle cmd, const World3DFrame
             pv.Draw(3, 1, 0, 0);
         }
 
-        if (s_granite_ready && s_terrain.IsReady()) {
-            static constexpr float W2UV = 1.f / (64.f * CHUNK_SIZE);
-            static constexpr float WCX  = 32.f * CHUNK_SIZE;
-            static constexpr float WCZ  = 32.f * CHUNK_SIZE;
-            TerrainRenderer::SunParams sun;
-            // terrain shaders expect surface→sun (positive Y up); LightSystem = sun→surface → negate.
-            sun.dir[0] = -ls.sun_dir.x; sun.dir[1] = -ls.sun_dir.y; sun.dir[2] = -ls.sun_dir.z;
-            sun.strength   = 1.1f;
-            sun.ambient[0] = kSkyR * 0.2f + 0.22f;
-            sun.ambient[1] = kSkyG * 0.2f + 0.23f;
-            sun.ambient[2] = kSkyB * 0.2f + 0.26f;
+        // Wireframe-only terrain (owner decision, 2026-09-17, see
+        // s_wire_visible_nodes' doc comment): draws directly into this
+        // already-open MAIN colour+depth pass, no G-buffer texture read at
+        // all -- see DrawTerrainGBuffer above for where s_wire_visible_nodes/
+        // s_wire_visible_count/s_wire_use_batched were populated this frame.
+        if (s_granite_ready && s_terrain.IsReady() && s_wire_visible_count > 0) {
+            if (s_wire_use_batched) {
+                s_quadtree_renderer.BeginBatchedWireframe(rp, cmd, s_granite_hmap, ctx.vp.m,
+                    ctx.eye_x, ctx.eye_y, ctx.eye_z);
+                s_quadtree_renderer.DrawBatchedBoundary(rp, cmd, s_wire_visible_count);
+            } else if (s_quadtree_renderer.IsWireframeReady()) {
+                for (int i = 0; i < s_wire_visible_count; ++i) {
+                    s_quadtree_renderer.DrawNodeWireframe(rp, cmd, s_granite_hmap, ctx.vp.m,
+                        s_wire_visible_nodes[i], ctx.eye_x, ctx.eye_y, ctx.eye_z);
+                }
+            }
 
-            // Variant A resolve: fullscreen draw reading back the G-buffer
-            // pass rasterized above (before this render pass opened).
-            // fog_far=60000m / fog_near=0: same aerial-altitude fog
-            // override the old forward draw used (WCX/WCZ/W2UV, an
-            // absolute-space world-centre convention, is exactly this
-            // file's own kWorldCenter equivalent -- the editor camera is
-            // already absolute, so no COL_OX/COL_OZ-style local conversion
-            // is needed the way game/src/render/npc_render.cpp needs for
-            // its own granite draw).
-            static const float kFogColor[3] = { kSkyR, kSkyG, kSkyB };
-            s_terrain_shading.DrawShadingResolve(rp, cmd, sun, ctx.eye_x, ctx.eye_y, ctx.eye_z,
-                WCX, WCZ, W2UV,
-                60000.f, kFogColor, 0.f,
-                s_terrain);
+            // TIN Etap 2 Stage 1 wireframe: DISABLED -- see
+            // s_wire_visible_count's own doc comment above (DrawTerrainGBuffer)
+            // for the VK_ERROR_DEVICE_LOST this avoids.
         }
 
         cb.EndPass();
@@ -936,15 +921,6 @@ void DrawImGui(float W, float H, float dt) {
     // RenderFrame (called after ImGui::Render) then renders into this texture.
     if ((int)W > 4 && (int)H > 4) {
         ensure_rtt((int)W, (int)H);
-        // Same "before AcquireCommandBuffer" safety requirement as
-        // ensure_rtt above -- see TerrainShadingProjected::EnsureSize's
-        // doc comment / game/src/render/npc_render.cpp's own call site
-        // for the diagnosed SIGSEGV this ordering avoids (destroying a
-        // render-target texture referenced by an already-forming command
-        // buffer). DrawImGui runs during the UI-build phase, strictly
-        // before editor_panels_render acquires this frame's command
-        // buffer, so this is the correct, already-established hook point.
-        s_terrain_shading.EnsureSize(md::GpuDevice::Get().SDLDevice(), (int)W, (int)H);
     }
 
     ImVec2 origin = ImGui::GetCursorScreenPos();

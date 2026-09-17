@@ -45,6 +45,14 @@ from tin_etap1_spike import load_zone_heights, build_tin_mesh, CHUNK_SIZE_M  # n
 MAGIC = b"MDTN"  # monkey_dust TeraiN
 VERSION = 1
 
+# TIN Etap 2 Stage 2 (task #164): TerrainQuadtree's fixed kFlatLodDepth=3
+# (engine/src/world/terrain_quadtree.cpp) gives every node CHUNK_SIZE_M /
+# 16 / 2^3 = 3.6m per quad-edge, EVERYWHERE, always (fixed depth, not
+# distance-based LOD -- see that constant's own doc comment: "texelSize =
+# chunk_size/16/2^depth"). A TIN zone's boundary must land on this exact
+# spacing to stitch seamlessly with any neighboring quadtree tile.
+QUADTREE_BOUNDARY_SPACING_M = CHUNK_SIZE_M / 16.0 / (2.0 ** 3)  # = 3.6
+
 
 def fix_winding_and_normals(pts_texel: np.ndarray, z: np.ndarray, tris: np.ndarray,
                              px_to_m: float):
@@ -122,15 +130,29 @@ def main():
     ap.add_argument("--cand-step", type=int, default=4)
     ap.add_argument("--batch", type=int, default=60)
     ap.add_argument("--out-dir", default="game/data/terrain_tin_baked")
+    ap.add_argument("--no-boundary-stitch", action="store_true",
+                     help="disable task #164's edge-stitching fix, reproduce the original "
+                          "Stage 1 (corners-only) seam bug for A/B comparison")
     args = ap.parse_args()
 
     zx, zz = args.zone
     height = load_zone_heights(zx, zz)
     px_to_m = CHUNK_SIZE_M / (height.shape[0] - 1)
 
+    boundary_spacing_texels = None
+    if not args.no_boundary_stitch:
+        boundary_spacing_texels = round(QUADTREE_BOUNDARY_SPACING_M / px_to_m)
+        remainder = (height.shape[0] - 1) % boundary_spacing_texels
+        assert remainder == 0, (
+            f"boundary_spacing_texels={boundary_spacing_texels} doesn't evenly divide "
+            f"{height.shape[0]-1} texels -- zone edge wouldn't land exactly on both corners")
+        print(f"[bake] boundary stitch: {QUADTREE_BOUNDARY_SPACING_M}m = "
+              f"{boundary_spacing_texels} texels (px_to_m={px_to_m:.4f})")
+
     pts, z, tris = build_tin_mesh(height, max_error_m=args.max_error,
                                    point_budget=args.point_budget,
-                                   cand_step=args.cand_step, batch=args.batch)
+                                   cand_step=args.cand_step, batch=args.batch,
+                                   boundary_spacing=boundary_spacing_texels)
     positions, normals, tris = fix_winding_and_normals(pts, z, tris, px_to_m)
 
     os.makedirs(args.out_dir, exist_ok=True)

@@ -30,23 +30,27 @@ game/src/scripting/lua_scenario_api_misc.cpp's #ifdef guards). `build/`
 in this repo is such a build by default (CMakeLists.txt's
 MONKEY_DUST_EDITOR option defaults ON).
 
-USAGE (as a library):
+USAGE (as a library — RECOMMENDED path, no F3 UI, precise camera angle):
     from game_cmd_driver import Driver
     d = Driver(exe="build/game/monkey_dust")
     d.launch()
-    d.send("md.set_camera_pose(10148.7, 40.0, 15657.6, 26.6, 22.0)")
-    d.send("md.set_editor_open(false)")   # set_camera_pose forces this
-                                            # true as a side effect --
-                                            # call AFTER, not before
-    d.send("md.screenshot('/tmp/out.png')")
+    d.screenshot_orbit("/tmp/out.png", x=12670.0, z=11960.0,
+                        yaw_deg=90.0, pitch_deg=5.0, dist=18.0)
     d.shutdown()
 
-USAGE (CLI, the exact 4-call sequence above in one shot):
+USAGE (CLI, orbit path):
     python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png \\
-        --camera 10148.7,40.0,15657.6,26.6,22.0
-    python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png \\
-        --camera 10148.7,40.0,15657.6,26.6,22.0 \\
-        --exe build_release/game/monkey_dust --wait 1.5
+        --orbit 12670.0,11960.0,90.0,5.0,18.0
+
+USAGE (fly-cam path — editor_open MUST stay true, see screenshot()'s own
+doc comment for why editor_open=false silently discards the camera pose;
+the F3 "Scene" tab (default-active) fills the ENTIRE frame when open, not
+a small sidebar, so this path only gives a clean shot on a build/session
+where the F3 layout's active tab has been switched away from Scene, e.g.
+by hand-editing data/editor_config.json's persisted state -- for a fully
+scripted, reliable shot use screenshot_orbit() above instead):
+    d.screenshot("/tmp/out.png", camera=(10148.7, 40.0, 15657.6, 26.6, 22.0),
+                 editor_open=True)
 """
 import argparse
 import os
@@ -145,14 +149,62 @@ class Driver:
         this wrapper can never hit the world-vs-local mixup that cost a full
         debugging session before it was fixed at the engine layer instead of
         just documented here.
-        editor_open=False clears the F3 panel (set_camera_pose forces it
-        true as a side effect, so this is applied AFTER positioning, same
-        order bug found live this session -- see module doc)."""
+
+        WARNING (confirmed live, 2026-09-17): if `camera` is given AND
+        editor_open resolves to False, this method is a NO-OP for
+        positioning -- game/src/main.cpp's UpdateOrbitCamera() OVERWRITES
+        the fly-cam pose with the default player-orbit camera whenever
+        editor_open is false, regardless of what set_camera_pose_world just
+        set. Passing camera= with the (default) editor_open=False used to
+        silently produce a screenshot from the WRONG camera with no error
+        of any kind. This method now REFUSES that combination (raises) --
+        pass editor_open=True explicitly (accept the F3 "Scene" tab filling
+        the frame, see class-level doc) or use screenshot_orbit() instead,
+        which was live-verified to give a clean, UI-free, precisely-aimed
+        shot without this trap."""
+        if camera is not None and not editor_open:
+            raise ValueError(
+                "screenshot(camera=..., editor_open=False) silently discards the camera "
+                "pose (game/src/main.cpp's UpdateOrbitCamera overwrites it every frame "
+                "editor_open is false) -- pass editor_open=True, or use screenshot_orbit() "
+                "for a UI-free shot with a precisely aimed camera.")
         if camera is not None:
             ok, r = self.send("md.set_camera_pose_world(%s)" % ", ".join(str(c) for c in camera))
             if not ok:
                 return False, r
         ok, r = self.send("md.set_editor_open(%s)" % ("true" if editor_open else "false"))
+        if not ok:
+            return False, r
+        time.sleep(settle_s)
+        return self.send("md.screenshot(%r)" % str(out_path))
+
+    def screenshot_orbit(self, out_path, x, z, yaw_deg=0.0, pitch_deg=10.0, dist=20.0,
+                          settle_s=1.0):
+        """RECOMMENDED screenshot path (live-verified 2026-09-17, TIN Etap 2
+        Stage 2 boundary-seam investigation) -- no F3 UI, no fly-cam trap.
+        Teleports the player to (x, z) (ABSOLUTE Kenshi world metres, same
+        convention as md.teleport_player) then points the release build's
+        fixed third-person orbit camera (md.set_camera_orbit, main.cpp's
+        g_cam_az/el/dist) at the given angle -- this camera is driven
+        DIRECTLY, independent of editor_open, so there is no risk of it
+        being silently overwritten the way screenshot(camera=...,
+        editor_open=False) is (see that method's own warning).
+
+        yaw_deg: degrees clockwise from south (g_cam_az's own convention).
+        pitch_deg: elevation above horizon -- use single-digit values
+        (5-10) for a near-horizontal grazing shot (e.g. checking a terrain
+        zone-boundary seam at ground level), higher for a more top-down
+        aerial framing.
+        dist: orbit distance in metres from the player.
+
+        Does NOT touch editor_open at all -- the player-orbit camera is the
+        default render path when the F3 panel was never opened this
+        session, so no ordering trap exists here the way it does for the
+        fly-cam path."""
+        ok, r = self.send("md.teleport_player(%s, %s)" % (x, z))
+        if not ok:
+            return False, r
+        ok, r = self.send("md.set_camera_orbit(%s, %s, %s)" % (yaw_deg, pitch_deg, dist))
         if not ok:
             return False, r
         time.sleep(settle_s)
@@ -193,7 +245,12 @@ def _main():
     ap.add_argument("--exe", default=DEFAULT_EXE, help="game executable path")
     ap.add_argument("--screenshot", metavar="PATH", help="capture a screenshot to PATH")
     ap.add_argument("--camera", metavar="x,y,z,yaw,pitch",
-                     help="position camera before capture (comma-separated floats)")
+                     help="fly-cam: position camera before capture (comma-separated floats). "
+                          "Forces the F3 panel open (see Driver.screenshot's own warning) -- "
+                          "prefer --orbit for a UI-free shot.")
+    ap.add_argument("--orbit", metavar="x,z,yaw_deg,pitch_deg,dist",
+                     help="RECOMMENDED: teleport player to (x,z) and aim the UI-free orbit "
+                          "camera (comma-separated floats, see Driver.screenshot_orbit)")
     ap.add_argument("--wait", type=float, default=1.0,
                      help="seconds to settle after camera move before capture (default 1.0)")
     args = ap.parse_args()
@@ -201,6 +258,9 @@ def _main():
     if not args.screenshot:
         print("Nothing to do -- pass --screenshot PATH (see module docstring for library usage)",
               file=sys.stderr)
+        return 1
+    if args.camera and args.orbit:
+        print("ERROR: --camera and --orbit are mutually exclusive", file=sys.stderr)
         return 1
 
     camera = None
@@ -212,13 +272,28 @@ def _main():
             return 1
         camera = tuple(parts)
 
+    orbit = None
+    if args.orbit:
+        parts = [float(x) for x in args.orbit.split(",")]
+        if len(parts) != 5:
+            print("ERROR: --orbit needs 5 comma-separated values: x,z,yaw_deg,pitch_deg,dist",
+                  file=sys.stderr)
+            return 1
+        orbit = tuple(parts)
+
     d = Driver(exe=args.exe)
     print(f"launching {args.exe} ...")
     if not d.launch():
         print("FAILED to connect", file=sys.stderr)
         return 1
     print("connected")
-    ok, r = d.screenshot(args.screenshot, camera=camera, settle_s=args.wait)
+    if orbit is not None:
+        ox, oz, oyaw, opitch, odist = orbit
+        ok, r = d.screenshot_orbit(args.screenshot, ox, oz, oyaw, opitch, odist,
+                                    settle_s=args.wait)
+    else:
+        ok, r = d.screenshot(args.screenshot, camera=camera, editor_open=camera is not None,
+                              settle_s=args.wait)
     print("screenshot:", ok, r)
     d.shutdown()
     if not ok:

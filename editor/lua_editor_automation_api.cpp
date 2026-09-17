@@ -9,9 +9,8 @@
 #include "editor_std_commands.h"
 #include "editor_reflect_bridge.h"
 #include "editor_screenshot.h"
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-#include <monkey_dust/hot/editor_module.h>
-#endif
+#include "editor_char_preview_sdlgpu.h"
+#include "character_editor.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -20,12 +19,6 @@ extern "C" {
 #include <lua5.4/lua.h>
 #include <lua5.4/lauxlib.h>
 }
-
-// Defined in editor_panels_entry.cpp (extern "C", called by the host across
-// the dlopen boundary for F9's bug-capture path) — reused here for
-// md.editor.dump so panel-specific state isn't captured twice by two
-// independent implementations.
-extern "C" void editor_panels_dump_state(void* file_ptr);
 
 namespace {
 
@@ -234,7 +227,11 @@ int l_md_editor_dump(lua_State* L) {
     fprintf(f, "  nav_ready=%d\n", NavSystem::Get().IsReady() ? 1 : 0);
     fprintf(f, "  fps=%.1f\n\n", ec.frame_fps);
 
-    editor_panels_dump_state(f); // reuse the F9 path's panel-specific dump — not duplicated
+    // Same panel-specific dump as main.cpp's F9 handler.
+    fprintf(f, "  chars_detached=%d\n\n", CharacterEditor::g_detached ? 1 : 0);
+#ifdef MD_SDL_GPU
+    CharPreviewSDLGPU::DumpState(f);
+#endif
 
     fclose(f);
     return 0;

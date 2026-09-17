@@ -54,7 +54,23 @@ import numpy as np
 
 FULLMAP = "/run/media/rdga1/win/SteamLibrary/steamapps/common/Kenshi/data/newland/land/fullmap.tif"
 ZONE_PX = 256        # pixels per zone in fullmap (+ 1 shared border)
-SCALE = 128.0         # uint16 / SCALE = metres
+# TIN Etap 2 Stage 2 (task #164): was 128.0 ("uint16 / SCALE = metres") --
+# WRONG, a stale constant that never matched the production heightmap
+# pipeline. tools/tif_to_r32.py (world_hmap.r16, what TerrainQuadtree
+# actually renders) uses height_m = raw_uint16 * (HEIGHT_MAX_M / 65535.0)
+# with HEIGHT_MAX_M=980.0 (tools/md_hmap_io.py) -- a DIFFERENT formula
+# (980/65535 = 0.01496 m/unit vs the old 1/128 = 0.00781 m/unit, ~1.91x
+# off). Live-confirmed via md.terrain_height() at world (12670,11960):
+# real quadtree height 69.76m; old SCALE=128 formula gave 36.5m at that
+# exact pixel; the fixed formula below gives 69.86m -- matches within
+# noise. This is why the "zone-boundary seam" (docs/TIN_ETAP2_PLAN.md)
+# was never fixable by edge-vertex position/density alignment alone: the
+# ENTIRE TIN mesh was baked at roughly half its correct height, not just
+# misaligned at the edge -- least noticeable in the zone's interior (both
+# meshes still read as "the same general shape", just vertically
+# compressed) and most obvious exactly at the boundary, where it's
+# directly juxtaposed against a neighboring tile at the CORRECT height.
+HEIGHT_MAX_M = 980.0   # must match tools/md_hmap_io.py's own constant
 CHUNK_SIZE_M = 460.8  # TS_CHUNK_SIZE_M -- world metres per zone side
 
 OUT_DIR = "/tmp/claude-1001/-home-rdga1-rdga1prj-monkeydust/021d5116-7c77-464a-bd69-2b8160c80074/scratchpad"
@@ -67,7 +83,8 @@ def load_zone_heights(zx: int, zz: int) -> np.ndarray:
     arr = tifffile.imread(FULLMAP)
     assert arr.shape == (16385, 16385), f"unexpected fullmap shape {arr.shape}"
     py0, px0 = zz * ZONE_PX, zx * ZONE_PX
-    patch = arr[py0: py0 + ZONE_PX + 1, px0: px0 + ZONE_PX + 1].astype(np.float32) / SCALE
+    patch = arr[py0: py0 + ZONE_PX + 1, px0: px0 + ZONE_PX + 1].astype(np.float32) \
+        * (HEIGHT_MAX_M / 65535.0)
     print(f"[spike] zone patch {patch.shape}, height range "
           f"{patch.min():.1f}-{patch.max():.1f}m")
     return patch
@@ -104,30 +121,74 @@ def build_baseline_mesh(height: np.ndarray, stride: int):
     return pts, z, tri.simplices
 
 
+def boundary_seed_points(w: int, h: int, spacing: int):
+    """All (x,y) integer texel coords on the rectangle's outer edge, `spacing`
+    texels apart, INCLUDING both endpoints of every edge (caller must ensure
+    (w-1) and (h-1) are exact multiples of `spacing`, else the far edge is
+    missed). Used to force the TIN mesh's boundary to land on exactly the
+    same world-space positions TerrainQuadtree's neighboring tiles use at
+    their shared edge -- see build_tin_mesh's own `boundary_spacing` doc
+    comment for why this must match the quadtree's fixed vertex density."""
+    xs = list(range(0, w, spacing))
+    if xs[-1] != w - 1:
+        xs.append(w - 1)
+    ys = list(range(0, h, spacing))
+    if ys[-1] != h - 1:
+        ys.append(h - 1)
+    pts = set()
+    for x in xs:
+        pts.add((x, 0))
+        pts.add((x, h - 1))
+    for y in ys:
+        pts.add((0, y))
+        pts.add((w - 1, y))
+    return sorted(pts)
+
+
 def build_tin_mesh(height: np.ndarray, max_error_m: float, point_budget: int, cand_step: int = 4,
-                    batch: int = 60):
+                    batch: int = 60, boundary_spacing: int = None):
     """Greedy error-driven adaptive triangulation -- Recast buildPolyDetail-style.
 
-    Start from the 4 corners, then repeatedly: interpolate the current
-    triangulation's height at every raw grid sample, find the WORST-ERROR
-    candidates (batch of up to `batch` per round, not just one -- a single-
-    point-per-round greedy loop needs O(budget) full re-triangulation +
-    interpolation passes to converge, which is why the first version of
-    this function never converged within a reasonable point budget: it was
-    spending its budget one point at a time instead of refining where error
-    is actually concentrated). Batch insertion is the standard fix for this
-    class of algorithm (Garland-Heckbert-style greedy insertion, also how
-    Recast's own detail-mesh refinement amortizes cost). Points within
-    `min_spacing` texels of an already-queued point in the same batch are
-    skipped so one bad region doesn't hog the whole batch.
+    Seed with either just the 4 corners (boundary_spacing=None, ORIGINAL
+    Stage 1 behaviour) or every point along the zone's outer edge at
+    `boundary_spacing` texels (TIN Etap 2 Stage 2, task #164 fix) -- then
+    repeatedly: interpolate the current triangulation's height at every raw
+    grid sample, find the WORST-ERROR candidates (batch of up to `batch` per
+    round, not just one -- a single-point-per-round greedy loop needs
+    O(budget) full re-triangulation + interpolation passes to converge,
+    which is why the first version of this function never converged within
+    a reasonable point budget: it was spending its budget one point at a
+    time instead of refining where error is actually concentrated). Batch
+    insertion is the standard fix for this class of algorithm (Garland-
+    Heckbert-style greedy insertion, also how Recast's own detail-mesh
+    refinement amortizes cost). Points within `min_spacing` texels of an
+    already-queued point in the same batch are skipped so one bad region
+    doesn't hog the whole batch.
     Stop when max error < max_error_m or point_budget is reached.
+
+    `boundary_spacing` (task #164, TIN Etap 2 Stage 2): the ORIGINAL Stage 1
+    bake only seeded the 4 corners -- everywhere along an edge BETWEEN
+    corners, the adaptive refinement was free to place boundary vertices
+    wherever error happened to be highest, almost never landing on the same
+    world positions TerrainQuadtree's neighboring tiles use at their shared
+    edge (fixed kFlatLodDepth=3 -> every node is CHUNK_SIZE_M/16/8=3.6m
+    quads, terrain_quadtree.cpp) -- this is exactly the confirmed, live-
+    verified "gap to sky along the zone boundary" seam (docs/
+    TIN_ETAP2_PLAN.md). Passing boundary_spacing=2 (2 texels = 3.6m at this
+    zone's 1.8m/texel resolution) forces every one of those 129 boundary
+    positions per edge to exist in the final mesh, exactly matching what a
+    16-quad-per-node quadtree neighbor renders there -- true stitching, not
+    a visual hack (skirt geometry, the plan doc's alternative (b) option).
     """
     from scipy.spatial import Delaunay
     from scipy.interpolate import LinearNDInterpolator
 
     h, w = height.shape
-    corners = np.array([[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]], dtype=np.float64)
-    pts = list(corners)
+    if boundary_spacing:
+        pts = [np.array(p, dtype=np.float64) for p in boundary_seed_points(w, h, boundary_spacing)]
+    else:
+        corners = np.array([[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]], dtype=np.float64)
+        pts = list(corners)
 
     cx, cy = np.meshgrid(np.arange(0, w, cand_step), np.arange(0, h, cand_step))
     cand = np.column_stack([cx.ravel(), cy.ravel()]).astype(np.float64)

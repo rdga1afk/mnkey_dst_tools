@@ -17,9 +17,6 @@
 #include "editor_cmd_file.h"
 #include "editor_screenshot.h"
 #include <ctime>
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-#include <monkey_dust/hot/editor_module.h>
-#endif
 #include <SDL3/SDL.h>
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlgpu3.h"
@@ -28,10 +25,8 @@
 #include "editor_ui.h"
 #include "item_editor.h"
 #include "faction_editor.h"
-#ifndef MONKEY_DUST_EDITOR_HOT_RELOAD
 #include "settings_editor.h"
 #include "editor_world_3d_sdlgpu.h"
-#endif
 #include "editor_world_panel.h"
 #include "editor_3d_bridge.h"
 #include "editor_char_preview_sdlgpu.h"
@@ -39,35 +34,26 @@
 #include "npc_archetype_editor.h"
 #include "editor_map_view.h"
 #include "editor_node_graph.h"
-#ifndef MONKEY_DUST_EDITOR_HOT_RELOAD
-#include "editor_terrain_panel.h"
-#endif
 #include "editor_layout.h"
 #include "bug_capture.h"
+#include "editor_reflect_bridge.h"
+#include "editor_reflect_inspector.h"
 #ifdef MD_UI_TESTS
 #include "ui_smoke_tests.h"
 #endif
 #include <cstdio>
 #include <cstring>
 
-// ── Hot-reload: called by /reload-shaders console command ─────────────────────
+// ── called by /reload-shaders console command ─────────────────────
 void EditorReloadAllShaderPipelines() {
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-    EditorModule::Get().ReloadShaders();
-#else
     CharPreviewSDLGPU::ReloadPipelines();
-#endif
     fprintf(stdout, "[Editor] Shader pipelines reloaded\n");
 }
 
 // ── Bridge: PCG terrain upload (defined here — only TU that includes W3D header) ─
 void EditorW3D_UploadTerrainHeightmap(const float* hmap, int W, int H,
                                        float world_size_m, int chunk_x, int chunk_z) {
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-    EditorModule::Get().UploadTerrainHeightmap(hmap, W, H, world_size_m, chunk_x, chunk_z);
-#else
     WorldEditor3D_SDLGPU::UploadTerrainHeightmap(hmap, W, H, world_size_m, chunk_x, chunk_z);
-#endif
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -81,6 +67,12 @@ static constexpr const char* LAYOUT_PATH = "data/editor_layout.json";
 // Extra Y offset when running under RenderDoc (overlay occupies top ~50px).
 // Set via env var MD_OVERLAY_TOP_OFFSET=50 in .cap file or mde.sh --rd.
 float s_overlay_top = 0.f;
+
+// Backend world pointer, passed to the Inspector tab every frame.
+static EcsBridgeWorldT* s_ecs_world = nullptr;
+
+// Persistent panel layout (all tabs). Loaded at startup, saved at shutdown.
+static EditorLayout::Layout s_lay;
 
 int main(int argc, char** argv) {
     EditorScenarioConfig scenario_cfg;
@@ -162,7 +154,7 @@ int main(int argc, char** argv) {
 #if defined(MD_RENDER_BACKEND_GRANITE) && defined(MD_USE_GRANITE)
     // RENDER-BACKEND-STAGE-4 (docs/GRANITE_IRENDERBACKEND_INTEGRATION.md
     // §2.4): the editor's own UI chrome (toolbar/panels/menus, built below
-    // via EditorModule::Get().BuildUI() against THIS SAME ImGui context)
+    // built below against THIS SAME ImGui context)
     // renders through Granite instead of imgui_impl_sdlgpu3 when selected --
     // ImGui_ImplSDLGPU3_Init() is skipped entirely in this branch (not just
     // unused): both backends write their own state into the SAME io.
@@ -192,10 +184,14 @@ int main(int argc, char** argv) {
     // makes — populates md::ComponentReflect only, no ECS world interaction.
     md::RegisterCoreComponents();
     md::WarmUpEngineComponents();  // flecs type registration before any JobGraph batch (task #248)
+    // Field metadata for the reflect-driven Inspector tab.
+    s_ecs_world = &MdRegistry::Get().Raw();
+    EcsReflectBridge::Get().Init(s_ecs_world);
     // Autonomy system (Etap 4) — same call game/src/main.cpp makes; must
     // happen before RegisterLuaEditorScenarioAPI/StartScenario, which
     // assume L_ is already a live sandboxed Lua state.
     LuaSystem::Get().Init("data/scripts");
+    SettingsEditor::Load(CFG_PATH);
     ItemEditor::Load("data/items/items.json");
     FactionEditor::Load("data/factions/factions.json");
     NpcArchetypeEditor::Load("game/data/defs/npc_archetypes.json");
@@ -204,7 +200,6 @@ int main(int argc, char** argv) {
     LightSystem::Get().Init();
     TerrainAtlas_Load("game/data/terrain/world_hmap");
     TerrainAtlas_SmoothBoundaries();
-#ifndef MONKEY_DUST_EDITOR_HOT_RELOAD
     WorldEditor3D_SDLGPU::Init(
         "game/data/textures/md_terrain.dds",
         29, 25);  // 7×7 view centred near The Hub area
@@ -212,70 +207,36 @@ int main(int argc, char** argv) {
     CharacterEditor::LoadMorphNames("game/data/chars/morph_names.txt");
     MapViewPanel::Get().Init();
     EditorCore::Get().Init();
-    // Non-hot-reload: single binary, no dlopen boundary — LuaSystem::Get()
-    // here is the same instance the scenario driver resumes against.
+    // Single binary, no dlopen boundary — LuaSystem::Get() here is the
+    // same instance the scenario driver resumes against.
     RegisterLuaEditorScenarioAPI(LuaSystem::Get());
     RegisterLuaEditorAutomationAPI(LuaSystem::Get());
-    // Pre-existing gap, closed in passing while touching this file for the
-    // Lua registrations above: this non-hot-reload build path calls
-    // EditorCore::Get().Init() directly (no dlopen, no editor_panels_init())
-    // and never registered any EditorCmdRegistry command either — every
-    // palette/toolbar/console Dispatch() here would have silently no-op'd,
-    // same class of gap as game/src/main.cpp's (see RegisterStdEditorCommands's
-    // doc comment). Own module id — distinct registration lifetime from
-    // both the panels .so and the game binary.
-    static constexpr uint32_t kNonHotReloadModuleId = 3;
-    RegisterStdEditorCommands(kNonHotReloadModuleId);
-#endif
+    static constexpr uint32_t kEditorModuleId = 3;
+    RegisterStdEditorCommands(kEditorModuleId);
 
 #ifdef MD_UI_TESTS
-    // Phase 5: bypasses EditorModule/dlopen entirely — calls
-    // editor_panels_init/build_ui/render/shutdown directly (see
-    // ui_smoke_tests.h's doc comment for why). Assumes
-    // MONKEY_DUST_EDITOR_HOT_RELOAD is also on (the default) so this is
-    // the ONLY thing that calls editor_panels_init this run; MD_UI_TESTS
-    // is not supported combined with a non-hot-reload build.
+    // 2026-09-17: BROKEN since the hot-reload panels module was removed --
+    // RunUiSmokeTests calls editor_panels_init/build_ui/render/shutdown,
+    // which no longer exist. MD_UI_TESTS is OFF by default (see its own
+    // CMakeLists.txt option doc comment); left unfixed here, out of scope
+    // for the hot-reload removal itself.
     if (ui_tests_requested) {
         return RunUiSmokeTests(gpu, sc_fmt, s_overlay_top, LAYOUT_PATH);
     }
 #endif
 
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-    // Hot-reload path: all panel init/draw/render delegated to libeditor_panels.so.
-    // EditorModule loads the .so, calls editor_panels_init() inside.
+    // Restore panel layout (map/world/terrain/world3d used directly from
+    // s_lay below; items/factions/npcs/chars/settings copied into each
+    // panel's own header-namespace state, matching their DrawContent API).
     {
-        EditorModule::Config ecfg;
-        ecfg.imgui_ctx   = ImGui::GetCurrentContext();
-        // gaia-ecs migration (Phase 5, PROMPT_GAIA_MIGRATION.md §7 p.2):
-        // gaia::ecs::World IS the concrete world object already (no opaque
-        // C-pointer wrapper layer the way flecs::world::c_ptr() unwraps),
-        // so the address of Registry::Get()'s reference is the direct
-        // equivalent -- reinterpreted on the far side of the dlopen
-        // boundary as EcsBridgeWorldT* (editor_reflect_bridge.h), matching
-        // flecs's ecs_world_t* void*-cast exactly.
-        ecfg.ecs_world   = &Registry::Get();
-        ecfg.gpu         = gpu;
-        ecfg.window      = _wnd::ptr();
-        ecfg.overlay_top = s_overlay_top;
-        ecfg.layout_path = LAYOUT_PATH;
-        ecfg.lua_system  = &LuaSystem::Get();
-        EditorModule::Get().Init("build/hot/libeditor_panels.so", ecfg);
+        s_lay = EditorLayout::Layout{};
+        EditorLayout::Load(LAYOUT_PATH, s_lay);
+        ItemEditor::g_detached         = s_lay.items.detached;    ItemEditor::g_win_pos         = s_lay.items.pos;    ItemEditor::g_win_size         = s_lay.items.size;
+        FactionEditor::g_detached      = s_lay.factions.detached; FactionEditor::g_win_pos      = s_lay.factions.pos; FactionEditor::g_win_size      = s_lay.factions.size;
+        NpcArchetypeEditor::g_detached = s_lay.npcs.detached;     NpcArchetypeEditor::g_win_pos = s_lay.npcs.pos;     NpcArchetypeEditor::g_win_size = s_lay.npcs.size;
+        CharacterEditor::g_detached    = s_lay.chars.detached;    CharacterEditor::g_win_pos    = s_lay.chars.pos;    CharacterEditor::g_win_size    = s_lay.chars.size;
+        SettingsEditor::g_detached     = s_lay.settings.detached; SettingsEditor::g_win_pos     = s_lay.settings.pos; SettingsEditor::g_win_size     = s_lay.settings.size;
     }
-#endif
-
-#ifndef MONKEY_DUST_EDITOR_HOT_RELOAD
-    // Non-hot-reload: restore panel layout directly
-    {
-        EditorLayout::Layout lay;
-        if (EditorLayout::Load(LAYOUT_PATH, lay)) {
-            ItemEditor::g_detached         = lay.items.detached;    ItemEditor::g_win_pos         = lay.items.pos;    ItemEditor::g_win_size         = lay.items.size;
-            FactionEditor::g_detached      = lay.factions.detached; FactionEditor::g_win_pos      = lay.factions.pos; FactionEditor::g_win_size      = lay.factions.size;
-            NpcArchetypeEditor::g_detached = lay.npcs.detached;     NpcArchetypeEditor::g_win_pos = lay.npcs.pos;     NpcArchetypeEditor::g_win_size = lay.npcs.size;
-            CharacterEditor::g_detached    = lay.chars.detached;    CharacterEditor::g_win_pos    = lay.chars.pos;    CharacterEditor::g_win_size    = lay.chars.size;
-            SettingsEditor::g_detached     = lay.settings.detached; SettingsEditor::g_win_pos     = lay.settings.pos; SettingsEditor::g_win_size     = lay.settings.size;
-        }
-    }
-#endif // !MONKEY_DUST_EDITOR_HOT_RELOAD
 
     SDL_FlushEvent(SDL_EVENT_QUIT);
 
@@ -376,30 +337,15 @@ int main(int argc, char** argv) {
         last_ticks = now;
         if (status_timer > 0.f) status_timer -= dt;
 
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-        // F5: hot-reload editor panels
-        if (input_key_pressed(SDL_SCANCODE_F5)) {
-            EditorModule::Get().Reload();
-            snprintf(status_msg, sizeof(status_msg), "[F5] Editor panels reloaded");
-            status_timer = 3.f;
-        }
-        // Mtime watcher — auto-reload when libeditor_panels.so changes
-        EditorModule::Get().Tick();
-#endif
-
         // F9: dump editor state → tmp_/bug_editor_TIMESTAMP.txt
         if (input_key_pressed(SDL_SCANCODE_F9)) {
             char path[256];
             FILE* f = BugCapture::Open("editor", path, sizeof(path));
             if (f) {
                 fprintf(f, "[Editor]\n");
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-                EditorModule::Get().DumpState(f);
-#else
                 fprintf(f, "  chars_detached=%d\n\n", CharacterEditor::g_detached ? 1 : 0);
-#  ifdef MD_SDL_GPU
+#ifdef MD_SDL_GPU
                 CharPreviewSDLGPU::DumpState(f);
-#  endif
 #endif
                 BugCapture::Close(f);
                 snprintf(status_msg, sizeof(status_msg), "[F9] %s", path + 7);
@@ -444,91 +390,8 @@ int main(int argc, char** argv) {
         // Toolbar draws the menu bar (~20px) + button bar (30px fixed)
         // f3_passthrough: pass-through mouse input when a fullscreen viewport tab is active.
         // Uses prev-frame flag (1-frame lag is imperceptible).
-        static uint32_t s_active_flags = 0;  // viewport bitmask: bit0=3DWorld,1=CharPreview,2=Hmap,3=Map
         float toolbar_h = s_overlay_top + ImGui::GetFrameHeight() + 30.f;
 
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-        // Hot-reload path: ALL panel code in the .so
-        {
-            uint32_t new_flags = EditorModule::Get().BuildUI(dt, toolbar_h,
-                                                              status_msg, &status_timer);
-            uint32_t prev_flags = s_active_flags;
-            s_active_flags = new_flags;
-            ImGui::Render();
-#if defined(MD_RENDER_BACKEND_GRANITE) && defined(MD_USE_GRANITE)
-            // RENDER-BACKEND-STAGE-4 (docs/GRANITE_IRENDERBACKEND_INTEGRATION.md
-            // §2.4): SDL_GPU's own swapchain acquire/present is skipped
-            // entirely this frame -- EditorModule::Get().Render() (3D
-            // viewports) does NOT run, so they show nothing (deliberate,
-            // documented, see the #if block above ImGui_ImplSDLGPU3_Init).
-            {
-                // §5 item 5 (screenshot comparison): same md.editor_screenshot
-                // request path EditorScreenshot_CaptureAndSubmit consumes on
-                // the SDL_GPU side -- md::GraniteBackend's own capture (engine/
-                // src/render/granite_backend.cpp's RenderFrameWithOverlay(),
-                // Granite's swapchain, unreachable from SDL_GPU's own
-                // DownloadFromGPUTexture path) picks it up here instead.
-                char shot_path[256];
-                bool want_shot = EditorScreenshot_ConsumePending(shot_path, sizeof(shot_path));
-                if (want_shot) md::GraniteBackend::Get().RequestScreenshot();
-                md::editor::GraniteImGuiBridge_RenderCurrentDrawData();
-                if (want_shot) {
-                    unsigned sw = 0, sh = 0;
-                    void* rgba = md::GraniteBackend::Get().ConsumeScreenshotRGBA(&sw, &sh);
-                    if (rgba) {
-                        EditorScreenshot_WriteRGBA(rgba, sw, sh, shot_path);
-                        free(rgba);
-                    } else {
-                        fprintf(stderr, "[Editor] Granite screenshot capture failed (no work this tick?)\n");
-                    }
-                }
-            }
-#else
-            md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
-            if (cmd) {
-                EditorModule::Get().Render(cmd, dt, prev_flags);
-                uint32_t sw=0, sh=0;
-                md::GpuTextureHandle sc = md::GpuDevice::Get().AcquireSwapchainTexture(cmd, &sw, &sh);
-                if (sc) {
-                    GpuCommandBuffer clear_cb;
-                    GpuCommandBuffer::ColorPassDesc clear_cpd;
-                    clear_cpd.cmd = cmd;
-                    clear_cpd.color_tex[0] = sc;
-                    clear_cpd.clear_color[0] = 0.10f; clear_cpd.clear_color[1] = 0.10f;
-                    clear_cpd.clear_color[2] = 0.13f; clear_cpd.clear_color[3] = 1.f;
-                    clear_cb.BeginColorPass(clear_cpd);
-                    clear_cb.EndPass();
-                    ImDrawData* dd=ImGui::GetDrawData();
-                    if (dd && dd->CmdListsCount>0) {
-                        ImGui_ImplSDLGPU3_PrepareDrawData(dd,cmd);
-                        GpuCommandBuffer imgui_cb;
-                        GpuCommandBuffer::ColorPassDesc imgui_cpd;
-                        imgui_cpd.cmd = cmd;
-                        imgui_cpd.color_tex[0] = sc;
-                        imgui_cpd.load_color = true;
-                        imgui_cb.BeginColorPass(imgui_cpd);
-                        if (imgui_cb.SDLPass()) ImGui_ImplSDLGPU3_RenderDrawData(dd,cmd,imgui_cb.SDLPass());
-                        imgui_cb.EndPass();
-                    }
-                }
-                char shot_path[256];
-                if (sc && EditorScreenshot_ConsumePending(shot_path, sizeof(shot_path))) {
-                    // Captures the fully-composited frame (3D viewport + ImGui
-                    // chrome) just rendered above. CaptureAndSubmit submits cmd
-                    // itself (fence-waited, required for DownloadFromGPUTexture) —
-                    // do not also call the plain submit below for this frame.
-                    EditorScreenshot_CaptureAndSubmit(gpu, cmd, sc, sw, sh, sc_fmt, shot_path);
-                } else {
-                    md::GpuDevice::Get().Submit(cmd);
-                }
-            }
-#endif  // MD_RENDER_BACKEND_GRANITE && MD_USE_GRANITE
-            window_end_frame();
-            continue;  // skip non-hot-reload UI code below
-        }
-#endif
-
-        // Non-hot-reload path ─────────────────────────────────────────────────
         static bool s_world3d_was_active  = false;
         static bool s_charpreview_active  = false;
         static bool s_mapview_active      = false;
@@ -537,6 +400,11 @@ int main(int argc, char** argv) {
         s_charpreview_active = false;
         s_mapview_active     = false;
         EditorCore::Get().Update(dt);
+
+        // Autonomy system: md.editor_open_panel(name) forces a tab select
+        // this frame. Consumed ONCE here (not per-tab) — a single local
+        // copy must be compared against every candidate tab below.
+        const char* forced_tab = EditorPanels_ConsumeForcedTab();
 
         ImGui::SetNextWindowPos({0, toolbar_h});
         ImGui::SetNextWindowSize({fio.DisplaySize.x, fio.DisplaySize.y - toolbar_h});
@@ -551,59 +419,215 @@ int main(int argc, char** argv) {
         ImGui::Separator();
         ImGui::SetCursorPosX(4);
 
+        static constexpr ImGuiWindowFlags FLOAT_FLAGS = ImGuiWindowFlags_NoSavedSettings;
+        static int s_active_tab = 0;
+
         if (ImGui::BeginTabBar("##tabs")) {
-            if (ImGui::BeginTabItem("Items")) {
-                ImGui::SetCursorPos({8,ImGui::GetCursorPosY()+4});
-                if (ItemEditor::DrawContent("data/items/items.json")) {
-                    snprintf(status_msg,sizeof(status_msg),"Items saved!");
-                    status_timer=3.f;
+            if (ImGui::BeginTabItem("Items")) { s_active_tab = 0;
+                if (!ItemEditor::g_detached) {
+                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                    if (ItemEditor::DrawContent("data/items/items.json")) {
+                        snprintf(status_msg, sizeof(status_msg), "Items saved!");
+                        status_timer = 3.f;
+                    }
+                } else {
+                    ImVec2& pos = ItemEditor::g_win_pos;
+                    ImVec2& sz  = ItemEditor::g_win_size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("Items##float", &ItemEditor::g_detached, FLOAT_FLAGS)) {
+                        if (ItemEditor::DrawContent("data/items/items.json")) {
+                            snprintf(status_msg, sizeof(status_msg), "Items saved!");
+                            status_timer = 3.f;
+                        }
+                    }
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
                 }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Factions")) {
-                ImGui::SetCursorPos({8,ImGui::GetCursorPosY()+4});
-                if (FactionEditor::DrawContent("data/factions/factions.json")) {
-                    snprintf(status_msg,sizeof(status_msg),"Factions saved!");
-                    status_timer=3.f;
+            if (ImGui::BeginTabItem("Factions")) { s_active_tab = 1;
+                if (!FactionEditor::g_detached) {
+                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                    if (FactionEditor::DrawContent("data/factions/factions.json")) {
+                        snprintf(status_msg, sizeof(status_msg), "Factions saved!");
+                        status_timer = 3.f;
+                    }
+                } else {
+                    ImVec2& pos = FactionEditor::g_win_pos;
+                    ImVec2& sz  = FactionEditor::g_win_size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("Factions##float", &FactionEditor::g_detached, FLOAT_FLAGS)) {
+                        if (FactionEditor::DrawContent("data/factions/factions.json")) {
+                            snprintf(status_msg, sizeof(status_msg), "Factions saved!");
+                            status_timer = 3.f;
+                        }
+                    }
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
                 }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Map")) {
+            ImGuiTabItemFlags map_flags = (forced_tab && strcmp(forced_tab, "Map") == 0)
+                ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+            if (ImGui::BeginTabItem("Map", nullptr, map_flags)) { s_active_tab = 2;
                 s_mapview_active = true;
-                ImGui::SetCursorPos({8,ImGui::GetCursorPosY()+4});
-                ImGuiIO& mio = ImGui::GetIO();
-                if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
-                    MapViewPanel::Get().Undo();
-                if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false))
-                    MapViewPanel::Get().Redo();
-                MapViewPanel::Get().Draw(dt);
+                auto draw_map = [&]() {
+                    ImGuiIO& mio = ImGui::GetIO();
+                    if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) MapViewPanel::Get().Undo();
+                    if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) MapViewPanel::Get().Redo();
+                    MapViewPanel::Get().Draw(dt);
+                };
+                if (!s_lay.map.detached) {
+                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                    draw_map();
+                } else {
+                    ImVec2& pos = s_lay.map.pos; ImVec2& sz = s_lay.map.size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("Map##float", &s_lay.map.detached, FLOAT_FLAGS)) draw_map();
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
+                }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("World")) {
-                ImGui::SetCursorPos({8,ImGui::GetCursorPosY()+4});
-                WorldPanel::Draw(dt);
+            if (ImGui::BeginTabItem("World")) { s_active_tab = 3;
+                if (!s_lay.world.detached) {
+                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                    WorldPanel::Draw(dt);
+                } else {
+                    ImVec2& pos = s_lay.world.pos; ImVec2& sz = s_lay.world.size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("World##float", &s_lay.world.detached, FLOAT_FLAGS)) WorldPanel::Draw(dt);
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
+                }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("NPCs")) {
-                ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
-                NpcArchetypeEditor::DrawContent();
+            ImGuiTabItemFlags world3d_flags = (forced_tab && strcmp(forced_tab, "3D World") == 0)
+                ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+            if (ImGui::BeginTabItem("3D World", nullptr, world3d_flags)) { s_active_tab = 4;
+                s_world3d_was_active = true;
+                ImVec2 avail = ImGui::GetContentRegionAvail();
+                WorldEditor3D_SDLGPU::DrawImGui(avail.x, avail.y - 2, dt);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Characters")) {
+            if (ImGui::BeginTabItem("NPCs")) { s_active_tab = 5;
+                if (!NpcArchetypeEditor::g_detached) {
+                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                    NpcArchetypeEditor::DrawContent();
+                } else {
+                    ImVec2& pos = NpcArchetypeEditor::g_win_pos;
+                    ImVec2& sz  = NpcArchetypeEditor::g_win_size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("NPC Archetypes##float", &NpcArchetypeEditor::g_detached, FLOAT_FLAGS))
+                        NpcArchetypeEditor::DrawContent();
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
+                }
+                ImGui::EndTabItem();
+            }
+            ImGuiTabItemFlags characters_flags = (forced_tab && strcmp(forced_tab, "Characters") == 0)
+                ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+            if (ImGui::BeginTabItem("Characters", nullptr, characters_flags)) { s_active_tab = 6;
                 s_charpreview_active = true;
-                ImGui::SetCursorPos({8,ImGui::GetCursorPosY()+4});
-                CharacterEditor::Draw(false);  // tools editor uses EditorUI navy theme
+                if (!CharacterEditor::g_detached) {
+                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                    CharacterEditor::Draw(false);
+                } else {
+                    ImVec2& pos = CharacterEditor::g_win_pos;
+                    ImVec2& sz  = CharacterEditor::g_win_size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("Characters##float", &CharacterEditor::g_detached, FLOAT_FLAGS))
+                        CharacterEditor::Draw(false);
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
+                }
                 ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Inspector")) { s_active_tab = 7;
+                ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                EditorReflectInspector::DrawContent(s_ecs_world);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Settings")) { s_active_tab = 8;
+                if (!SettingsEditor::g_detached) {
+                    ImGui::SetCursorPos({12, ImGui::GetCursorPosY() + 4});
+                    SettingsEditor::DrawContent(CFG_PATH, status_msg, &status_timer);
+                } else {
+                    ImVec2& pos = SettingsEditor::g_win_pos;
+                    ImVec2& sz  = SettingsEditor::g_win_size;
+                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+                    if (pos.y < min_y) pos.y = min_y;
+                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
+                    if (ImGui::Begin("Settings##float", &SettingsEditor::g_detached, FLOAT_FLAGS))
+                        SettingsEditor::DrawContent(CFG_PATH, status_msg, &status_timer);
+                    pos = ImGui::GetWindowPos();
+                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+                    sz = ImGui::GetWindowSize();
+                    ImGui::End();
+                }
+                ImGui::EndTabItem();
+            }
+            // Trailing "Detach" rendered directly in the tab bar's own row
+            // (ImGuiTabItemFlags_Trailing sorts it to the end regardless of
+            // call order). Only shown for the currently active tab while it's
+            // docked. 3D World / Inspector have no detach concept — skipped.
+            bool* active_det = nullptr;
+            switch (s_active_tab) {
+                case 0: active_det = &ItemEditor::g_detached;         break;
+                case 1: active_det = &FactionEditor::g_detached;      break;
+                case 2: active_det = &s_lay.map.detached;             break;
+                case 3: active_det = &s_lay.world.detached;           break;
+                case 5: active_det = &NpcArchetypeEditor::g_detached; break;
+                case 6: active_det = &CharacterEditor::g_detached;    break;
+                case 8: active_det = &SettingsEditor::g_detached;     break;
+                default: break;
+            }
+            if (active_det && !*active_det) {
+                if (ImGui::TabItemButton("Detach", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
+                    *active_det = true;
             }
             ImGui::EndTabBar();
         }
         ImGui::End();
         ImGui::Render();
 
-        // ── SDL_GPU: render terrain RTT + ImGui to swapchain ─────────────────
+        // ── SDL_GPU: render off-screen RTTs + ImGui to swapchain ─────────────
         md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
         if (cmd) {
-            // 1. Render character preview + tile map to off-screen RTTs
+            // 1. Render 3D viewports to their own off-screen RTTs (consumed
+            // by the ImGui::Image calls already recorded above via DrawImGui).
+            if (s_world3d_was_active) WorldEditor3D_SDLGPU::RenderFrame(cmd, dt, true);
             if (s_charpreview_active) CharPreviewSDLGPU::RenderFrame(cmd);
             if (s_mapview_active)     MapViewPanel::Get().RenderFrame(cmd);
 
@@ -627,30 +651,37 @@ int main(int argc, char** argv) {
                     SDL_GPURenderPass* irp=SDL_BeginGPURenderPass(cmd,&ict,1,nullptr);
                     if (irp) { ImGui_ImplSDLGPU3_RenderDrawData(dd,cmd,irp); SDL_EndGPURenderPass(irp); }
                 }
+                char shot_path[256];
+                if (EditorScreenshot_ConsumePending(shot_path, sizeof(shot_path))) {
+                    // Captures the fully-composited frame (3D viewport + ImGui
+                    // chrome) just rendered above. CaptureAndSubmit submits cmd
+                    // itself (fence-waited, required for DownloadFromGPUTexture) —
+                    // do not also call the plain submit below for this frame.
+                    EditorScreenshot_CaptureAndSubmit(gpu, cmd, sc, sw, sh, sc_fmt, shot_path);
+                } else {
+                    md::GpuDevice::Get().Submit(cmd);
+                }
+            } else {
+                md::GpuDevice::Get().Submit(cmd);
             }
-            md::GpuDevice::Get().Submit(cmd);
         }
         window_end_frame();
     }
 
-#ifdef MONKEY_DUST_EDITOR_HOT_RELOAD
-    EditorModule::Get().Shutdown();  // calls editor_panels_shutdown() → saves layout
-#else
-    // Save panel layout before shutdown (non-hot-reload path)
+    // Save panel layout before shutdown
     {
-        EditorLayout::Layout lay;
-        EditorLayout::Load(LAYOUT_PATH, lay);  // preserve map/world/terrain/hmap/world3d
-        lay.items    = {ItemEditor::g_detached,         ItemEditor::g_win_pos,         ItemEditor::g_win_size};
-        lay.factions = {FactionEditor::g_detached,      FactionEditor::g_win_pos,      FactionEditor::g_win_size};
-        lay.npcs     = {NpcArchetypeEditor::g_detached, NpcArchetypeEditor::g_win_pos, NpcArchetypeEditor::g_win_size};
-        lay.chars    = {CharacterEditor::g_detached,    CharacterEditor::g_win_pos,    CharacterEditor::g_win_size};
-        EditorLayout::Save(LAYOUT_PATH, lay);
+        s_lay.items    = {ItemEditor::g_detached,         ItemEditor::g_win_pos,         ItemEditor::g_win_size};
+        s_lay.factions = {FactionEditor::g_detached,      FactionEditor::g_win_pos,      FactionEditor::g_win_size};
+        s_lay.npcs     = {NpcArchetypeEditor::g_detached, NpcArchetypeEditor::g_win_pos, NpcArchetypeEditor::g_win_size};
+        s_lay.chars    = {CharacterEditor::g_detached,    CharacterEditor::g_win_pos,    CharacterEditor::g_win_size};
+        s_lay.settings = {SettingsEditor::g_detached,     SettingsEditor::g_win_pos,     SettingsEditor::g_win_size};
+        // map/world updated live above; terrain/world3d untouched here.
+        EditorLayout::Save(LAYOUT_PATH, s_lay);
     }
     // See WorldEditor3D_SDLGPU::Shutdown()'s doc comment — must run before
     // GpuDevice::Get().Shutdown() below.
     WorldEditor3D_SDLGPU::Shutdown();
     EditorCore::Get().Shutdown();
-#endif
 #if defined(MD_RENDER_BACKEND_GRANITE) && defined(MD_USE_GRANITE)
     md::editor::GraniteImGuiBridge_Shutdown();
     md::GraniteBackend::Get().Shutdown();
