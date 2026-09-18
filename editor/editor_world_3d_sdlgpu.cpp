@@ -16,8 +16,6 @@
 #include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #include <monkey_dust/render/terrain_quadtree_renderer.h>
-#include <monkey_dust/render/terrain_tin_mesh.h>
-#include <monkey_dust/render/terrain_tin_renderer.h>
 #include <monkey_dust/world/terrain_quadtree.h>
 #include <monkey_dust/render/prop_renderer.h>
 #include <monkey_dust/render/gpu_device.h>
@@ -89,34 +87,6 @@ static bool  s_granite_ready = false;
 static TerrainQuadtree         s_quadtree;
 static TerrainQuadtreeRenderer s_quadtree_renderer;
 static bool s_quadtree_ready = false;
-
-// TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): mirrors the game's
-// SceneRender::terrain_tin_mesh_/terrain_tin_renderer_ -- same single
-// baked debug zone (kTinDebugZoneX/Z), same presence-gated load, defaults
-// ON to match the game's tin_debug_zone_enabled_ default flip (owner
-// decision, 2026-09-17). This viewport's own EDITOR_TNKN=64 (full-world)
-// window means the "zone outside streamed window" footgun the game hit
-// on zone(28,16) does not apply here -- every zone's height data is
-// always resident.
-static TerrainTinMesh     s_tin_mesh;
-static TerrainTinRenderer s_tin_renderer;
-static bool  s_tin_debug_zone_enabled = true;
-static constexpr int   kTinDebugZoneX = 27;
-static constexpr int   kTinDebugZoneZ = 25;
-static constexpr float kTinChunkSizeM = 460.8f;
-
-// WARNING (2026-09-17, unresolved): live-verified real GPU HANG (not just
-// VK_ERROR_DEVICE_LOST -- a `timeout 55` process wrapper failed to kill it
-// after 4+ minutes stuck) navigating DIRECTLY to this zone in the editor's
-// 3D World tab (md.editor_select_zone(27, 25) as the FIRST zone visited).
-// A prior visit to a DIFFERENT zone then switching to 27,25 also device-
-// losts (non-fatal that time). Zone-switch to any OTHER zone (e.g. 23,29 ->
-// 30,30) is stable. TIN mesh WIREFRAME draw is already disabled (see
-// s_wire_visible_count's doc comment in DrawTerrainGBuffer) -- this hang
-// happens even so, root cause NOT found (suspect: s_tin_mesh's loaded-but-
-// unused GPU buffers, or a camera/height quirk specific to these
-// coordinates). Do not navigate here in --exec scenarios until this is
-// root-caused.
 
 // 2026-09-17 (owner decision): editor's 3D World tab replaces textured
 // terrain shading (TerrainShadingProjected G-buffer+resolve) with a
@@ -485,15 +455,6 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         // per-node path as fallback for the rare case batched init fails.
         s_quadtree_renderer.InitBatchedWireframe(md::GpuDevice::Get().SDLDevice());
         s_quadtree_renderer.InitWireframe(md::GpuDevice::Get().SDLDevice());
-        // TIN Etap 2 Stage 1 (docs/TIN_ETAP2_PLAN.md): presence-gated --
-        // no-op if the bake hasn't been run for kTinDebugZoneX/Z. Not
-        // InitWireframe -- live-verified VK_ERROR_DEVICE_LOST, disabled,
-        // see s_wire_visible_count's doc comment (DrawTerrainGBuffer).
-        s_tin_renderer.Init(md::GpuDevice::Get().SDLDevice());
-        char tin_path[256];
-        snprintf(tin_path, sizeof(tin_path), "game/data/terrain_tin_baked/zone_%d_%d.bin",
-                  kTinDebugZoneX, kTinDebugZoneZ);
-        s_tin_mesh.Init(md::GpuDevice::Get().SDLDevice(), tin_path);
         s_props.Init("game/data/props/rock_01.glb", 0.f); // no-op if missing; 0=rock diffuse
         s_terrain.InitKenshiOverlay(op);
         s_terrain.InitGroundTextureArray();
@@ -572,8 +533,6 @@ void Shutdown() {
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     s_quadtree_renderer.Shutdown(dev);
     s_quadtree_ready = false;
-    s_tin_renderer.Shutdown(dev);
-    s_tin_mesh.Shutdown();
     s_props.Shutdown();
     s_terrain.Shutdown();
     s_granite_hmap.Shutdown(dev);
@@ -719,19 +678,6 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
                                               s_wire_visible_nodes, TerrainQuadtree::kMaxNodesPublic,
                                               kAerialMaxRenderDistance);
 
-    // TIN Etap 2 Stage 1 wireframe (docs/TIN_ETAP2_PLAN.md): DISABLED
-    // (2026-09-17) -- live-verified crash, VK_ERROR_DEVICE_LOST, isolated
-    // via VK_LAYER_KHRONOS_validation to specifically TerrainTinRenderer::
-    // DrawMeshWireframe (the quadtree's OWN batched-wireframe path alone,
-    // same LINE fillmode, is stable -- proven via a same-zone double-
-    // screenshot isolation test). Root cause not yet found (suspect: LINE
-    // fillmode + a REAL vertex buffer, vs. the quadtree's procedural VTF-
-    // sampled vertex-buffer-less draw, may hit a distinct, undocumented
-    // Gen9 ANV driver bug -- unconfirmed, needs a RenderDoc capture before
-    // any real fix). Leaving the TIN zone's quadtree tiles compacted IN
-    // (no zone-hole) until this is investigated -- tests/editor_scenarios/
-    // verify_w3d_tin_only.lua / verify_w3d_double_shot_baseline.lua
-    // capture the isolation repro.
     s_wire_visible_count = qt_count;
 
     // task БОРГ-VISUAL-3 follow-up (2026-09-06, FPS investigation): this

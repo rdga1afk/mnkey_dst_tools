@@ -191,22 +191,6 @@ python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png \
 
 ---
 
-### `tin_etap1_spike.py` — Delaunay/TIN Terrain Mesh Feasibility Spike
-
-Adaptive Delaunay triangulation of real Kenshi heightmap data (`fullmap.tif`), batch
-error-driven point insertion (same algorithm class as Recast's `buildPolyDetail`, not a
-port), compared against the current `TerrainQuadtree` baseline on triangle count and RMSE.
-
-```bash
-python3 tools/tin_etap1_spike.py --zone 28,16 --max-error 0.3 --point-budget 6000
-```
-
-Result: GO verdict (`docs/TIN_ETAP1_SPIKE_RESULT.md`) — 64–65% triangle reduction at
-equal-or-better RMSE on 2 real zones (mountain cluster + flat terrain). Stage-0 spike only,
-not integrated into the engine.
-
----
-
 ### `krok3_decompose_spike.py` — Detail-Texture Color/Structure Decompose Feasibility
 
 Offline numerical + visual check: does separating a flat per-layer colour tint from an
@@ -277,7 +261,6 @@ tools/
   md_biome_import.py   ← Biome map JSON import
   md_heightmap_import.py ← Raw heightmap → atlas format
   md_stitch_terrain.py ← Post-process zone edge stitching
-  tin_etap1_spike.py   ← Delaunay/TIN adaptive terrain-mesh feasibility spike (GO)
   krok3_decompose_spike.py ← Detail-texture colour/structure decompose feasibility (GO)
   qa/game_cmd_driver.py ← Live command/screenshot driver for a running game process
   flare_convert/       ← FLARE INI converter
