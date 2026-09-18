@@ -29,6 +29,11 @@ Usage:
 
     python3 tools/md_bake_tin_terrain_batch.py --center 27 25 --radius 2 \\
         --workers 2 --max-error 0.5 --point-budget 6000
+
+    # Full-world bake (all 64x64 zones, skipping ~900 flat ocean/void ones
+    # and anything already baked) -- real scale, ~1.5-2h at 2 workers:
+    python3 tools/md_bake_tin_terrain_batch.py --range 0 0 63 63 \\
+        --skip-void --skip-existing --workers 2
 """
 import argparse
 import os
@@ -38,6 +43,34 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from md_bake_tin_terrain import bake_zone  # noqa: E402
+from tin_etap1_spike import FULLMAP, ZONE_PX  # noqa: E402
+from md_stitch_tin_normals import main as stitch_main  # noqa: E402
+
+
+def _find_void_zones(zones, threshold):
+    """Full-world bake finding (2026-09-17): the real Kenshi fullmap.tif
+    covers all 64x64 zones at full resolution (confirmed -- 16385x16385 =
+    64*256+1, no smaller embedded sub-region), but ~900/4096 of those
+    zones are flat raw-uint16 0 (ocean/void outside the actual landmass,
+    not a data-source artifact). Baking them wastes real CPU time (each
+    still costs ~1.5-2.5s of triangulation/IO for a mesh that ends up
+    trivially flat) for zero visual gain over the quadtree fallback, which
+    renders the same flat height. threshold is in RAW uint16 units (same
+    units as the source pixels, before the HEIGHT_MAX_M scale) -- default
+    50 was picked by inspecting the real data (every genuine zone found so
+    far has a range in the hundreds-to-thousands; every void zone found so
+    far is exactly 0)."""
+    import numpy as np
+    import tifffile
+    print(f"[batch] scanning {FULLMAP} for void zones (threshold={threshold} raw units)...")
+    arr = tifffile.imread(FULLMAP)
+    void = set()
+    for zx, zz in zones:
+        y0, x0 = zz * ZONE_PX, zx * ZONE_PX
+        patch = arr[y0:y0 + ZONE_PX + 1, x0:x0 + ZONE_PX + 1]
+        if int(patch.max()) - int(patch.min()) <= threshold:
+            void.add((zx, zz))
+    return void
 
 
 def _bake_one(args):
@@ -71,6 +104,18 @@ def main():
     ap.add_argument("--no-boundary-stitch", action="store_true")
     ap.add_argument("--skip-existing", action="store_true",
                      help="skip zones whose .bin already exists in --out-dir")
+    ap.add_argument("--skip-void", action="store_true",
+                     help="skip zones that are flat (ocean/void outside the real landmass) "
+                          "in the source fullmap.tif -- see _find_void_zones' doc comment")
+    ap.add_argument("--void-threshold", type=int, default=50,
+                     help="raw uint16 max-min range at/below which a zone counts as void "
+                          "(default 50, see _find_void_zones)")
+    ap.add_argument("--no-stitch-normals", action="store_true",
+                     help="skip the post-bake cross-zone normal-seam fix (md_stitch_tin_normals.py) "
+                          "-- default is to always run it after a successful bake, since a freshly "
+                          "baked zone's boundary normals disagree with its already-baked neighbors "
+                          "until stitched (game/src/render/scene_render.h's tin_debug_zone_enabled_ "
+                          "doc comment)")
     args = ap.parse_args()
 
     if bool(args.range) == bool(args.center):
@@ -94,6 +139,13 @@ def main():
         skipped = before - len(zones)
         if skipped:
             print(f"[batch] skipping {skipped} already-baked zone(s)")
+
+    if args.skip_void:
+        before = len(zones)
+        void = _find_void_zones(zones, args.void_threshold)
+        zones = [z for z in zones if z not in void]
+        print(f"[batch] skipping {before - len(zones)} void zone(s) "
+              f"(flat in source data, threshold={args.void_threshold})")
 
     if not zones:
         print("[batch] nothing to bake")
@@ -123,6 +175,16 @@ def main():
     elapsed = time.time() - t0
     print(f"\n[batch] done: {ok_count} OK, {fail_count} failed, {elapsed:.1f}s total "
           f"({elapsed/len(zones):.1f}s/zone average, {args.workers} workers)")
+
+    if ok_count and not args.no_stitch_normals:
+        print("\n[batch] stitching cross-zone boundary normals "
+              "(tools/md_stitch_tin_normals.py) ...")
+        stitch_argv, sys.argv = sys.argv, ["md_stitch_tin_normals.py", "--dir", args.out_dir]
+        try:
+            stitch_main()
+        finally:
+            sys.argv = stitch_argv
+
     return 1 if fail_count else 0
 
 

@@ -76,12 +76,27 @@ CHUNK_SIZE_M = 460.8  # TS_CHUNK_SIZE_M -- world metres per zone side
 OUT_DIR = "/tmp/claude-1001/-home-rdga1-rdga1prj-monkeydust/021d5116-7c77-464a-bd69-2b8160c80074/scratchpad"
 
 
+_fullmap_cache = None  # process-local cache -- see load_zone_heights doc comment
+
+
 def load_zone_heights(zx: int, zz: int) -> np.ndarray:
-    """Return (257,257) float32 heightmap in metres for zone (zx,zz), real Kenshi data."""
-    import tifffile
-    print(f"[spike] reading {FULLMAP} (zone {zx},{zz}) ...", flush=True)
-    arr = tifffile.imread(FULLMAP)
-    assert arr.shape == (16385, 16385), f"unexpected fullmap shape {arr.shape}"
+    """Return (257,257) float32 heightmap in metres for zone (zx,zz), real Kenshi data.
+
+    Caches the decoded 16385x16385 fullmap.tif in a module global -- a batch
+    run (tools/md_bake_tin_terrain_batch.py) calls this once per zone from
+    the SAME worker process for potentially thousands of zones; without
+    this, each call re-reads+re-decodes the whole ~537MB image from disk
+    (measured ~0.3s/read even OS-cache-warm) for no reason, since the array
+    never changes within a run -- ~16min wasted across a full 3196-zone
+    world bake at 2 zones re-reading redundantly per pair of calls."""
+    global _fullmap_cache
+    if _fullmap_cache is None:
+        import tifffile
+        print(f"[spike] reading {FULLMAP} (zone {zx},{zz}) ...", flush=True)
+        _fullmap_cache = tifffile.imread(FULLMAP)
+        assert _fullmap_cache.shape == (16385, 16385), \
+            f"unexpected fullmap shape {_fullmap_cache.shape}"
+    arr = _fullmap_cache
     py0, px0 = zz * ZONE_PX, zx * ZONE_PX
     patch = arr[py0: py0 + ZONE_PX + 1, px0: px0 + ZONE_PX + 1].astype(np.float32) \
         * (HEIGHT_MAX_M / 65535.0)
