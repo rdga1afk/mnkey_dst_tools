@@ -12,7 +12,7 @@ summary: "Public tools/ README: editor panels, shader hot-reload, QA scripts, bu
 # monkey_dust — Tools
 
 Editor, asset converter, terrain pipeline, and Flare demo viewer for the monkey_dust engine.
-Depends on [monkey\_dust\_engine](https://github.com/rdga1bot/monkey_dust_engine) as a submodule.
+Depends on [monkey\_dust\_engine](https://github.com/rdga1bot/mnkey_dst_engine) as a submodule.
 
 All tool names use the `md_` prefix (no proprietary asset branding in public repos).
 
@@ -25,7 +25,7 @@ All tool names use the `md_` prefix (no proprietary asset branding in public rep
 > through live hot-reload cycles (paced and rapid-fire F5), not just a unit
 > test.
 
-> **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
+> **Full documentation →** [rdga1bot.github.io/mnkey\_dst\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/mnkey_dst_engine/monkey_dust_docs.html)
 
 ---
 
