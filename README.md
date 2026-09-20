@@ -21,9 +21,11 @@ All tool names use the `md_` prefix (no proprietary asset branding in public rep
 > **ECS backend:** [gaia-ecs](https://github.com/richardbiely/gaia-ecs), sole
 > backend since 2026-09-10 (flecs removed entirely — no build flag needed).
 > The editor's reflection/inspector layer (`EcsReflectBridge`,
-> `editor_reflect_bridge.h`) and Lua automation API (`md.ecs.*`) are verified
-> through live hot-reload cycles (paced and rapid-fire F5), not just a unit
-> test.
+> `editor_reflect_bridge.h`) and Lua automation API (`md.ecs.*`) were verified
+> at the time of the migration through live panel-hot-reload cycles (paced and
+> rapid-fire F5), not just a unit test — the panel-hot-reload mechanism itself
+> was removed 2026-09-17 (see `monkey_dust_editor` below), so this verification
+> path no longer exists as such.
 
 > **Full documentation →** [rdga1bot.github.io/mnkey\_dst\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/mnkey_dst_engine/monkey_dust_docs.html)
 
