@@ -129,15 +129,25 @@ bool EditorScreenshot_CaptureAndSubmit(md::GpuDeviceHandle dev, md::GpuCommandBu
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         return false;
     }
+    // Alpha forced opaque below (not copied from the swapchain): the final
+    // color pass never writes alpha=1 for opaque 3D content (unused for
+    // on-screen presentation, since a window's own backbuffer isn't
+    // alpha-composited against anything) -- every screenshot this produced
+    // had alpha=0 everywhere. Invisible on a monitor, but any real PNG
+    // viewer/tool that respects alpha (unlike a quick RGB-only preview)
+    // renders it as fully transparent. Confirmed live 2026-09-20: a
+    // BAKE_GROUND-stage screenshot looked fine via one image reader but
+    // was blank/checkerboard in the user's actual viewer.
     if (need_bgr_swap) {
         for (uint32_t i = 0; i < w * h; ++i) {
             rgba[i*4+0] = src_px[i*4+2];  // R <- B
             rgba[i*4+1] = src_px[i*4+1];  // G
             rgba[i*4+2] = src_px[i*4+0];  // B <- R
-            rgba[i*4+3] = src_px[i*4+3];  // A
+            rgba[i*4+3] = 255;
         }
     } else {
         memcpy(rgba, src_px, download_size);
+        for (uint32_t i = 0; i < w * h; ++i) rgba[i*4+3] = 255;
     }
     SDL_UnmapGPUTransferBuffer(dev, tb);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
