@@ -62,7 +62,7 @@ Zero dependencies on `game/` sources — compiles without the game repo present 
 > **3D World is view-only** (2026-07-19) — the whole-world (64×64 zone) viewport is for navigation/
 > preview only, no in-viewport terrain brush. Real terrain sculpting is the in-game F3 "Terrain
 > Sculpt" panel (`game/src/editor/editor_terrain_panel.cpp`), which writes directly to the real
-> Kenshi `TerrainAtlas`. The old 2D "Heightmap" brush tab and the 3D World's own macro-geography
+> `TerrainAtlas`. The old 2D "Heightmap" brush tab and the 3D World's own macro-geography
 > brush both painted a separate, now-removed synthetic `md_master_hmap` layer that only ever guided
 > procedural generation (also removed) — neither ever touched real terrain, so removing them lost no
 > real editing capability.
@@ -133,14 +133,13 @@ Baselines stored in `tools/qa/baselines/char_preview/`. Threshold: RMSE < 0.02.
 
 Used to build `world_hmap.r32` from `fullmap.tif`, but with a stale
 `HEIGHT_MAX = 300.0` constant that conflicted with the real, current value
-(`980.0`, real Kenshi scale — see
-`re/re_docs/kenshi/impl_status/CLAUDE_KEN_TERRAIN_SCALE_FIX.md`). Two
-competing, simultaneously-documented ways to build the same artifact was
-a confirmed real risk (`docs/ENGINE_AUDIT.md` §1/§2) — deleted rather than
-left deprecated-in-place, per the resolved decision in
+(`980.0`, real reference-game scale — see the private repo's terrain-scale
+RE notes). Two competing, simultaneously-documented ways to build the same
+artifact was a confirmed real risk (`docs/ENGINE_AUDIT.md` §1/§2) — deleted
+rather than left deprecated-in-place, per the resolved decision in
 `TERRAIN_FIX_PROMPT.md` Stage 1. **Use `tools/tif_to_r32.py`** (documented
-in the root `CLAUDE.md` under "Kenshi Terrain Pipeline" — the sole
-authoritative path).
+in the root `CLAUDE.md` under "Terrain Pipeline" — the sole authoritative
+path).
 
 ---
 
@@ -195,7 +194,7 @@ python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png \
 
 Offline numerical + visual check: does separating a flat per-layer colour tint from an
 achromatic brightness/structure detail texture (Dagor Engine's `land_micro_detail.dshl`
-packing convention as reference, not a port) preserve colour well enough on real Kenshi
+packing convention as reference, not a port) preserve colour well enough on real reference-game
 ground textures to justify the format change.
 
 ```bash
