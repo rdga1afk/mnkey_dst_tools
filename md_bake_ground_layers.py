@@ -253,7 +253,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-size", type=int, default=8192)
     ap.add_argument("--test-crop", type=float, default=0.0,
-                     help="world-units size of a centred test crop (0 = full map)")
+                     help="world-units size of a test crop (0 = full map)")
+    ap.add_argument("--crop-center-x", type=float, default=None,
+                     help="BAKE_GROUND Stage 1 (2026-09-20): world-space X centre "
+                          "of the crop when --test-crop is set (default: world "
+                          "centre, preserving the original behaviour)")
+    ap.add_argument("--crop-center-z", type=float, default=None,
+                     help="same as --crop-center-x, Z axis")
     ap.add_argument("--out", default="tmp_/ground_bake_test.png")
     args = ap.parse_args()
 
@@ -290,8 +296,10 @@ def main():
     out_size = args.out_size
     if args.test_crop > 0:
         crop = args.test_crop
-        origin_x = (WORLD_EXTENT - crop) * 0.5
-        origin_z = (WORLD_EXTENT - crop) * 0.5
+        center_x = args.crop_center_x if args.crop_center_x is not None else WORLD_EXTENT * 0.5
+        center_z = args.crop_center_z if args.crop_center_z is not None else WORLD_EXTENT * 0.5
+        origin_x = center_x - crop * 0.5
+        origin_z = center_z - crop * 0.5
         extent = crop
     else:
         origin_x = 0.0
