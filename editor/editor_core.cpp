@@ -20,10 +20,12 @@
 #include <monkey_dust/platform/input.h>
 #include <monkey_dust/platform/window.h>  // _wnd::ptr() for RelativeMouseMode
 #include <monkey_dust/world/terrain_gen.h>
+#include <monkey_dust/render/light_system.h>
 #include <SDL3/SDL.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 static constexpr float DEG2R = 3.14159265f / 180.f;
 
@@ -377,6 +379,30 @@ void EditorCore::Update(float dt) {
                 ImGui::SetNextItemWidth(220.f);
                 ImGui::SliderFloat("Fly speed (m/s)##fset", &cam_speed, 5.f, 5000.f, "%.0f",
                                    ImGuiSliderFlags_Logarithmic);
+                // 2026-09-20 (docs/RESOLVE_OPT.md session): time-of-day
+                // override, requested after the ambient-probe/live-sun fix
+                // made it hard to verify lighting at a chosen hour without
+                // waiting real minutes (game_time_hours = now_s/60 -- see
+                // logic_tick_orchestration.cpp). LightSystem::Get() (not a
+                // new global) so both this UI and the consumer reach the
+                // same flag through the singleton both already use.
+                ImGui::Separator();
+                ImGui::TextUnformatted("Time of Day");
+                bool timeOv = LightSystem::Get().time_override_enabled;
+                if (ImGui::Checkbox("Override##time_ov", &timeOv))
+                    LightSystem::Get().time_override_enabled = timeOv;
+                if (LightSystem::Get().time_override_enabled) {
+                    ImGui::SetNextItemWidth(220.f);
+                    float h = LightSystem::Get().time_override_hours;
+                    // %02d:%02d display -- game_time_hours is fractional
+                    // (game_time_hours=12.5 == 12:30), same convention
+                    // LightSystem::Tick already uses for day_frac.
+                    int hh = (int)h, mm = (int)((h - (float)hh) * 60.f);
+                    if (ImGui::SliderFloat("Hour##time_ov_h", &h, 0.f, 24.f,
+                                            (std::string(std::to_string(hh)) + ":" +
+                                             (mm < 10 ? "0" : "") + std::to_string(mm)).c_str()))
+                        LightSystem::Get().time_override_hours = fmodf(h, 24.f);
+                }
                 if (ImGui::Button("Save config##fset")) {
                     bool det[6]   = {f3_det_scene, f3_det_ai, f3_det_anim, f3_det_flow, f3_det_debug, f3_det_cam};
                     ImVec2 pos[6] = {f3_pos_scene, f3_pos_ai, f3_pos_anim, f3_pos_flow, f3_pos_debug, f3_pos_cam};
