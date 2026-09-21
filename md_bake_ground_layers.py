@@ -52,6 +52,7 @@ of the map) at low output resolution, for fast visual-sanity iteration
 before committing to the full 8192x8192 bake (task plan step 1a).
 """
 import argparse
+import gc
 import os
 import subprocess
 import sys
@@ -151,9 +152,21 @@ def resolve_zone_biomes(biomemap_png, biomes):
 
 
 def load_ground_tex(dds_path):
-    """DDS -> cached PNG -> (H,W,3) float32 [0,1] numpy array. Uses
+    """DDS -> cached PNG -> (H,W,3) float16 [0,1] numpy array. Uses
     ImageMagick (only available DDS decoder in this environment, per
-    tools/md_stitch_terrain.py's own doc comment)."""
+    tools/md_stitch_terrain.py's own doc comment).
+
+    OOM fix (2026-09-21): a 16384x16384 world-wide bake touches all 124
+    distinct ground textures (game/data/biome_table.txt) at their native
+    ~2048x2048 resolution -- at float32 that's 124*2048*2048*3*4 =~ 6.2GB
+    just for tex_cache's source copies, BEFORE any mip-pyramid or the
+    output canvas's own accum/wsum arrays (~4.3GB at this output size).
+    That combined floor (~10.5GB) left almost no margin on this machine
+    (~11.4GB actually available after other processes) and both OOM runs
+    (b1hywlaxx, bl7vyniec) died climbing toward it. float16 has 10 mantissa
+    bits (~3 decimal digits) -- comfortably more precision than the 8-bit
+    PNG output this bake ultimately writes -- and halves this to ~3.1GB.
+    """
     base = os.path.splitext(os.path.basename(dds_path))[0]
     cache_path = os.path.join(CACHE_DIR, base + ".png")
     if not os.path.exists(cache_path):
@@ -161,18 +174,21 @@ def load_ground_tex(dds_path):
         subprocess.run(["magick", "convert", dds_path, cache_path], check=True,
                         capture_output=True)
     img = np.array(Image.open(cache_path).convert("RGB"), dtype=np.float32) / 255.0
-    return img
+    return img.astype(np.float16)
 
 
 def _downsample_box2x2(tex):
-    """2x2 box-filter downsample, float32 RGB. Same correct box-filter
-    approach as tools/md_bc3_encode.py's _downsample_box (verified
-    mathematically sound this session while investigating a DIFFERENT
-    hypothesis) -- pads odd dims by edge-replication first."""
+    """2x2 box-filter downsample, float16 RGB (accumulated in float32 for
+    precision, then cast back down -- see load_ground_tex's OOM-fix note).
+    Same correct box-filter approach as tools/md_bc3_encode.py's
+    _downsample_box (verified mathematically sound this session while
+    investigating a DIFFERENT hypothesis) -- pads odd dims by edge-
+    replication first."""
     h, w = tex.shape[0], tex.shape[1]
     if h % 2: tex = np.concatenate([tex, tex[-1:]], axis=0); h += 1
     if w % 2: tex = np.concatenate([tex, tex[:, -1:]], axis=1); w += 1
-    return tex.reshape(h // 2, 2, w // 2, 2, -1).mean(axis=(1, 3))
+    out = tex.reshape(h // 2, 2, w // 2, 2, -1).astype(np.float32).mean(axis=(1, 3))
+    return out.astype(np.float16)
 
 
 def build_mip_chain(tex, min_size=4):
@@ -309,8 +325,14 @@ def main():
     print(f"Output canvas: {out_size}x{out_size}, world region "
           f"[{origin_x:.1f},{origin_x+extent:.1f}) x [{origin_z:.1f},{origin_z+extent:.1f})")
 
-    accum = np.zeros((out_size, out_size, 3), dtype=np.float32)
-    wsum  = np.zeros((out_size, out_size, 1), dtype=np.float32)
+    # OOM fix (2026-09-21, 3rd attempt): float32 accum+wsum at 16384^2 cost
+    # ~4.3GB on their own -- float16 (10 mantissa bits, ~3 decimal digits,
+    # comfortably more than an 8-bit PNG output needs) halves that to
+    # ~2.15GB. Values here are always small (colour in [0,1], weight sums
+    # over at most 4 zone corners, so <=~4) -- nowhere near float16's
+    # dynamic-range limits, this is a precision non-issue for this data.
+    accum = np.zeros((out_size, out_size, 3), dtype=np.float16)
+    wsum  = np.zeros((out_size, out_size, 1), dtype=np.float16)
 
     tex_cache = {}
     def get_tex(idx):
@@ -334,6 +356,18 @@ def main():
     # its own equivalent mip chain and sample from the correctly-filtered
     # level instead of always the full-res source.
     meters_per_texel = extent / out_size
+    # OOM fix (2026-09-21): two failed runs (b1hywlaxx, bl7vyniec) both
+    # died climbing toward an unavoidable memory floor -- 124 distinct
+    # ground textures at ~2048x2048 (game/data/biome_table.txt) plus the
+    # 16384x16384 output canvas's accum/wsum arrays. float16 texture
+    # storage (load_ground_tex/_downsample_box2x2 above) roughly halves
+    # that floor. A SECOND, separate bug made bl7vyniec worse than the
+    # original: caching the whole mip PYRAMID per texture idx (instead of
+    # just the one picked level actually used) retained ~1.33x every
+    # source texture permanently -- reverted back to caching only the
+    # picked level per (idx, bucket) key, same as the original design,
+    # rebuilding the (now much cheaper, float16) pyramid transiently and
+    # discarding all but the selected level.
     mip_cache = {}
     def get_prefiltered_tex(idx, tiling_x):
         repeat_span_m = 5000.0 / max(tiling_x, 1e-6)
@@ -483,6 +517,32 @@ def main():
             done += 1
             if done % 200 == 0:
                 print(f"  {done}/{n_zones} zones...", end="\r", flush=True)
+            if done % 400 == 0:
+                gc.collect()  # OOM fix (2026-09-21): fight glibc arena fragmentation
+                try:
+                    with open("/proc/self/status") as f:
+                        rss_line = next(l for l in f if l.startswith("VmRSS"))
+                    rss_kb = int(rss_line.split()[1])
+                    print(f"  [mem] {rss_line.strip()} (mip_cache={len(mip_cache)} keys, "
+                          f"tex_cache={len(tex_cache)} idx)", flush=True)
+                    # Self-abort fix (2026-09-21): two prior runs got
+                    # kernel-SIGKILLed by the OOM reaper (no Python
+                    # traceback, no clean partial state) -- the real ceiling
+                    # on this desktop (with browser/editor sessions open)
+                    # turned out lower than `free -h`'s idle baseline
+                    # suggested (~7.7GB was already fatal). Fail loudly and
+                    # controllably well before that instead of trusting the
+                    # OS to pick a graceful moment.
+                    if rss_kb > 6_000_000:
+                        print(f"\n[ABORT] VmRSS {rss_kb//1024}MB exceeds the "
+                              f"6000MB safety ceiling (OOM killed 2 prior "
+                              f"runs on this desktop around 7-10GB) -- "
+                              f"stopping cleanly at zone {done}/{n_zones} "
+                              f"instead of risking a kernel SIGKILL.",
+                              flush=True)
+                        sys.exit(1)
+                except (OSError, StopIteration):
+                    pass
 
     print(f"\n{done}/{n_zones} zones processed.")
     wsum_safe = np.maximum(wsum, 1e-6)
