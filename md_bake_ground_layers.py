@@ -74,14 +74,66 @@ GROUND_TEX_DIR = "tmp_/kenshi_re/terrain_textures"
 CACHE_DIR      = "tmp_/ground_tex_cache"
 DDS_UV_SCALE   = 1.0 / 5000.0  # matches shaders/terrain_patch.frag
 
+# bake/live cliff_w single-source-of-truth (2026-09-24): per-biome-radius
+# smoothed steepness, single channel, saved separately from the RGB colour
+# bake -- md_bc3_encode.py's alpha channel is hardcoded fully-opaque (its
+# own doc comment), so piggybacking a 4th channel onto md_ground_baked.dds
+# isn't available without rewriting that shared encoder. 2048 matches the
+# per-biome radius's real feature scale (8-16 texels at ~3.6m/texel native
+# = ~29-115m) -- no benefit to the full 16384 colour-bake resolution here.
+STEEPNESS_TARGET_SIZE = 2048
+
 # Same thresholds as shaders/terrain_patch.frag
 SLOPE_MIN, SLOPE_MAX, SLOPE_BLEND = 0.15, 0.55, 0.12
 CLIFF_MIN, CLIFF_MAX, CLIFF_BLEND = 0.50, 1.00, 0.15
+
+# "wing" smear fix (2026-09-23, this session's offline P5/blister_2
+# investigation, not the CLIFF_MIN/MAX/BLEND fallback above -- that triple
+# is parsed into each biome's unused cliff_band field and never consumed
+# anywhere in this file; real live cliff gating uses DIFFERENT numbers, see
+# shaders/terrain_cliff_blend.glsl's TS_CLIFF_MIN/TS_CLIFF_BLEND). Mirrors
+# those exactly -- used below ONLY to build an offline, RAW-steepness
+# estimate of what the live per-pixel cliff_w will do, so the baked slope
+# layer can pre-emptively get out of its way.
+TS_CLIFF_MIN, TS_CLIFF_BLEND = 0.25, 0.15
 
 
 def smoothstep(edge0, edge1, x):
     t = np.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
+
+
+# Per-biome slope-classification blur radius (2026-09-23/24, wing-smear
+# investigation) -- module level so both the colour bake's slope_w
+# classification (main(), below) and the separate steepness-texture pass
+# (bake_steepness_texture(), below) share the exact same formula. Two real,
+# empirically-checked anchor points (A/B screenshots, this session):
+# smin=0.08 needs r=16 (visible ribbing at r=8), smin=0.19 is clean at r=8
+# (no visible ribbing). Interpolate LINEARLY between those two verified
+# points and CLAMP to [8,16] outside them -- deliberately not extrapolating
+# past either tested radius in either direction.
+STEEPNESS_SMIN_LO, STEEPNESS_R_HI = 0.08, 16   # most ribbing-prone biome tested -> most blur
+STEEPNESS_SMIN_HI, STEEPNESS_R_LO = 0.19, 8    # least ribbing-prone biome tested -> least blur
+
+
+def bake_radius_for_smin(smin):
+    t = (smin - STEEPNESS_SMIN_LO) / (STEEPNESS_SMIN_HI - STEEPNESS_SMIN_LO)
+    t = max(0.0, min(1.0, t))
+    return int(round(STEEPNESS_R_HI + t * (STEEPNESS_R_LO - STEEPNESS_R_HI)))
+
+
+# OOM fix (2026-09-24): bounded FIFO cache (default 3 entries, ~400MB
+# ceiling at float16/8193^2 regardless of how many distinct radii exist)
+# instead of an unbounded one -- see bake_steepness_texture's/main's own
+# call sites for the full memory-history doc comment. Module level so the
+# cache (and its eviction behaviour) is identical whichever caller uses it.
+def height_smooth_for_biome(bdict, height, cache, cache_max=3):
+    r = bake_radius_for_smin(bdict["slope_band"][0])
+    if r not in cache:
+        if len(cache) >= cache_max:
+            cache.pop(next(iter(cache)))
+        cache[r] = box_blur_2d(height, r).astype(np.float16)
+    return cache[r]
 
 
 def parse_biome_table(path):
@@ -265,6 +317,85 @@ def box_blur_2d(a, r):
     return s2 / (k * k)
 
 
+def bake_steepness_texture(biomes, zone_biome_idx, height, height_smooth_cache,
+                            out_path, origin_x, origin_z, extent, color_out_size):
+    """bake/live cliff_w single-source-of-truth companion (2026-09-24) --
+    deliberately a SEPARATE pass from main()'s colour bake, not folded into
+    that same per-zone loop. An earlier version accumulated steepness
+    inside the colour loop at the SAME (up to 16384) resolution and
+    self-aborted twice on this desktop (confirmed, identical VmRSS
+    trajectory both times) once the per-biome-radius height_smooth_cache
+    needed multiple simultaneous radii live at once. This pass needs no
+    ground-texture sampling (tex_cache/mip_cache) and only needs
+    STEEPNESS_TARGET_SIZE resolution in the end (the per-biome radius's
+    real feature scale is ~29-115m -- no benefit to the colour bake's full
+    resolution here) -- called AFTER main() frees its big colour-bake
+    arrays, at its own much smaller canvas, so the two never compete for
+    memory at once."""
+    out_size = min(STEEPNESS_TARGET_SIZE, color_out_size)
+    accum = np.zeros((out_size, out_size, 1), dtype=np.float32)
+    wsum  = np.zeros((out_size, out_size, 1), dtype=np.float32)
+
+    def world_to_texel(wx, wz):
+        tx = (wx - origin_x) / extent * out_size
+        ty = (wz - origin_z) / extent * out_size
+        return tx, ty
+
+    zx_min = max(0, int((origin_x - CHUNK_SIZE_M) / CHUNK_SIZE_M) - 1)
+    zx_max = min(ATLAS_ZONES - 1, int((origin_x + extent + CHUNK_SIZE_M) / CHUNK_SIZE_M) + 1)
+    zz_min = max(0, int((origin_z - CHUNK_SIZE_M) / CHUNK_SIZE_M) - 1)
+    zz_max = min(ATLAS_ZONES - 1, int((origin_z + extent + CHUNK_SIZE_M) / CHUNK_SIZE_M) + 1)
+
+    for zy in range(zz_min, zz_max + 1):
+        for zx in range(zx_min, zx_max + 1):
+            b = biomes[zone_biome_idx[zy, zx]]
+
+            wx0 = (zx - 0.5) * CHUNK_SIZE_M
+            wx1 = (zx + 1.5) * CHUNK_SIZE_M
+            wz0 = (zy - 0.5) * CHUNK_SIZE_M
+            wz1 = (zy + 1.5) * CHUNK_SIZE_M
+            tx0, tz0 = world_to_texel(wx0, wz0)
+            tx1, tz1 = world_to_texel(wx1, wz1)
+            ix0, ix1 = max(0, int(np.floor(tx0))), min(out_size, int(np.ceil(tx1)))
+            iz0, iz1 = max(0, int(np.floor(tz0))), min(out_size, int(np.ceil(tz1)))
+            if ix1 <= ix0 or iz1 <= iz0:
+                continue
+
+            tex_x = np.arange(ix0, ix1)
+            tex_z = np.arange(iz0, iz1)
+            wx = origin_x + (tex_x + 0.5) / out_size * extent
+            wz = origin_z + (tex_z + 0.5) / out_size * extent
+            WX, WZ = np.meshgrid(wx, wz)
+
+            zc_x = WX / CHUNK_SIZE_M - 0.5
+            zc_z = WZ / CHUNK_SIZE_M - 0.5
+            wgt_x = np.clip(1.0 - np.abs(zc_x - zx), 0.0, 1.0)
+            wgt_z = np.clip(1.0 - np.abs(zc_z - zy), 0.0, 1.0)
+            weight = wgt_x * wgt_z
+            if not np.any(weight > 0.0):
+                continue
+
+            height_smooth = height_smooth_for_biome(b, height, height_smooth_cache)
+            hx = np.clip(WX / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
+            hz = np.clip(WZ / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
+            h_xp = height_smooth[hz, hx + 1]; h_xn = height_smooth[hz, hx - 1]
+            h_zp = height_smooth[hz + 1, hx]; h_zn = height_smooth[hz - 1, hx]
+            step_m = WORLD_EXTENT / (FULL_SIZE - 1) * 2.0
+            dhdx = (h_xp.astype(np.float32) - h_xn.astype(np.float32)) / step_m
+            dhdz = (h_zp.astype(np.float32) - h_zn.astype(np.float32)) / step_m
+            n_len = np.sqrt(dhdx * dhdx + dhdz * dhdz + 1.0)
+            steepness = 1.0 - 1.0 / n_len
+
+            accum[iz0:iz1, ix0:ix1, 0] += steepness * weight
+            wsum[iz0:iz1, ix0:ix1, 0]  += weight
+
+    wsum_safe = np.maximum(wsum, 1e-6)
+    final_steepness = np.clip(accum / wsum_safe, 0.0, 1.0)[..., 0]
+    steep_img = (final_steepness * 255.0).astype(np.uint8)
+    Image.fromarray(steep_img, "L").save(out_path)
+    print(f"Saved steepness: {out_path} ({steep_img.shape[1]}x{steep_img.shape[0]})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-size", type=int, default=8192)
@@ -277,6 +408,9 @@ def main():
     ap.add_argument("--crop-center-z", type=float, default=None,
                      help="same as --crop-center-x, Z axis")
     ap.add_argument("--out", default="tmp_/ground_bake_test.png")
+    ap.add_argument("--steepness-out", default="game/data/textures/md_ground_steepness_smoothed.png",
+                     help="single-channel per-biome-radius smoothed steepness, "
+                          "for live cliff_w to match the bake's slope_w classification")
     args = ap.parse_args()
 
     print("Loading biome_table.txt / biomemap / overlay mask / heightmap...")
@@ -301,13 +435,42 @@ def main():
     # never resolving this fine a signal -- our per-texel heightmap-derived
     # steepness is higher-frequency than any real mesh could ever be, so it
     # needs deliberate smoothing to represent the same "generally sloped or
-    # not" classification instead of tracing every small bump. Blur radius
-    # 16 texels (~58m) picked empirically (tmp_/diag_slope_ribbing.py-style
-    # A/B: r=8 still showed the pattern faintly, r=16 removed it while
-    # keeping real ridge/cliff-edge transitions intact). GEOMETRY (the
+    # not" classification instead of tracing every small bump. GEOMETRY (the
     # actual heightmap used elsewhere) is untouched -- this smoothed copy
     # is used ONLY for the slope_w material-blend classification below.
-    height_smooth = box_blur_2d(height, 16)
+    #
+    # Per-biome radius (2026-09-23, wing-smear follow-up): a single GLOBAL
+    # r=16 (~58m) was originally picked empirically as whatever the WORST
+    # biome (floodwastes_2, smin=0.08 -- almost-flat activation threshold,
+    # extremely ribbing-prone) needed (r=8 still showed the pattern faintly
+    # there, confirmed again this session). But r=16 also over-smooths
+    # biomes with a much higher smin (e.g. blister_2's 0.19 -- genuinely
+    # sloped before the band even engages, far less ribbing-prone), and that
+    # over-smoothing is exactly what widened the P5 "wing" smear mismatch
+    # against the live shader's raw, unsmoothed cliff_w gate (see this
+    # session's slope_w-suppression fix just above the col blend below).
+    # Two real, empirically-checked anchor points (this session, offline,
+    # A/B screenshots): smin=0.08 needs r=16 (visible ribbing at r=8),
+    # smin=0.19 is clean at r=8 (no visible ribbing). Interpolate LINEARLY
+    # between those two verified points and CLAMP to [8,16] outside them --
+    # deliberately not extrapolating past either tested radius in either
+    # direction (no biome gets less smoothing than the validated-clean r=8
+    # floor, none gets more than the validated-clean r=16 ceiling).
+    # OOM fix (2026-09-24, full 16384 production run): ALL 9 possible radii
+    # (8-16) are genuinely touched somewhere on the real map (checked
+    # directly against every zone's actual biome) -- caching all 9 full
+    # 8193x8193 blurred-height copies, even at float16 (~134MB each), is
+    # ~1.2GB, confirmed (2 runs, both self-aborted at zone 1600/4096,
+    # identical VmRSS trajectory) as what pushed this session's per-biome-
+    # radius addition past the 6000MB self-abort ceiling -- the single-
+    # global-height_smooth design this replaced only ever paid ~268MB once.
+    # Bounded FIFO cache (3 entries, ~400MB ceiling regardless of how many
+    # distinct radii exist) instead of an unbounded one: zones iterate in
+    # (zx,zy) nested order and biomes are spatially clustered, so
+    # consecutive zones mostly share the same radius -- a small cache still
+    # catches most reuse, recomputing box_blur_2d (cheap, O(N) via cumsum)
+    # on the rarer cross-biome-boundary miss instead of holding everything.
+    height_smooth_cache = {}  # dict preserves insertion order (py3.7+)
 
     out_size = args.out_size
     if args.test_crop > 0:
@@ -434,9 +597,10 @@ def main():
                 continue
 
             # Heightmap-derived steepness (central difference on the
-            # SMOOTHED height field -- see height_smooth's doc comment
+            # SMOOTHED height field -- see the per-biome radius doc comment
             # above for why the raw per-texel field aliased into visible
-            # ribbing here).
+            # ribbing here, and why the radius is now per-biome not global).
+            height_smooth = height_smooth_for_biome(b, height, height_smooth_cache)
             hx = np.clip(WX / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
             hz = np.clip(WZ / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
             h_xp = height_smooth[hz, hx + 1]; h_xn = height_smooth[hz, hx - 1]
@@ -455,6 +619,58 @@ def main():
             smin, smax, sblend = b["slope_band"]
             slope_w = smoothstep(smin - sblend, smin, steepness) * \
                       smoothstep(smax + sblend, smax, steepness)
+
+            # "wing" smear fix (2026-09-23): slope_w above comes from the
+            # SMOOTHED (58m box-blur) height field -- deliberately, to avoid
+            # the "ribbing" bug (see height_smooth's doc comment). But the
+            # LIVE per-pixel cliff_w (terrain_cliff_blend.glsl) gates off a
+            # RAW, unsmoothed per-vertex normal (terrain_quadtree.vert always
+            # samples normalLod=0 -- kFlatLodDepth's texelSize exactly equals
+            # the world normal map's native texel, so its own coarser-mip
+            # path never actually engages). On genuinely sloped terrain with
+            # a low per-biome smin (e.g. blister_2's 0.19), this means the
+            # bake's smoothed mask can be solidly ON (slope_w~1) across a
+            # region where the raw live signal is locally noisy and dips
+            # cliff_w below saturation -- the live triplanar cliff render
+            # then fails to fully cover this bake's flat, top-down-projected
+            # "slope" texture there, visible as a soft, wing-shaped smear
+            # (confirmed offline this session: 31% of this biome's baked-on
+            # area was "unrescued" this way, P5/zone 24,12).
+            #
+            # Measured trade-offs of the two naive fixes (both offline, no
+            # live game launch, this session):
+            #   - Matching live to the bake's smoothing (coarser normalLod):
+            #     REJECTED. Box-averaging normal VECTORS suppresses apparent
+            #     steepness far faster than blurring HEIGHT then differencing
+            #     does -- swept radii showed monotonically WORSE (not better)
+            #     coverage at every step tried.
+            #   - Matching the bake to live's raw signal (dropping
+            #     height_smooth here): closes the gap (31%->6.3%) but
+            #     reintroduces the exact "ribbing" artifact height_smooth was
+            #     added to fix (edge-energy metric ~24x worse) -- swaps one
+            #     visible bug for a previously-fixed one, not a clean win.
+            #
+            # This is the safer middle path that survived both checks: build
+            # a SEPARATE raw-steepness estimate of live cliff_w (same formula
+            # the live shader uses, TS_CLIFF_MIN/TS_CLIFF_BLEND, but on the
+            # UNSMOOTHED height field -- i.e. what the live pixel will
+            # actually decide), and pre-emptively fade the baked slope
+            # contribution out wherever that estimate says live cliff
+            # rendering will already dominate. Does not touch height_smooth
+            # (ribbing-safe, unchanged) and needs no live shader change
+            # (Variant 1 stays rejected). Measured effect (P5 crop, this
+            # session): ~15.5% fewer strongly-visible smear pixels -- a real,
+            # safe, but PARTIAL mitigation, not a full fix.
+            hx_r = np.clip(WX / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
+            hz_r = np.clip(WZ / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
+            h_xp_r = height[hz_r, hx_r + 1]; h_xn_r = height[hz_r, hx_r - 1]
+            h_zp_r = height[hz_r + 1, hx_r]; h_zn_r = height[hz_r - 1, hx_r]
+            dhdx_r = (h_xp_r - h_xn_r) / step_m
+            dhdz_r = (h_zp_r - h_zn_r) / step_m
+            n_len_r = np.sqrt(dhdx_r * dhdx_r + dhdz_r * dhdz_r + 1.0)
+            steepness_raw = 1.0 - 1.0 / n_len_r
+            cliff_w_raw_estimate = smoothstep(TS_CLIFF_MIN - TS_CLIFF_BLEND, TS_CLIFF_MIN, steepness_raw)
+            slope_w = slope_w * (1.0 - cliff_w_raw_estimate)
 
             # Overlay mask (grass/dirt/road), sampled at overlay UV. Reuse
             # the SAME world->overlay UV convention as tex_colour: assume
@@ -553,6 +769,23 @@ def main():
     out_img = (final * 255.0).astype(np.uint8)
     Image.fromarray(out_img, "RGB").save(args.out)
     print(f"Saved: {args.out}")
+
+    # OOM fix (2026-09-24): free the colour-bake's big arrays (accum/wsum
+    # alone are ~2.1GB at 16384, tex_cache/mip_cache add more) BEFORE the
+    # steepness pass below, instead of running both simultaneously -- an
+    # earlier version accumulated steepness inside the SAME loop at the
+    # SAME 16384 resolution and self-aborted twice (confirmed, identical
+    # VmRSS trajectory both times) once the per-biome-radius height_smooth_
+    # cache above needed multiple simultaneous radii. The steepness pass
+    # needs none of this (no texture sampling, pure heightmap math) and
+    # only needs STEEPNESS_TARGET_SIZE resolution in the end -- running it
+    # after freeing color's memory, at its own much smaller resolution,
+    # avoids the conflict at its root instead of tuning cache sizes to fit.
+    del accum, wsum, wsum_safe, final, out_img, tex_cache, mip_cache
+    gc.collect()
+
+    bake_steepness_texture(biomes, zone_biome_idx, height, height_smooth_cache,
+                            args.steepness_out, origin_x, origin_z, extent, out_size)
 
 
 if __name__ == "__main__":
