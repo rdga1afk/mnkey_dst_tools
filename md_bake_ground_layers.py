@@ -264,6 +264,35 @@ def pick_prefiltered_mip(mip_chain, target_res):
     return best
 
 
+def central_diff_steepness(h_xp, h_xn, h_zp, h_zn, step_m):
+    """Central-difference steepness from 4 neighbour height samples
+    (surgical-simplicity audit, docs/SURGICAL_SIMPLICITY_AUDIT_2026-09.md
+    §2 -- 3 call sites shared this formula). steepness = 1 - 1/|grad|,
+    grad = (dh/dx, dh/dz, 1). Deliberately does NOT cast inputs -- callers
+    differ in whether their height field needs a float16->float32 upcast
+    first (bake_steepness_texture's height_smooth_for_biome() returns
+    float16; the two call sites in the main per-zone loop don't upcast,
+    a real precision difference noticed while extracting this, not
+    silently fixed here -- see this function's call sites)."""
+    dhdx = (h_xp - h_xn) / step_m
+    dhdz = (h_zp - h_zn) / step_m
+    n_len = np.sqrt(dhdx * dhdx + dhdz * dhdz + 1.0)
+    return 1.0 - 1.0 / n_len
+
+
+def _bilinear_blend(tex, x0m, x1m, y0m, y1m, tx, ty):
+    """Shared tail of sample_bilinear_wrap/sample_bilinear_clamp (surgical-
+    simplicity audit, docs/SURGICAL_SIMPLICITY_AUDIT_2026-09.md §2) --
+    given already-resolved (wrapped or clamped) integer neighbour indices
+    and fractional weights, do the actual 4-tap bilinear blend."""
+    c00 = tex[y0m, x0m]; c10 = tex[y0m, x1m]
+    c01 = tex[y1m, x0m]; c11 = tex[y1m, x1m]
+    tx = tx[..., None]; ty = ty[..., None]
+    top = c00 * (1 - tx) + c10 * tx
+    bot = c01 * (1 - tx) + c11 * tx
+    return top * (1 - ty) + bot * ty
+
+
 def sample_bilinear_wrap(tex, u, v):
     """tex: (H,W,3) float32. u,v: same-shape float arrays, any range
     (wrapped, GL_REPEAT). Bilinear, matches GPU LINEAR+REPEAT sampling."""
@@ -275,12 +304,7 @@ def sample_bilinear_wrap(tex, u, v):
     tx = fu - x0; ty = fv - y0
     x0m = x0 % w; x1m = x1 % w
     y0m = y0 % h; y1m = y1 % h
-    c00 = tex[y0m, x0m]; c10 = tex[y0m, x1m]
-    c01 = tex[y1m, x0m]; c11 = tex[y1m, x1m]
-    tx = tx[..., None]; ty = ty[..., None]
-    top = c00 * (1 - tx) + c10 * tx
-    bot = c01 * (1 - tx) + c11 * tx
-    return top * (1 - ty) + bot * ty
+    return _bilinear_blend(tex, x0m, x1m, y0m, y1m, tx, ty)
 
 
 def sample_bilinear_clamp(tex, u, v):
@@ -295,12 +319,7 @@ def sample_bilinear_clamp(tex, u, v):
     tx = fu - x0; ty = fv - y0
     x0m = np.clip(x0, 0, w - 1); x1m = np.clip(x1, 0, w - 1)
     y0m = np.clip(y0, 0, h - 1); y1m = np.clip(y1, 0, h - 1)
-    c00 = tex[y0m, x0m]; c10 = tex[y0m, x1m]
-    c01 = tex[y1m, x0m]; c11 = tex[y1m, x1m]
-    tx = tx[..., None]; ty = ty[..., None]
-    top = c00 * (1 - tx) + c10 * tx
-    bot = c01 * (1 - tx) + c11 * tx
-    return top * (1 - ty) + bot * ty
+    return _bilinear_blend(tex, x0m, x1m, y0m, y1m, tx, ty)
 
 
 def box_blur_2d(a, r):
@@ -381,10 +400,8 @@ def bake_steepness_texture(biomes, zone_biome_idx, height, height_smooth_cache,
             h_xp = height_smooth[hz, hx + 1]; h_xn = height_smooth[hz, hx - 1]
             h_zp = height_smooth[hz + 1, hx]; h_zn = height_smooth[hz - 1, hx]
             step_m = WORLD_EXTENT / (FULL_SIZE - 1) * 2.0
-            dhdx = (h_xp.astype(np.float32) - h_xn.astype(np.float32)) / step_m
-            dhdz = (h_zp.astype(np.float32) - h_zn.astype(np.float32)) / step_m
-            n_len = np.sqrt(dhdx * dhdx + dhdz * dhdz + 1.0)
-            steepness = 1.0 - 1.0 / n_len
+            steepness = central_diff_steepness(h_xp.astype(np.float32), h_xn.astype(np.float32),
+                                                h_zp.astype(np.float32), h_zn.astype(np.float32), step_m)
 
             accum[iz0:iz1, ix0:ix1, 0] += steepness * weight
             wsum[iz0:iz1, ix0:ix1, 0]  += weight
@@ -606,11 +623,7 @@ def main():
             h_xp = height_smooth[hz, hx + 1]; h_xn = height_smooth[hz, hx - 1]
             h_zp = height_smooth[hz + 1, hx]; h_zn = height_smooth[hz - 1, hx]
             step_m = WORLD_EXTENT / (FULL_SIZE - 1) * 2.0
-            dhdx = (h_xp - h_xn) / step_m
-            dhdz = (h_zp - h_zn) / step_m
-            n_len = np.sqrt(dhdx * dhdx + dhdz * dhdz + 1.0)
-            n_y = 1.0 / n_len
-            steepness = 1.0 - n_y
+            steepness = central_diff_steepness(h_xp, h_xn, h_zp, h_zn, step_m)
 
             # Per-biome slope-band threshold (real FCS "slope min/max/fade 1",
             # confirmed against terrainfp4.hlsl's weights.x) -- falls back to
@@ -665,10 +678,7 @@ def main():
             hz_r = np.clip(WZ / WORLD_EXTENT * (FULL_SIZE - 1), 1, FULL_SIZE - 2).astype(np.int64)
             h_xp_r = height[hz_r, hx_r + 1]; h_xn_r = height[hz_r, hx_r - 1]
             h_zp_r = height[hz_r + 1, hx_r]; h_zn_r = height[hz_r - 1, hx_r]
-            dhdx_r = (h_xp_r - h_xn_r) / step_m
-            dhdz_r = (h_zp_r - h_zn_r) / step_m
-            n_len_r = np.sqrt(dhdx_r * dhdx_r + dhdz_r * dhdz_r + 1.0)
-            steepness_raw = 1.0 - 1.0 / n_len_r
+            steepness_raw = central_diff_steepness(h_xp_r, h_xn_r, h_zp_r, h_zn_r, step_m)
             cliff_w_raw_estimate = smoothstep(TS_CLIFF_MIN - TS_CLIFF_BLEND, TS_CLIFF_MIN, steepness_raw)
             slope_w = slope_w * (1.0 - cliff_w_raw_estimate)
 
