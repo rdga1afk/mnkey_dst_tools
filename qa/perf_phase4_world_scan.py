@@ -82,6 +82,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_cmd_driver import Driver, median  # noqa: E402
+from qa_stats import percentile as _percentile  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "game" / "data" / "terrain_config.txt"
@@ -119,12 +120,7 @@ def parse_valid_zones(path: Path):
 
 
 def percentile(xs, p):
-    s = sorted(xs)
-    n = len(s)
-    if n == 0:
-        return 0.0
-    idx = max(0, min(n - 1, int(round(p * (n - 1)))))
-    return s[idx]
+    return _percentile(xs, p, method="nearest_round")
 
 
 def main() -> int:

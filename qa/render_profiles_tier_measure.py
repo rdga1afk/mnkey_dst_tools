@@ -48,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_cmd_driver import Driver  # noqa: E402
+from qa_stats import percentile  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RENDER_SETTINGS_PATH = REPO_ROOT / "data" / "render_settings.json"
@@ -69,17 +70,6 @@ SETTLE_S = 8.0
 N_SAMPLES = 40
 SAMPLE_INTERVAL_S = 5.0
 FREQ_SAMPLE_INTERVAL_S = 0.2
-
-
-def percentile(vals, p):
-    if not vals:
-        return float("nan")
-    s = sorted(vals)
-    k = (len(s) - 1) * p
-    f, c = int(k), min(int(k) + 1, len(s) - 1)
-    if f == c:
-        return s[f]
-    return s[f] + (s[c] - s[f]) * (k - f)
 
 
 def write_render_settings(tier):

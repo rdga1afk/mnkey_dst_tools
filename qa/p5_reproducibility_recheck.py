@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_cmd_driver import Driver, STDOUT_PATH  # noqa: E402
+from qa_stats import percentile  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_EXE = REPO_ROOT / "build_release" / "game" / "monkey_dust"
@@ -36,17 +37,6 @@ PERF_RE = re.compile(
     r"TerrainPendingMax=(\d+)\((\d+)/(\d+)fr>0\) VtResidentMax=(\d+) \| "
     r".*?RenderTotal=([\d.]+)ms\(max([\d.]+)\)"
 )
-
-
-def percentile(vals, p):
-    if not vals:
-        return float("nan")
-    s = sorted(vals)
-    k = (len(s) - 1) * p
-    f, c = int(k), min(int(k) + 1, len(s) - 1)
-    if f == c:
-        return s[f]
-    return s[f] + (s[c] - s[f]) * (k - f)
 
 
 def main() -> int:
