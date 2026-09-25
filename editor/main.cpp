@@ -71,6 +71,34 @@ static EcsBridgeWorldT* s_ecs_world = nullptr;
 // Persistent panel layout (all tabs). Loaded at startup, saved at shutdown.
 static EditorLayout::Layout s_lay;
 
+// Docked/floating tab-panel chrome, shared by every dockable tab in the
+// bar below (Items/Factions/Map/World/NPCs/Characters/Settings all
+// repeated this ~18-line block before consolidation -- surgical-
+// simplicity audit, docs/SURGICAL_SIMPLICITY_AUDIT_2026-09.md §2).
+// Tab-specific bits (BeginTabItem flags, the draw call itself, whether
+// it reports a "saved!" status message) stay at each call site via the
+// draw lambda; this only owns the docked-vs-floating window plumbing.
+template <typename DrawFn>
+static void DrawDockableTab(const char* label, bool& detached, ImVec2& pos, ImVec2& size,
+                             float toolbar_h, float cursor_x, DrawFn&& draw) {
+    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
+    if (!detached) {
+        ImGui::SetCursorPos({cursor_x, ImGui::GetCursorPosY() + 4});
+        draw();
+        return;
+    }
+    if (pos.y < min_y) pos.y = min_y;
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
+    char float_label[128];
+    snprintf(float_label, sizeof(float_label), "%s##float", label);
+    if (ImGui::Begin(float_label, &detached, ImGuiWindowFlags_NoSavedSettings)) draw();
+    pos = ImGui::GetWindowPos();
+    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
+    size = ImGui::GetWindowSize();
+    ImGui::End();
+}
+
 int main(int argc, char** argv) {
     EditorScenarioConfig scenario_cfg;
     if (!ParseEditorScenarioArgs(argc, argv, scenario_cfg)) return 1;
@@ -398,62 +426,27 @@ int main(int argc, char** argv) {
         ImGui::Separator();
         ImGui::SetCursorPosX(4);
 
-        static constexpr ImGuiWindowFlags FLOAT_FLAGS = ImGuiWindowFlags_NoSavedSettings;
         static int s_active_tab = 0;
 
         if (ImGui::BeginTabBar("##tabs")) {
             if (ImGui::BeginTabItem("Items")) { s_active_tab = 0;
-                if (!ItemEditor::g_detached) {
-                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                DrawDockableTab("Items", ItemEditor::g_detached, ItemEditor::g_win_pos, ItemEditor::g_win_size,
+                                 toolbar_h, 8.f, [&]() {
                     if (ItemEditor::DrawContent("data/items/items.json")) {
                         snprintf(status_msg, sizeof(status_msg), "Items saved!");
                         status_timer = 3.f;
                     }
-                } else {
-                    ImVec2& pos = ItemEditor::g_win_pos;
-                    ImVec2& sz  = ItemEditor::g_win_size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("Items##float", &ItemEditor::g_detached, FLOAT_FLAGS)) {
-                        if (ItemEditor::DrawContent("data/items/items.json")) {
-                            snprintf(status_msg, sizeof(status_msg), "Items saved!");
-                            status_timer = 3.f;
-                        }
-                    }
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                });
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Factions")) { s_active_tab = 1;
-                if (!FactionEditor::g_detached) {
-                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
+                DrawDockableTab("Factions", FactionEditor::g_detached, FactionEditor::g_win_pos, FactionEditor::g_win_size,
+                                 toolbar_h, 8.f, [&]() {
                     if (FactionEditor::DrawContent("data/factions/factions.json")) {
                         snprintf(status_msg, sizeof(status_msg), "Factions saved!");
                         status_timer = 3.f;
                     }
-                } else {
-                    ImVec2& pos = FactionEditor::g_win_pos;
-                    ImVec2& sz  = FactionEditor::g_win_size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("Factions##float", &FactionEditor::g_detached, FLOAT_FLAGS)) {
-                        if (FactionEditor::DrawContent("data/factions/factions.json")) {
-                            snprintf(status_msg, sizeof(status_msg), "Factions saved!");
-                            status_timer = 3.f;
-                        }
-                    }
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                });
                 ImGui::EndTabItem();
             }
             ImGuiTabItemFlags map_flags = (forced_tab && strcmp(forced_tab, "Map") == 0)
@@ -466,39 +459,13 @@ int main(int argc, char** argv) {
                     if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) MapViewPanel::Get().Redo();
                     MapViewPanel::Get().Draw(dt);
                 };
-                if (!s_lay.map.detached) {
-                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
-                    draw_map();
-                } else {
-                    ImVec2& pos = s_lay.map.pos; ImVec2& sz = s_lay.map.size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("Map##float", &s_lay.map.detached, FLOAT_FLAGS)) draw_map();
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                DrawDockableTab("Map", s_lay.map.detached, s_lay.map.pos, s_lay.map.size,
+                                 toolbar_h, 8.f, draw_map);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("World")) { s_active_tab = 3;
-                if (!s_lay.world.detached) {
-                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
-                    WorldPanel::Draw(dt);
-                } else {
-                    ImVec2& pos = s_lay.world.pos; ImVec2& sz = s_lay.world.size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("World##float", &s_lay.world.detached, FLOAT_FLAGS)) WorldPanel::Draw(dt);
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                DrawDockableTab("World", s_lay.world.detached, s_lay.world.pos, s_lay.world.size,
+                                 toolbar_h, 8.f, [&]() { WorldPanel::Draw(dt); });
                 ImGui::EndTabItem();
             }
             ImGuiTabItemFlags world3d_flags = (forced_tab && strcmp(forced_tab, "3D World") == 0)
@@ -510,46 +477,18 @@ int main(int argc, char** argv) {
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("NPCs")) { s_active_tab = 5;
-                if (!NpcArchetypeEditor::g_detached) {
-                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
-                    NpcArchetypeEditor::DrawContent();
-                } else {
-                    ImVec2& pos = NpcArchetypeEditor::g_win_pos;
-                    ImVec2& sz  = NpcArchetypeEditor::g_win_size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("NPC Archetypes##float", &NpcArchetypeEditor::g_detached, FLOAT_FLAGS))
-                        NpcArchetypeEditor::DrawContent();
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                DrawDockableTab("NPC Archetypes", NpcArchetypeEditor::g_detached, NpcArchetypeEditor::g_win_pos,
+                                 NpcArchetypeEditor::g_win_size, toolbar_h, 8.f,
+                                 [&]() { NpcArchetypeEditor::DrawContent(); });
                 ImGui::EndTabItem();
             }
             ImGuiTabItemFlags characters_flags = (forced_tab && strcmp(forced_tab, "Characters") == 0)
                 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
             if (ImGui::BeginTabItem("Characters", nullptr, characters_flags)) { s_active_tab = 6;
                 s_charpreview_active = true;
-                if (!CharacterEditor::g_detached) {
-                    ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
-                    CharacterEditor::Draw(false);
-                } else {
-                    ImVec2& pos = CharacterEditor::g_win_pos;
-                    ImVec2& sz  = CharacterEditor::g_win_size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("Characters##float", &CharacterEditor::g_detached, FLOAT_FLAGS))
-                        CharacterEditor::Draw(false);
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                DrawDockableTab("Characters", CharacterEditor::g_detached, CharacterEditor::g_win_pos,
+                                 CharacterEditor::g_win_size, toolbar_h, 8.f,
+                                 [&]() { CharacterEditor::Draw(false); });
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Inspector")) { s_active_tab = 7;
@@ -558,23 +497,9 @@ int main(int argc, char** argv) {
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Settings")) { s_active_tab = 8;
-                if (!SettingsEditor::g_detached) {
-                    ImGui::SetCursorPos({12, ImGui::GetCursorPosY() + 4});
-                    SettingsEditor::DrawContent(CFG_PATH, status_msg, &status_timer);
-                } else {
-                    ImVec2& pos = SettingsEditor::g_win_pos;
-                    ImVec2& sz  = SettingsEditor::g_win_size;
-                    const float min_y = toolbar_h + ImGui::GetFrameHeight() * 2 + 4.f;
-                    if (pos.y < min_y) pos.y = min_y;
-                    ImGui::SetNextWindowPos(pos, ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(sz,  ImGuiCond_Appearing);
-                    if (ImGui::Begin("Settings##float", &SettingsEditor::g_detached, FLOAT_FLAGS))
-                        SettingsEditor::DrawContent(CFG_PATH, status_msg, &status_timer);
-                    pos = ImGui::GetWindowPos();
-                    if (pos.y < min_y) { pos.y = min_y; ImGui::SetWindowPos(pos); }
-                    sz = ImGui::GetWindowSize();
-                    ImGui::End();
-                }
+                DrawDockableTab("Settings", SettingsEditor::g_detached, SettingsEditor::g_win_pos,
+                                 SettingsEditor::g_win_size, toolbar_h, 12.f,
+                                 [&]() { SettingsEditor::DrawContent(CFG_PATH, status_msg, &status_timer); });
                 ImGui::EndTabItem();
             }
             // Trailing "Detach" rendered directly in the tab bar's own row
