@@ -28,9 +28,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from _deepseek_common import read_api_key
 
-_REPO = Path(__file__).resolve().parent.parent.parent
+_REPO = Path(__file__).resolve().parent.parent.parent.parent
 OUT_FILE = _REPO / "docs" / "research" / "TERRAIN_KENSHI_LIKE_SURVEY_DEEPSEEK_RESEARCH.md"
 
 API_URL = "https://api.deepseek.com/chat/completions"

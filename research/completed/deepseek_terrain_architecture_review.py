@@ -38,7 +38,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parent.parent.parent
+_REPO = Path(__file__).resolve().parent.parent.parent.parent
 OUT_FILE = _REPO / "docs" / "research" / "TERRAIN_ARCHITECTURE_REVIEW_DEEPSEEK_RESEARCH.md"
 KEY_FILE = Path("/home/rdga1/rdga1bot-cli-md-deepseek.txt")
 

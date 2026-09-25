@@ -48,9 +48,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from _deepseek_common import read_api_key, _brace_expand
 
-_REPO = Path(__file__).resolve().parent.parent.parent
+_REPO = Path(__file__).resolve().parent.parent.parent.parent
 SDL_GPU_EXAMPLES_REF = Path("/tmp/claude-1001/-home-rdga1-rdga1prj-monkeydust/e9c60870-ac26-475f-9e9d-84b930cbfe9f/scratchpad/sdl_gpu_examples_ref")
 OUT_FILE = _REPO / "docs" / "research" / "RENDER_VS_SDL_GPU_EXAMPLES_DEEPSEEK_RESEARCH.md"
 
