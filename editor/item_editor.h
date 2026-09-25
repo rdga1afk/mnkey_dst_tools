@@ -1,5 +1,6 @@
 #pragma once
 #include "editor_ui.h"
+#include "editor_json_scan.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -27,23 +28,10 @@ static bool      g_detached = false;
 static ImVec2    g_win_pos  = {120.f, 70.f};
 static ImVec2    g_win_size = {680.f, 520.f};
 
-// ── Мінімальний JSON-парсер (без змін) ───────────────────
-static const char* ie_ws(const char* p) {
-    while (*p && (*p==' '||*p=='\t'||*p=='\n'||*p=='\r')) ++p; return p;
-}
-static const char* ie_str(const char* p, char* buf, int maxlen) {
-    if (*p == '"') ++p; int i = 0;
-    while (*p && *p != '"' && i < maxlen-1) buf[i++] = *p++;
-    buf[i] = '\0'; if (*p == '"') ++p; return p;
-}
-static const char* ie_skip(const char* p, char open, char close) {
-    if (*p != open) return p; int d = 0;
-    while (*p) {
-        if (*p == '"') { ++p; while(*p&&*p!='"'){if(*p=='\\'&&*(p+1))++p;++p;} if(*p)++p; continue; }
-        if (*p==open) ++d; else if (*p==close){if(--d==0)return p+1;} ++p;
-    }
-    return p;
-}
+// ── JSON-парсер (shared primitives -- editor_json_scan.h) ────────
+static const char* ie_ws(const char* p) { return ejs_ws(p); }
+static const char* ie_str(const char* p, char* buf, int maxlen) { return ejs_str(p, buf, maxlen); }
+static const char* ie_skip(const char* p, char open, char close) { return ejs_skip(p, open, close); }
 
 inline bool Load(const char* path) {
     FILE* f = fopen(path, "rb"); if (!f) return false;
