@@ -27,6 +27,8 @@ Usage:
 """
 import struct, json, os, sys, math, copy
 
+from glb_io import read_glb, write_glb
+
 GLB_IN    = sys.argv[1] if len(sys.argv) > 1 else "game/data/props/md_human.glb"
 GLB_OUT   = GLB_IN   # overwrite in-place: md_human.glb = mesh + face morphs + body morphs
 NAMES_OUT = "game/data/chars/morph_names.txt"
@@ -51,37 +53,6 @@ _LEG    = frozenset({2, 3, 4, 5, 6, 7, 8, 9, 10, 11})
 _HIP    = frozenset({1, 2, 7})       # pelvis + both thighs
 _WAIST  = frozenset({1, 12})         # pelvis + lower spine
 _TORSO  = frozenset({0, 1, 12, 13, 14, 15, 25})  # full torso + clavicles
-
-# ── GLB reader (minimal — only what we need) ──────────────────────────────────
-def read_glb(path):
-    with open(path, 'rb') as f:
-        magic, ver, total = struct.unpack('<III', f.read(12))
-        assert magic == 0x46546C67, "Not a GLB file"
-        # JSON chunk
-        jlen, jtype = struct.unpack('<II', f.read(8))
-        json_bytes = f.read(jlen)
-        gltf = json.loads(json_bytes.decode('utf-8'))
-        # BIN chunk
-        blen, btype = struct.unpack('<II', f.read(8))
-        bin_data = bytearray(f.read(blen))
-    return gltf, bin_data
-
-
-def write_glb(path, gltf, bin_data):
-    json_bytes = json.dumps(gltf, separators=(',', ':')).encode('utf-8')
-    # pad JSON to 4-byte alignment
-    while len(json_bytes) % 4:
-        json_bytes += b' '
-    # pad BIN to 4-byte alignment
-    while len(bin_data) % 4:
-        bin_data += b'\x00'
-    total = 12 + 8 + len(json_bytes) + 8 + len(bin_data)
-    with open(path, 'wb') as f:
-        f.write(struct.pack('<III', 0x46546C67, 2, total))
-        f.write(struct.pack('<II', len(json_bytes), 0x4E4F534A))  # JSON
-        f.write(json_bytes)
-        f.write(struct.pack('<II', len(bin_data), 0x004E4942))    # BIN
-        f.write(bin_data)
 
 
 def accessor_data(gltf, bin_data, acc_idx):

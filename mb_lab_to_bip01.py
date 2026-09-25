@@ -17,6 +17,8 @@ Usage:
 import struct, json, sys, copy
 from pathlib import Path
 
+from glb_io import read_glb, write_glb
+
 # ── Bone name map: source (MB-Lab/Rigify) → target (Bip01) ──────────────────
 # Run with --list first to see what names YOUR export actually has.
 # Edit entries here to match — different MB-Lab versions use different names.
@@ -188,35 +190,6 @@ BIP01_ORDER = [
     "Bip01 Prop2",      # 29 placeholder
 ]
 
-# ── GLB I/O ──────────────────────────────────────────────────────────────────
-
-def read_glb(path):
-    with open(path, 'rb') as f:
-        magic, version, _ = struct.unpack('<III', f.read(12))
-        assert magic == 0x46546C67, "Not a GLB file"
-        json_len, json_type = struct.unpack('<II', f.read(8))
-        assert json_type == 0x4E4F534A, "Expected JSON chunk"
-        gltf = json.loads(f.read(json_len))
-        bin_data = bytearray()
-        chunk = f.read()
-        if len(chunk) >= 8:
-            bin_len, bin_type = struct.unpack('<II', chunk[:8])
-            assert bin_type == 0x004E4942, "Expected BIN chunk"
-            bin_data = bytearray(chunk[8:8 + bin_len])
-    return gltf, bin_data
-
-def write_glb(path, gltf, bin_data):
-    jb = json.dumps(gltf, separators=(',', ':')).encode('utf-8')
-    jb += b' ' * ((4 - len(jb) % 4) % 4)
-    bb = bytes(bin_data) + b'\x00' * ((4 - len(bin_data) % 4) % 4)
-    total = 12 + 8 + len(jb) + (8 + len(bb) if bb else 0)
-    with open(path, 'wb') as f:
-        f.write(struct.pack('<III', 0x46546C67, 2, total))
-        f.write(struct.pack('<II', len(jb), 0x4E4F534A))
-        f.write(jb)
-        if bb:
-            f.write(struct.pack('<II', len(bb), 0x004E4942))
-            f.write(bb)
 
 # ── Bone helpers ─────────────────────────────────────────────────────────────
 

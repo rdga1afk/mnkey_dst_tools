@@ -31,81 +31,9 @@ EXPECTED_VERTS   = 15504
 BYTES_PER_VERTEX = 12          # VEC3 FLOAT  (3 × 4 bytes)
 MORPH_DATA_BYTES = EXPECTED_VERTS * BYTES_PER_VERTEX   # 186048 bytes per morph
 
-
-# ---------------------------------------------------------------------------
-# GLB low-level I/O
-# ---------------------------------------------------------------------------
-
-GLB_MAGIC         = 0x46546C67  # "glTF"
-GLB_VERSION       = 2
-CHUNK_TYPE_JSON   = 0x4E4F534A  # "JSON"
-CHUNK_TYPE_BIN    = 0x004E4942  # "BIN\0"
-
-
-def _pad4(n: int) -> int:
-    return (n + 3) & ~3
-
-
-def read_glb(path: str):
-    """Return (json_dict, bin_bytes, raw_file_bytes)."""
-    with open(path, "rb") as fh:
-        raw = fh.read()
-
-    if len(raw) < 12:
-        raise ValueError(f"{path}: file too short")
-
-    magic, version, total_len = struct.unpack_from("<III", raw, 0)
-    if magic != GLB_MAGIC:
-        raise ValueError(f"{path}: bad magic 0x{magic:08X}")
-    if version != GLB_VERSION:
-        raise ValueError(f"{path}: unsupported glTF version {version}")
-
-    # Chunk 0 — JSON
-    if len(raw) < 20:
-        raise ValueError(f"{path}: truncated before JSON chunk")
-    c0_len, c0_type = struct.unpack_from("<II", raw, 12)
-    if c0_type != CHUNK_TYPE_JSON:
-        raise ValueError(f"{path}: chunk 0 is not JSON (got 0x{c0_type:08X})")
-    json_start = 20
-    json_end   = json_start + c0_len
-    j = json.loads(raw[json_start:json_end])
-
-    # Chunk 1 — BIN (optional but expected)
-    bin_data = b""
-    bin_offset = json_end
-    if bin_offset + 8 <= len(raw):
-        c1_len, c1_type = struct.unpack_from("<II", raw, bin_offset)
-        if c1_type == CHUNK_TYPE_BIN:
-            bin_data = raw[bin_offset + 8 : bin_offset + 8 + c1_len]
-
-    return j, bin_data, raw
-
-
-def write_glb(path: str, j: dict, bin_data: bytes) -> None:
-    """Serialise (json_dict, bin_bytes) back to a GLB file."""
-    json_bytes = json.dumps(j, separators=(",", ":")).encode("utf-8")
-    # Pad JSON to 4-byte boundary with spaces (0x20)
-    json_pad = _pad4(len(json_bytes)) - len(json_bytes)
-    json_chunk = json_bytes + b" " * json_pad
-
-    # Pad BIN to 4-byte boundary with zeros
-    bin_pad  = _pad4(len(bin_data)) - len(bin_data)
-    bin_chunk = bin_data + b"\x00" * bin_pad
-
-    json_chunk_len = len(json_chunk)
-    bin_chunk_len  = len(bin_chunk)
-
-    total_len = 12 + 8 + json_chunk_len + 8 + bin_chunk_len
-
-    with open(path, "wb") as fh:
-        # Header
-        fh.write(struct.pack("<III", GLB_MAGIC, GLB_VERSION, total_len))
-        # JSON chunk header + data
-        fh.write(struct.pack("<II", json_chunk_len, CHUNK_TYPE_JSON))
-        fh.write(json_chunk)
-        # BIN chunk header + data
-        fh.write(struct.pack("<II", bin_chunk_len, CHUNK_TYPE_BIN))
-        fh.write(bin_chunk)
+# tools/glb_io.py -- this script lives in tools/md_mesh_conv/, a sibling dir.
+sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+from glb_io import read_glb, write_glb  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -173,10 +101,10 @@ def merge(src_path: str, dst_path: str) -> int:
     Returns the final number of morph targets in the updated dst file.
     """
     print(f"Reading source:      {src_path}")
-    src_j, src_bin, _ = read_glb(src_path)
+    src_j, src_bin = read_glb(src_path)
 
     print(f"Reading destination: {dst_path}")
-    dst_j, dst_bin, _ = read_glb(dst_path)
+    dst_j, dst_bin = read_glb(dst_path)
 
     # Vertex-count sanity check
     src_vc = _vertex_count(src_j)
@@ -289,7 +217,7 @@ def merge(src_path: str, dst_path: str) -> int:
 
 def verify(path: str, expected_count: int) -> None:
     print(f"\n--- Verification ---")
-    j, _, _ = read_glb(path)
+    j, _ = read_glb(path)
     names = _target_names(j)
     vc    = _vertex_count(j)
     prim  = j["meshes"][0]["primitives"][0]
