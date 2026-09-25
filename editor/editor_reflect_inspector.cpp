@@ -127,10 +127,7 @@ void EditorReflectInspector::DrawContent(EcsBridgeWorldT* world) {
             // (see class header comment / md_registry.h B3.4).
             void* comp = EcsBridgeGetMut(world, eid, cid);
             if (comp) {
-                bool edited;
-                EcsReflectBridge::DrawerFn custom = bridge.CustomFor(i);
-                if (custom) edited = custom(world, eid, comp);
-                else        edited = DrawReflectedFields(comp, desc);
+                bool edited = DrawReflectedFields(comp, desc);
                 if (edited) EcsBridgeModified(world, eid, cid);
             }
         }

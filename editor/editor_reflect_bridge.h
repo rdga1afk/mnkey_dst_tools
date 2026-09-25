@@ -20,7 +20,6 @@
 // editor_panels_init() on every load/reload — never memoize ids past that.
 #include <monkey_dust/ecs/component_reflect.h>
 #include <gaia.h>
-#include <cstring>
 #include <cctype>
 
 // gaia-ecs migration (Phase 5, PROMPT_GAIA_MIGRATION.md §7 p.2): thin,
@@ -111,11 +110,9 @@ public:
     static EcsReflectBridge& Get() { static EcsReflectBridge inst; return inst; }
 
     static constexpr int MAX_COMPONENTS = md::ComponentReflect::MAX_COMPONENTS;
-    using DrawerFn = bool (*)(EcsBridgeWorldT*, EcsBridgeIdT, void*);
 
-    // Re-resolves every reflected component's id against `world` and
-    // rebinds any previously-registered custom drawers. Call on every
-    // editor_panels_init() (initial load AND every F5/auto reload).
+    // Re-resolves every reflected component's id against `world`. Call on
+    // every editor_panels_init() (initial load AND every F5/auto reload).
     void Init(EcsBridgeWorldT* world) {
         count_ = 0;
         const md::ComponentReflect& reg = md::ComponentReflect::Get();
@@ -126,38 +123,13 @@ public:
             ToPascalCase(desc.name, pascal, sizeof(pascal));
             ids_[count_]   = EcsBridgeResolve(world, pascal);
             descs_[count_] = &desc;
-            customs_[count_] = nullptr;
             ++count_;
         }
-        // Rebind persistent custom-drawer bindings against the freshly
-        // resolved descriptor list (names, not ids, are the stable key).
-        for (int b = 0; b < custom_binding_count_; ++b) RebindOne(custom_binding_[b]);
     }
 
     int Count() const { return count_; }
     EcsBridgeIdT              Id(int i)   const { return ids_[i]; }
     const md::ComponentDesc&  Desc(int i) const { return *descs_[i]; }
-    DrawerFn                  CustomFor(int i) const { return customs_[i]; }
-
-    // Register (or replace) a custom drawer for a reflected component name.
-    // Persists across Init() calls — rebound against the new id/desc list
-    // each time. fn returns true if it edited the component (caller must
-    // then call EcsBridgeModified(), defined in editor_reflect_inspector.cpp).
-    void BindCustom(const char* reflect_name, DrawerFn fn) {
-        for (int b = 0; b < custom_binding_count_; ++b) {
-            if (strncmp(custom_binding_[b].name, reflect_name, sizeof(custom_binding_[b].name)) == 0) {
-                custom_binding_[b].fn = fn;
-                RebindOne(custom_binding_[b]);
-                return;
-            }
-        }
-        if (custom_binding_count_ >= MAX_CUSTOM_BINDINGS) return;
-        CustomBinding& cb = custom_binding_[custom_binding_count_++];
-        strncpy(cb.name, reflect_name, sizeof(cb.name) - 1);
-        cb.name[sizeof(cb.name) - 1] = '\0';
-        cb.fn = fn;
-        RebindOne(cb);
-    }
 
 private:
     EcsReflectBridge() = default;
@@ -193,24 +165,8 @@ private:
         out[o] = '\0';
     }
 
-    static constexpr int MAX_CUSTOM_BINDINGS = 8;
-    struct CustomBinding { char name[32] = {}; DrawerFn fn = nullptr; };
-
-    void RebindOne(const CustomBinding& cb) {
-        for (int i = 0; i < count_; ++i) {
-            if (strncmp(descs_[i]->name, cb.name, sizeof(descs_[i]->name)) == 0) {
-                customs_[i] = cb.fn;
-                return;
-            }
-        }
-    }
-
     EcsBridgeIdT             ids_[MAX_COMPONENTS]     = {};
     const md::ComponentDesc* descs_[MAX_COMPONENTS]   = {};
-    DrawerFn                 customs_[MAX_COMPONENTS] = {};
     int                      count_ = 0;
-
-    CustomBinding custom_binding_[MAX_CUSTOM_BINDINGS] = {};
-    int           custom_binding_count_ = 0;
 };
 #endif

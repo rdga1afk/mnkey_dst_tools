@@ -38,9 +38,6 @@
 #include "bug_capture.h"
 #include "editor_reflect_bridge.h"
 #include "editor_reflect_inspector.h"
-#ifdef MD_UI_TESTS
-#include "ui_smoke_tests.h"
-#endif
 #include <cstdio>
 #include <cstring>
 
@@ -77,13 +74,6 @@ static EditorLayout::Layout s_lay;
 int main(int argc, char** argv) {
     EditorScenarioConfig scenario_cfg;
     if (!ParseEditorScenarioArgs(argc, argv, scenario_cfg)) return 1;
-
-#ifdef MD_UI_TESTS
-    bool ui_tests_requested = false;
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--ui-tests") == 0) { ui_tests_requested = true; break; }
-    }
-#endif
 
     const char* ov = getenv("MD_OVERLAY_TOP_OFFSET");
     if (ov) s_overlay_top = (float)atof(ov);
@@ -213,17 +203,6 @@ int main(int argc, char** argv) {
     RegisterLuaEditorAutomationAPI(LuaSystem::Get());
     static constexpr uint32_t kEditorModuleId = 3;
     RegisterStdEditorCommands(kEditorModuleId);
-
-#ifdef MD_UI_TESTS
-    // 2026-09-17: BROKEN since the hot-reload panels module was removed --
-    // RunUiSmokeTests calls editor_panels_init/build_ui/render/shutdown,
-    // which no longer exist. MD_UI_TESTS is OFF by default (see its own
-    // CMakeLists.txt option doc comment); left unfixed here, out of scope
-    // for the hot-reload removal itself.
-    if (ui_tests_requested) {
-        return RunUiSmokeTests(gpu, sc_fmt, s_overlay_top, LAYOUT_PATH);
-    }
-#endif
 
     // Restore panel layout (map/world/terrain/world3d used directly from
     // s_lay below; items/factions/npcs/chars/settings copied into each

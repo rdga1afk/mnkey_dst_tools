@@ -18,10 +18,6 @@ endif()
 # All editor panel .cpp files (map_view + all wicked-style panels).
 file(GLOB EDITOR_PANEL_SOURCES "editor/*.cpp")
 list(REMOVE_ITEM EDITOR_PANEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/editor/main.cpp")
-# ui_smoke_tests.cpp needs the imgui_test_engine include paths added under
-# MD_UI_TESTS below (option declared later in this file, default OFF) —
-# re-added to monkey_dust_editor's sources there when MD_UI_TESTS=ON.
-list(REMOVE_ITEM EDITOR_PANEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/editor/ui_smoke_tests.cpp")
 
 set(EDITOR_IMGUI_SRC
     ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/imgui.cpp
@@ -105,56 +101,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(monkey_dust_editor PRIVATE -O2 -march=native)
 endif()
 
-# ── ImGui Test Engine panel smoke tests ──────────────────────────────────────
-# EDITOR_AUTOMATION_PLAN_v1.md Phase 5. Vendored under
-# third_party/imgui_test_engine/ (submodule, pinned to v1.92.8 — matches
-# this repo's third_party/imgui exactly). License: "Dear ImGui Test Engine
-# License" (free for individuals/hobby/open-source use — see
-# third_party/imgui_test_engine/imgui_test_engine/LICENSE.txt Article 1.1;
-# this project qualifies, not a concern here per explicit project decision).
-# 2026-09-17: BROKEN since the hot-reload panels .so removal above --
-# ui_smoke_tests.cpp calls editor_panels_init/build_ui/render/shutdown,
-# which no longer exist as a separate module. Left OFF (default) and
-# unfixed -- rework needed if this is wanted again, out of scope for the
-# hot-reload removal itself.
-option(MD_UI_TESTS "Build ImGui Test Engine panel smoke tests into monkey_dust_editor" OFF)
-if(MD_UI_TESTS AND MONKEY_DUST_TOOLS_NEED_SDL3)
-    set(_ITE_DIR ${CMAKE_SOURCE_DIR}/tools/third_party/imgui_test_engine/imgui_test_engine)
-    target_sources(monkey_dust_editor PRIVATE
-        editor/ui_smoke_tests.cpp
-        ${_ITE_DIR}/imgui_te_context.cpp
-        ${_ITE_DIR}/imgui_te_coroutine.cpp
-        ${_ITE_DIR}/imgui_te_engine.cpp
-        ${_ITE_DIR}/imgui_te_exporters.cpp
-        ${_ITE_DIR}/imgui_te_perftool.cpp
-        ${_ITE_DIR}/imgui_te_ui.cpp
-        ${_ITE_DIR}/imgui_te_utils.cpp
-        ${_ITE_DIR}/imgui_capture_tool.cpp
-    )
-    target_include_directories(monkey_dust_editor PRIVATE
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui_test_engine
-        ${_ITE_DIR}
-        ${_ITE_DIR}/thirdparty
-        ${_ITE_DIR}/thirdparty/Str
-        ${_ITE_DIR}/thirdparty/stb
-    )
-    target_compile_definitions(monkey_dust_editor PRIVATE
-        MD_UI_TESTS
-        IMGUI_ENABLE_TEST_ENGINE
-        IMGUI_TEST_ENGINE_ENABLE_COROUTINE_STDTHREAD_IMPL=1
-    )
-    set_source_files_properties(
-        ${_ITE_DIR}/imgui_te_context.cpp
-        ${_ITE_DIR}/imgui_te_coroutine.cpp
-        ${_ITE_DIR}/imgui_te_engine.cpp
-        ${_ITE_DIR}/imgui_te_exporters.cpp
-        ${_ITE_DIR}/imgui_te_perftool.cpp
-        ${_ITE_DIR}/imgui_te_ui.cpp
-        ${_ITE_DIR}/imgui_te_utils.cpp
-        ${_ITE_DIR}/imgui_capture_tool.cpp
-        PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
-    message(STATUS "[monkey_dust_editor] MD_UI_TESTS: ENABLED (ImGui Test Engine panel smoke tests, --ui-tests)")
-endif()
 
 # ── PCH for editor own sources ───────────────────────────────────────────────
 # PCH on engine lib (PRIVATE) doesn't propagate to editor .cpp files.
