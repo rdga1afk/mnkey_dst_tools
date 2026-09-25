@@ -48,10 +48,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from _deepseek_common import read_api_key, _brace_expand
+
 _REPO = Path(__file__).resolve().parent.parent.parent
 SDL_GPU_EXAMPLES_REF = Path("/tmp/claude-1001/-home-rdga1-rdga1prj-monkeydust/e9c60870-ac26-475f-9e9d-84b930cbfe9f/scratchpad/sdl_gpu_examples_ref")
 OUT_FILE = _REPO / "docs" / "research" / "RENDER_VS_SDL_GPU_EXAMPLES_DEEPSEEK_RESEARCH.md"
-KEY_FILE = Path("/home/rdga1/rdga1bot-cli-md-deepseek.txt")
 
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-reasoner"
@@ -82,17 +83,6 @@ SYSTEM_PROMPT = (
     "constraints, or whether a prior architectural decision in the shown "
     "code already rejected the same idea for a documented reason."
 )
-
-
-def _brace_expand(pattern: str):
-    m = re.search(r"\{([^{}]+)\}", pattern)
-    if not m:
-        return [pattern]
-    options = m.group(1).split(",")
-    out = []
-    for opt in options:
-        out.extend(_brace_expand(pattern[:m.start()] + opt + pattern[m.end():]))
-    return out
 
 
 def _read_files(patterns, max_chars):
@@ -155,16 +145,6 @@ TOPICS = [
         "TerrainQuadtreeRenderer::DrawBatched already does CPU-driven instanced draws (SDL_DrawGPUIndexedPrimitives with instance_count=count) reading per-node data from a texture -- not GPU-generated indirect draws. GpuDrawIndexedIndirect exists as a dead HAL primitive (gpu_hal.h:469-472, zero call sites) after NPC culling explicitly reverted an indirect-draw approach to CPU-driven direct draws (npc_render_init.cpp, tasks #380/#383) for a documented reason on this hardware. Assess honestly whether SDL_gpu_examples' DrawIndirect/InstancedIndexed patterns would offer anything DrawBatched's existing CPU-driven instancing does not already get us, or whether this is the same rejected idea in different clothing -- and if genuinely different, is it worth revisiting given the prior NPC-path rejection was for a different subsystem.",
     ),
 ]
-
-
-def read_api_key() -> str:
-    env_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    if KEY_FILE.exists():
-        return KEY_FILE.read_text().strip()
-    print(f"ERROR: no DEEPSEEK_API_KEY env var and {KEY_FILE} not found", file=sys.stderr)
-    sys.exit(1)
 
 
 def call_deepseek(api_key: str, user_prompt: str) -> str:

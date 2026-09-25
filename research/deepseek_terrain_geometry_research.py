@@ -33,9 +33,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from _deepseek_common import read_api_key
+
 _REPO = Path(__file__).resolve().parent.parent.parent
 OUT_FILE = _REPO / "docs" / "research" / "TERRAIN_GEOMETRY_DEEPSEEK_RESEARCH.md"
-KEY_FILE = Path("/home/rdga1/rdga1bot-cli-md-deepseek.txt")
 
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-reasoner"
@@ -207,16 +208,6 @@ project you have real knowledge of that ingests real elevation data and
 renders it without a rounded look).""",
     ),
 ]
-
-
-def read_api_key() -> str:
-    env_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    if KEY_FILE.exists():
-        return KEY_FILE.read_text().strip()
-    print(f"ERROR: no DEEPSEEK_API_KEY env var and {KEY_FILE} not found", file=sys.stderr)
-    sys.exit(1)
 
 
 def call_deepseek(api_key: str, user_prompt: str) -> str:

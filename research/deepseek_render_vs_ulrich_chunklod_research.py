@@ -42,10 +42,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from _deepseek_common import read_api_key
+
 _REPO = Path(__file__).resolve().parent.parent.parent
 ULRICH_REF = _REPO / "tmp_" / "chunklod_reference"
 OUT_FILE = _REPO / "docs" / "research" / "RENDER_VS_ULRICH_CHUNKLOD_DEEPSEEK_RESEARCH.md"
-KEY_FILE = Path("/home/rdga1/rdga1bot-cli-md-deepseek.txt")
 
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-reasoner"
@@ -150,16 +151,6 @@ TOPICS = [
         "Ulrich's own design target was worlds far larger than fit in RAM (per-quadrant streaming from disk). Our world (29.5km, real Kenshi scale) fits entirely resident as one heightmap texture already -- state explicitly whether Ulrich's streaming design solves a problem we don't have at our world size, or whether there's a real memory/load-time win being left on the table.",
     ),
 ]
-
-
-def read_api_key() -> str:
-    env_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    if KEY_FILE.exists():
-        return KEY_FILE.read_text().strip()
-    print(f"ERROR: no DEEPSEEK_API_KEY env var and {KEY_FILE} not found", file=sys.stderr)
-    sys.exit(1)
 
 
 def call_deepseek(api_key: str, user_prompt: str) -> str:

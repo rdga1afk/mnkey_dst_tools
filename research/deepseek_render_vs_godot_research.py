@@ -34,10 +34,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from _deepseek_common import read_api_key, _brace_expand
+
 _REPO = Path(__file__).resolve().parent.parent.parent
 GODOT_REF = Path("/tmp/claude-1001/-home-rdga1-rdga1prj-monkeydust/e9c60870-ac26-475f-9e9d-84b930cbfe9f/scratchpad/godot_ref")
 OUT_FILE = _REPO / "docs" / "research" / "RENDER_VS_GODOT_DEEPSEEK_RESEARCH.md"
-KEY_FILE = Path("/home/rdga1/rdga1bot-cli-md-deepseek.txt")
 
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-reasoner"
@@ -56,17 +57,6 @@ SYSTEM_PROMPT = (
     "the technique/algorithm (not the whole system) is worth it given the "
     "constraints described."
 )
-
-
-def _brace_expand(pattern: str):
-    m = re.search(r"\{([^{}]+)\}", pattern)
-    if not m:
-        return [pattern]
-    options = m.group(1).split(",")
-    out = []
-    for opt in options:
-        out.extend(_brace_expand(pattern[:m.start()] + opt + pattern[m.end():]))
-    return out
 
 
 def _read_files(patterns, max_chars):
@@ -211,16 +201,6 @@ TOPICS = [
         "Comparison should be at the pass-ordering/architecture level, not line-by-line.",
     ),
 ]
-
-
-def read_api_key() -> str:
-    env_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    if KEY_FILE.exists():
-        return KEY_FILE.read_text().strip()
-    print(f"ERROR: no DEEPSEEK_API_KEY env var and {KEY_FILE} not found", file=sys.stderr)
-    sys.exit(1)
 
 
 def call_deepseek(api_key: str, user_prompt: str) -> str:
