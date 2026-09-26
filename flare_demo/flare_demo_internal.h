@@ -19,6 +19,8 @@
 #include <monkey_dust/flare/tile_collision.h>
 #include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/render/gpu_pipeline.h>
+#include <monkey_dust/render/gpu_hal_free_functions.h>
+#include <monkey_dust/render/gpu_pass_view.h>
 #include <monkey_dust/render/gpu_depth_texture.h>
 #include <monkey_dust/render/gpu_sampler_texture.h>
 #include <monkey_dust/render/gpu_static_buffer.h>
