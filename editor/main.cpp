@@ -217,7 +217,6 @@ int main(int argc, char** argv) {
     // Terrain atlas (editable heightmap) + light system for editor 3D view
     LightSystem::Get().Init();
     TerrainAtlas_Load("game/data/terrain/world_hmap");
-    TerrainAtlas_SmoothBoundaries();
     WorldEditor3D_SDLGPU::Init(
         "game/data/textures/md_terrain.dds",
         29, 25);  // 7×7 view centred near The Hub area
