@@ -6,7 +6,7 @@ date: 2026-05-14
 updated: 2026-10-10
 repo: tools
 tags: [tools, readme, editor, kenshi, measurement, public-repo]
-summary: "Public tools README (EN + UA): editor, measurement/QA drivers, offline Kenshi-data converters and bakers, legacy Flare tools; build; licence"
+summary: "Public tools README (EN + UA): editor, measurement/QA drivers, offline Kenshi-data converters and bakers; build; licence"
 ---
 
 # monkey_dust Tools
@@ -36,14 +36,12 @@ summary: "Public tools README (EN + UA): editor, measurement/QA drivers, offline
 | | `md_stitch_overlay_mask.py`, `md_stitch_grasssplits.py`, `md_stitch_terrain.py` | Stitch Kenshi's tiled overlay / grass-density / terrain tiles into single textures |
 | | `md_convert.py`, `md_convert_static.py`, `md_convert_features.py`, `md_mesh_conv/`, `kenshi_import/` | Ogre mesh/skeleton XML → GLB (characters, static props, `features.dat` objects). Will be replaced by runtime Ogre `.mesh` readers in the engine |
 | **Repo hygiene** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Docs-vs-code drift checks, offline status dashboard, SPIR-V binding checks |
-| **Legacy (Flare)** | `md_flare_convert`, `md_flare_demo`, `flare_2d_render.py` | From the project's earlier isometric Flare direction; kept working, not developed |
 
 ### Build
 `tools/` is built from the game repository root (it needs the engine as a sibling submodule):
 ```bash
 cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
 ninja -C build monkey_dust_editor
-ninja -C build md_flare_convert md_flare_demo
 ```
 Python tools need Python 3, numpy and Pillow.
 
@@ -69,7 +67,6 @@ tools/
   qa/              game driver, timing, regression
   kenshi_import/   Ogre → GLB pipeline for Kenshi assets (offline, reads your install)
   md_*.py          converters, bakers, stitchers
-  flare_convert/, flare_demo/   legacy Flare tools
   third_party/     Dear ImGui + extensions (imnodes, imgui-node-editor, ImGuiColorTextEdit, ImGuizmo, flame graph, command palette)
 ```
 Dependency rule: `tools/` includes only `engine/` (`<monkey_dust/...>`) and `tools/third_party/`, never `game/`.
@@ -98,7 +95,6 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 | | `md_stitch_overlay_mask.py`, `md_stitch_grasssplits.py`, `md_stitch_terrain.py` | Зшивання тайлів Kenshi (overlay, густина трави, ландшафт) в одну текстуру |
 | | `md_convert.py`, `md_convert_static.py`, `md_convert_features.py`, `md_mesh_conv/`, `kenshi_import/` | Ogre XML → GLB (персонажі, статичні об'єкти, об'єкти `features.dat`). Буде замінено читачами Ogre `.mesh` у рушії під час запуску |
 | **Гігієна репо** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Розбіжності документації з кодом, офлайн-панель стану, перевірка прив'язок SPIR-V |
-| **Спадок (Flare)** | `md_flare_convert`, `md_flare_demo`, `flare_2d_render.py` | З попереднього ізометричного напряму Flare; працюють, але не розвиваються |
 
 ### Збірка
 Збирається з кореня репозиторію гри (потрібен рушій як сусідній підмодуль) — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
