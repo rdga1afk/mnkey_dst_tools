@@ -370,7 +370,7 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
     // Real per-biome data lives in a private data file, not compiled into
     // the public engine/tools repos — see docs/ENGINE_AUDIT.md /
     // TERRAIN_FIX_PROMPT.md. Must load before any TerrainGen_Build call.
-    BiomeRegistry::Get().LoadFromFile("game/data/biome_table.txt");
+    BiomeRegistry::Get().LoadPreferFcs("game/data/biome_table.txt", "tmp_/kenshi_re/terrain_textures");
 
     // Sky pipeline — same shaders as game (sky.vert/frag, SkyUBO)
     {
