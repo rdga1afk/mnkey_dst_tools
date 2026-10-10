@@ -1,3 +1,4 @@
+#include <monkey_dust/io/kenshi_dir.h>
 #include "editor_world_3d_sdlgpu.h"
 
 #ifdef MD_SDL_GPU
@@ -471,7 +472,7 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         // mirrors.
         s_terrain.InitGroundBaked("game/data/textures/md_ground_baked.dds");
         s_terrain.InitSteepnessSmoothed("game/data/textures/md_ground_steepness_smoothed.png");
-        s_terrain.InitBiomeBlend("game/data/textures/md_biome_blend.png");
+        s_terrain.InitBiomeBlend(md::KenshiLandFile("blendmap.png", "game/data/textures/md_biome_blend.png").c_str());
         // task-terrain-kenshi-parity (2026-09-26): same mirror pattern as
         // this file's other Init* call sites -- see scene_render.cpp's own
         // InitKbi1BlendLookup/UploadBiomeLayersTex call sites' doc comment.
