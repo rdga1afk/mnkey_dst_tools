@@ -3,279 +3,118 @@ id: kb-tools-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-09-17
+updated: 2026-10-10
 repo: tools
-tags: [tools, readme, editor, public-repo, shader-hot-reload]
-summary: "Public tools/ README: editor panels, shader hot-reload, QA scripts, build targets, repo architecture"
+tags: [tools, readme, editor, kenshi, measurement, public-repo]
+summary: "Public tools README (EN + UA): editor, measurement/QA drivers, offline Kenshi-data converters and bakers, legacy Flare tools; build; licence"
 ---
 
-# monkey_dust — Tools
+# monkey_dust Tools
 
-Editor, asset converter, terrain pipeline, and Flare demo viewer for the monkey_dust engine.
-Depends on [monkey\_dust\_engine](https://github.com/rdga1afk/mnkey_dst_engine) as a submodule.
+**Editor, measurement drivers and offline converters for [monkey_dust](https://github.com/rdga1afk/mnkey_dst_engine), a native Linux engine that renders Kenshi's world from your own install.**
 
-All tool names use the `md_` prefix (no proprietary asset branding in public repos).
-
-> **Render backend: SDL3/SDL_GPU, permanently.**
-
-> **ECS backend:** [gaia-ecs](https://github.com/richardbiely/gaia-ecs), sole
-> backend since 2026-09-10 (flecs removed entirely — no build flag needed).
-> The editor's reflection/inspector layer (`EcsReflectBridge`,
-> `editor_reflect_bridge.h`) and Lua automation API (`md.ecs.*`) were verified
-> at the time of the migration through live panel-hot-reload cycles (paced and
-> rapid-fire F5), not just a unit test — the panel-hot-reload mechanism itself
-> was removed 2026-09-17 (see `monkey_dust_editor` below), so this verification
-> path no longer exists as such.
-
-> **Full documentation →** [rdga1afk.github.io/mnkey\_dst\_engine/monkey\_dust\_docs.html](https://rdga1afk.github.io/mnkey_dst_engine/monkey_dust_docs.html)
+[English](#english) · [Українською](#українською) · [Engine](https://github.com/rdga1afk/mnkey_dst_engine) · [Docs site](https://rdga1afk.github.io/mnkey_dst_engine/)
 
 ---
 
-## Targets
+## English
 
-### `monkey_dust_editor` — Wicked-style Level Editor
+> ### You need Kenshi
+> Tools that touch game data read them from **your own Kenshi install** and write results outside this repository. This repository contains **no Kenshi data**. Kenshi content itself is edited with Kenshi's own **Forgotten Construction Set (FCS)**, not with these tools.
 
-Standalone SDL\_GPU/Vulkan editor (RD-3: migrated from OpenGL).
-All ImGui libraries (core + extensions) live in `tools/third_party/`: imgui, imnodes, imgui-node-editor, ImGuiColorTextEdit, imguizmo, imgui-flame-graph, imgui-command-palette.
-Zero dependencies on `game/` sources — compiles without the game repo present (`MONKEY_DUST_STANDALONE_EDITOR` is always defined for this target).
+### What is here
 
-**11 standalone panels:**
+| Group | Tool | Purpose |
+|---|---|---|
+| **Editor** | `monkey_dust_editor` (`editor/`) | Standalone SDL_GPU editor (Dear ImGui): 3D world viewport (view-only), hierarchy, console + Lua REPL, graphics, camera, animation, AI inspectors, GPU profiler |
+| | `shader_watch.sh` | Recompile shaders on save; `/reload-shaders` in the editor console reloads pipelines without restart |
+| **Measurement & QA** | `qa/game_cmd_driver.py` | Drives a running game: camera pose, screenshots, Lua commands. Basis of all performance measurements |
+| | `qa/resolve_pass_measure.py`, `qa/perf_gate.py`, `qa/terrain_zone_sweep.py` | Block-sampled (DVFS-safe) GPU timing, performance gates, zone sweeps |
+| | `qa/char_preview_qa.sh`, `qa/editor_screenshot_compare.py`, `qa/qa_run.sh` | Visual regression (RMSE against baselines), editor regression, QA runs |
+| **Kenshi data, offline** | `tif_to_r32.py` | `fullmap.tif` → `world_hmap.r16` (now only a fallback: the engine reads `fullmap.tif` directly) |
+| | `md_bake_ground_layers.py`, `md_bake_detail_array.py`, `md_encode_ground_bake.py` | Bake ground-layer colour and the detail texture array (to become a first-run cache) |
+| | `md_stitch_overlay_mask.py`, `md_stitch_grasssplits.py`, `md_stitch_terrain.py` | Stitch Kenshi's tiled overlay / grass-density / terrain tiles into single textures |
+| | `md_convert.py`, `md_convert_static.py`, `md_convert_features.py`, `md_mesh_conv/`, `kenshi_import/` | Ogre mesh/skeleton XML → GLB (characters, static props, `features.dat` objects). Will be replaced by runtime Ogre `.mesh` readers in the engine |
+| **Repo hygiene** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Docs-vs-code drift checks, offline status dashboard, SPIR-V binding checks |
+| **Legacy (Flare)** | `md_flare_convert`, `md_flare_demo`, `flare_2d_render.py` | From the project's earlier isometric Flare direction; kept working, not developed |
 
-| # | Panel | Description |
-|---|-------|-------------|
-| 0 | Hierarchy | Entity tree; multi-select; drag to reparent |
-| 1 | Assets | Asset browser with texture preview |
-| 2 | Console | Log output + live Lua REPL (ImGuiColorTextEdit) |
-| 3 | Graphics | Renderer state: SSAO / SMAA / shadow cascade toggles |
-| 4 | Camera | Orbit ↔ Flythrough mode; FOV; near/far clip |
-| 5 | Animation | GPU skinning: AnimationSoA + OzzAnimator; clip table; play / stop |
-| 6 | ViewCone Inspector | SenseComponent activation bars + ViewConeSet table |
-| 7 | FlowGraph | imnodes visual graph; node/var/pending display; trigger fire |
-| 8 | Director | Menace gauge; stage color; profile params; manual override |
-| 9 | GPU Profiler | imgui-flame-graph; per-pass CPU timings and budget bars |
-| 10 | Sequencer | ImSequencer timeline |
-
-> **Game-coupled panels** (Inspector · Terrain) are compiled into the game binary via
-> `-DMONKEY_DUST_EDITOR=ON` and live in `game/src/editor/` — they require `game/` headers and are
-> never part of the standalone `tools/` build. **3D World and Settings panels are NOT game-coupled**
-> — they live in `tools/editor/` (`editor_world_3d_sdlgpu.h/.cpp`, `settings_editor.h`), depend only
-> on `engine/` + SDL3, and ARE part of the standalone `monkey_dust_editor` build.
->
-> **3D World is view-only** (2026-07-19) — the whole-world (64×64 zone) viewport is for navigation/
-> preview only, no in-viewport terrain brush. Real terrain sculpting is the in-game F3 "Terrain
-> Sculpt" panel (`game/src/editor/editor_terrain_panel.cpp`), which writes directly to the real
-> `TerrainAtlas`. The old 2D "Heightmap" brush tab and the 3D World's own macro-geography
-> brush both painted a separate, now-removed synthetic `md_master_hmap` layer that only ever guided
-> procedural generation (also removed) — neither ever touched real terrain, so removing them lost no
-> real editing capability.
-
-> **3D World terrain load is async** (restored 2026-09-12) — the viewport's GPU-resource loader
-> runs on a background thread (`s_loader_thread`), so opening the panel no longer blocks the editor's
-> main thread/UI (previously a ~6.5s freeze on every open/reload, 2026-09-10 → 2026-09-12, forced
-> synchronous as a workaround for two real `GpuDevice` thread-safety crashes — now fixed with a mutex
-> in the engine repo, see its README).
-
-**Toolbar:**
-- New Entity popup (Transform / NPC Bandit / NPC Trader / NPC Holy / Building)
-- Gizmo mode buttons (Translate W · Rotate E · Scale R)
-- World ↔ Local space toggle (G)
-- Physics pause toggle
-- FPS counter
-
-**Command Palette** (`Ctrl+P`):
-Fuzzy-scored command search (+1 prefix · +4 acronym · +2 substring) across all editor actions.
-
-**Menu bar:** File · Edit (Undo/Redo, Duplicate, Delete, Select All) · View · Scene · Debug · Help
-
-**Camera:**
-- *Orbit*: RMB drag rotates around `cam_target`; scroll = zoom
-- *Flythrough*: hold RMB + WASD flies in look direction; Q/E = up/down
-
----
-
-### Shader hot-reload — zero-restart shader iteration
-
-```bash
-# Terminal 2: auto-recompile on .vert/.frag/.comp save
-bash tools/shader_watch.sh
-
-# In editor console after compilation:
-/reload-shaders   # reloads all GPU pipelines without restart
-```
-
-`tools/shader_watch.sh` uses `inotifywait` (inotify-tools) to watch `shaders/`; falls back to 5-second polling if not available.
-`/reload-shaders` calls `GpuPipeline::Reload()` on all char-preview pipelines after running `compile_shaders.sh`.
-
-**RenderDoc integration:**
-```bash
-SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor   # editor
-SDL_GPU_DEBUGMODE=1 renderdoc build/game/monkey_dust            # game
-# F12 = capture frame → inspect uniform buffers, depth texture, per-draw state
-```
-
-**GPU debug overlay** (Ctrl+D in Characters tab): real-time `hair_color`, `eye_pos`, pipeline status, bone21 diagonal. Red highlight when `hair_color` = white (HairFU binding error).
-
----
-
-### `tools/qa/char_preview_qa.sh` — Character Preview Visual Regression
-
-```bash
-bash tools/qa/char_preview_qa.sh --save    hair_front   # baseline from latest screenshot
-bash tools/qa/char_preview_qa.sh --compare hair_front   # pixel diff (ImageMagick RMSE)
-bash tools/qa/char_preview_qa.sh --list                 # list saved baselines
-```
-
-Baselines stored in `tools/qa/baselines/char_preview/`. Threshold: RMSE < 0.02.
-
-> **Note:** `tools/qa/captures/` (PNG frames + JSONL logs from `qa_run.sh`) is gitignored — runtime artifacts only, not tracked in the repo.
-
----
-
-### `md_extract_terrain.py` — REMOVED (2026-07-10)
-
-Used to build `world_hmap.r32` from `fullmap.tif`, but with a stale
-`HEIGHT_MAX = 300.0` constant that conflicted with the real, current value
-(`980.0`, real reference-game scale — see the private repo's terrain-scale
-RE notes). Two competing, simultaneously-documented ways to build the same
-artifact was a confirmed real risk (`docs/ENGINE_AUDIT.md` §1/§2) — deleted
-rather than left deprecated-in-place, per the resolved decision in
-`TERRAIN_FIX_PROMPT.md` Stage 1. **Use `tools/tif_to_r32.py`** (documented
-in the root `CLAUDE.md` under "Terrain Pipeline" — the sole authoritative
-path).
-
----
-
-### `md_convert.py` — Mesh Pipeline
-
-OGRE XML skeleton/mesh → cgltf GLB with embedded animations. Used for character assets.
-
-```bash
-python3 tools/md_convert.py   # → game/data/props/md_human.glb
-```
-
----
-
-### `md_mod_import.py` — World Data Import
-
-Imports JSON mod data into `game/data/md_world.json`. Uses `md_id` as the canonical identifier key.
-
----
-
-### `md_flare_convert` — FLARE INI → JSON Converter
-
-Converts FLARE engine `.ini` tileset / map files to the monkey\_dust JSON format.
-
-```bash
-./md_flare_convert <input.ini> <output.json>
-```
-
----
-
-### `tools/qa/game_cmd_driver.py` — Live Game Command Driver
-
-Reusable driver for an already-running `monkey_dust` game process via `tmp_/game_cmd/`
-(`game/src/ui_driver/game_cmd_file.cpp`) — the reliable way to self-verify visual
-terrain/shader bugs (screenshot, camera positioning) without depending on the editor's
-`--exec` scenario mode.
-
-```bash
-python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png \
-    --camera 10148.7,40.0,15657.6,26.6,22.0
-```
-
-> **Footgun:** the CLI `--camera` flag (and `Driver.screenshot(camera=..., editor_open=False)`)
-> silently discards the camera placement — `editor_open=False` also switches `main.cpp` back to
-> the default player-orbit camera, which overwrites the fly-cam position set moments earlier.
-> Use `Driver.screenshot(camera=..., editor_open=True)` (accepts the F3 panel covering part of
-> the frame) or, more reliably, `md.teleport_player(x, z)` + a screenshot with no camera override
-> at all (the default orbit-follow camera is the well-tested path).
-
----
-
-### `krok3_decompose_spike.py` — Detail-Texture Color/Structure Decompose Feasibility
-
-Offline numerical + visual check: does separating a flat per-layer colour tint from an
-achromatic brightness/structure detail texture (Dagor Engine's `land_micro_detail.dshl`
-packing convention as reference, not a port) preserve colour well enough on real reference-game
-ground textures to justify the format change.
-
-```bash
-python3 tools/krok3_decompose_spike.py
-```
-
-Result: GO on the format (`docs/KROK3_DECOMPOSE_SPIKE_RESULT.md`) — mean hue error 0.0059
-across 6 real layers. Feasibility check only; the actual re-bake/engine integration is a
-separate, larger follow-up.
-
----
-
-### `md_flare_demo` — Standalone Flare Tile + 3D World Viewer
-
-Renders a FLARE map file using the engine's `TileMapRenderer` without the game layer.
-Press **S** to toggle between 2D isometric tile view and 3D world view.
-
-**2D mode:** validates atlas packing, animation timing, NPC sprite overlay, `uint64_t` depth sort, `fadeOverlapTile` transparency.
-
-**3D mode:** exercises the full SDL_GPU pipeline — GPU NPC frustum culling (`npc_cull.comp`), EVSM soft shadows (3-cascade CSM with texel-snap), OIT transparent quads (2-MRT compute composite), deferred lighting, SSAO, SMAA.
-
-```
-Controls: WASD = pan/fly · Scroll = zoom · S = toggle 2D/3D · F3 = stats overlay
-```
-
----
-
-## Build
-
+### Build
+`tools/` is built from the game repository root (it needs the engine as a sibling submodule):
 ```bash
 cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
-ninja -C build monkey_dust_editor    # editor
-ninja -C build md_flare_convert      # converter
-ninja -C build md_flare_demo         # demo viewer
+ninja -C build monkey_dust_editor
+ninja -C build md_flare_convert md_flare_demo
 ```
+Python tools need Python 3, numpy and Pillow.
 
-Editor with MONKEY\_DUST\_EDITOR panels compiled into the game binary:
+### Measuring the game
 ```bash
-cmake -S .. -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON
-ninja -C build monkey_dust           # game + editor overlay
+export KENSHI_DIR="$HOME/.local/share/Steam/steamapps/common/Kenshi"
+python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png
 ```
+- Place the camera with `md.set_camera_pose_world(...)` and check `md.terrain_pixel_fraction()` ≥ 0.8: performance is measured only on terrain-dominated frames.
+- Compare A/B in one process, interleaved blocks (ABBA).
+- Pitfall: the CLI `--camera` flag (and `Driver.screenshot(camera=..., editor_open=False)`) loses the camera: `editor_open=False` switches back to the player-orbit camera. Use `editor_open=True` or a pose command.
 
----
+### Editor notes
+- Panels: Hierarchy, Assets, Console (Lua REPL), Graphics, Camera (orbit / fly), Animation, ViewCone inspector, FlowGraph, Director, GPU Profiler, Sequencer, 3D World, Settings. Command palette: `Ctrl+P`.
+- The 3D World viewport loads biomes from FCS (`BiomeRegistry::LoadPreferFcs`) and `blendmap.png` from the Kenshi install, with offline fallbacks; terrain loads on a background thread.
+- Game-coupled panels (Inspector, Terrain sculpt) live in the game repository and are compiled into the game with `-DMONKEY_DUST_EDITOR=ON`.
+- GPU debugging: `SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor`.
 
-## Architecture
-
+### Architecture
 ```
 tools/
-  editor/              ← ImGui wicked-style editor (standalone, no game/ deps)
-    editor_core.*      ← EditorCore singleton; camera; undo history
-    editor_toolbar.*   ← Menu bar + button bar + hotkeys
-    editor_hierarchy.* ← Entity tree panel
-    editor_console.*   ← Log panel + Lua REPL
-    editor_map_view.*  ← M9 map editor (FBO viewport + tile palette)
-    editor_world_panel.h ← World tab: Zone/Faction/Town + map preview
-    editor_*_panel.*   ← Specialist panels (ViewCone, FlowGraph, Director, GPU Profiler …)
-    scene_serializer.h ← Import/Export scene JSON
-  md_terrain/          ← md2terrain.py terrain zone helpers
-  md_mesh_conv/        ← md_chars.py · ogre2glb.py — OGRE XML → GLB
-  (md_extract_terrain.py removed 2026-07-10 — see tif_to_r32.py instead)
-  md_convert.py        ← OGRE mesh → GLB pipeline
-  md_mod_import.py     ← JSON mod data → md_world.json (key: md_id)
-  md_biome_import.py   ← Biome map JSON import
-  md_heightmap_import.py ← Raw heightmap → atlas format
-  md_stitch_terrain.py ← Post-process zone edge stitching
-  krok3_decompose_spike.py ← Detail-texture colour/structure decompose feasibility (GO)
-  qa/game_cmd_driver.py ← Live command/screenshot driver for a running game process
-  flare_convert/       ← FLARE INI converter
-  flare_demo/          ← Standalone tile viewer
-  flare_2d_render.py   ← Python helper: renders a map frame to PNG (offline preview)
+  editor/          standalone editor (depends on engine/ + tools/third_party/ only)
+  qa/              game driver, timing, regression
+  kenshi_import/   Ogre → GLB pipeline for Kenshi assets (offline, reads your install)
+  md_*.py          converters, bakers, stitchers
+  flare_convert/, flare_demo/   legacy Flare tools
+  third_party/     Dear ImGui + extensions (imnodes, imgui-node-editor, ImGuiColorTextEdit, ImGuizmo, flame graph, command palette)
 ```
+Dependency rule: `tools/` includes only `engine/` (`<monkey_dust/...>`) and `tools/third_party/`, never `game/`.
 
-**Dependency rule:** `tools/` depends only on `engine/` (via `<monkey_dust/...>` headers) plus its own `tools/third_party/` (imgui + extensions).
-Zero `#include` from `game/`. Game-coupled panels (Inspector, Terrain) live in `game/src/editor/` and
-are compiled into the game binary only — they are never part of the `tools/` build. 3D World and
-Settings panels live in `tools/editor/` and are part of the standalone `tools/` build.
+### Licence
+GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this project is not affiliated with Lo-Fi Games.
 
 ---
 
-## License
+## Українською
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE).
+> ### Потрібна Kenshi
+> Інструменти, що працюють з даними гри, читають їх з **вашої власної інсталяції Kenshi** і пишуть результати поза цим репозиторієм. Тут **немає даних Kenshi**. Сам контент Kenshi редагується її власним **Forgotten Construction Set (FCS)**, а не цими інструментами.
+
+### Що тут є
+
+| Група | Інструмент | Призначення |
+|---|---|---|
+| **Редактор** | `monkey_dust_editor` (`editor/`) | Окремий редактор на SDL_GPU (Dear ImGui): 3D-вікно світу (лише перегляд), ієрархія, консоль + Lua REPL, графіка, камера, анімація, інспектори AI, профайлер GPU |
+| | `shader_watch.sh` | Перекомпіляція шейдерів при збереженні; `/reload-shaders` у консолі перезавантажує конвеєри без перезапуску |
+| **Заміри й QA** | `qa/game_cmd_driver.py` | Керує запущеною грою: камера, скриншоти, Lua-команди. Основа всіх замірів продуктивності |
+| | `qa/resolve_pass_measure.py`, `qa/perf_gate.py`, `qa/terrain_zone_sweep.py` | Блокові заміри GPU (стійкі до DVFS), пороги продуктивності, обхід зон |
+| | `qa/char_preview_qa.sh`, `qa/editor_screenshot_compare.py`, `qa/qa_run.sh` | Візуальна регресія (RMSE з еталонами), регресія редактора, прогони QA |
+| **Дані Kenshi, офлайн** | `tif_to_r32.py` | `fullmap.tif` → `world_hmap.r16` (тепер лише запасний варіант: рушій читає `fullmap.tif` напряму) |
+| | `md_bake_ground_layers.py`, `md_bake_detail_array.py`, `md_encode_ground_bake.py` | Випікання кольору шарів ґрунту й масиву деталей (стане кешем першого запуску) |
+| | `md_stitch_overlay_mask.py`, `md_stitch_grasssplits.py`, `md_stitch_terrain.py` | Зшивання тайлів Kenshi (overlay, густина трави, ландшафт) в одну текстуру |
+| | `md_convert.py`, `md_convert_static.py`, `md_convert_features.py`, `md_mesh_conv/`, `kenshi_import/` | Ogre XML → GLB (персонажі, статичні об'єкти, об'єкти `features.dat`). Буде замінено читачами Ogre `.mesh` у рушії під час запуску |
+| **Гігієна репо** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Розбіжності документації з кодом, офлайн-панель стану, перевірка прив'язок SPIR-V |
+| **Спадок (Flare)** | `md_flare_convert`, `md_flare_demo`, `flare_2d_render.py` | З попереднього ізометричного напряму Flare; працюють, але не розвиваються |
+
+### Збірка
+Збирається з кореня репозиторію гри (потрібен рушій як сусідній підмодуль) — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
+
+### Заміри
+- Камера через `md.set_camera_pose_world(...)`, перевірка `md.terrain_pixel_fraction()` ≥ 0,8: продуктивність міряємо лише на кадрах, де переважає земля.
+- A/B — в одному процесі, чергованими блоками (ABBA).
+- Пастка: прапорець `--camera` (і `Driver.screenshot(camera=..., editor_open=False)`) губить камеру, бо `editor_open=False` повертає камеру гравця. Використовуйте `editor_open=True` або команду пози.
+
+### Редактор
+- Панелі: Hierarchy, Assets, Console (Lua REPL), Graphics, Camera (орбіта / політ), Animation, ViewCone, FlowGraph, Director, GPU Profiler, Sequencer, 3D World, Settings. Палітра команд: `Ctrl+P`.
+- 3D World бере біоми з FCS (`BiomeRegistry::LoadPreferFcs`) і `blendmap.png` з інсталяції Kenshi, із запасними офлайн-копіями; ландшафт вантажиться у фоновому потоці.
+- Панелі, прив'язані до гри (Inspector, скульптинг ландшафту), — у репозиторії гри, вмикаються `-DMONKEY_DUST_EDITOR=ON`.
+
+### Архітектура
+Див. дерево вище. Правило залежностей: `tools/` включає лише `engine/` і `tools/third_party/`, ніколи `game/`.
+
+### Ліцензія
+GNU GPL v3.0, див. [LICENSE](LICENSE). Kenshi — торгова марка Lo-Fi Games; проєкт з Lo-Fi Games не пов'язаний.
