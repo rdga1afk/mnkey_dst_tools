@@ -36,6 +36,24 @@ static constexpr const char* F3_VERSION_TAG = "\"v\":1";
 
 struct F3SettingsState { bool det; ImVec2 pos, siz; };
 
+#ifndef MONKEY_DUST_STANDALONE_EDITOR
+// Settings tab -> renderer (defined in game/src/render/npc_render_deferred.cpp; tools/ does not include game headers)
+extern float md_settings_get_resolution_scale();
+extern void  md_settings_set_resolution_scale(float s);
+extern void  md_settings_render_size(int* in_w, int* in_h, int* out_w, int* out_h);
+extern int   md_settings_get_terrain_chunk();
+extern void  md_settings_set_terrain_chunk(int cells);
+#endif
+// Upscaling / Terrain settings saved with the F3 layout ("rm": 0 Native, 1 Bilinear auto, 2 Bilinear fixed; "rs": fixed scale; "tcs": terrain chunk 16 or 64).
+static int   s_set_res_mode  = 0;
+static float s_set_res_scale = 0.75f;
+static int   s_set_chunk     = 16;
+static void  apply_res_mode() {
+#ifndef MONKEY_DUST_STANDALONE_EDITOR
+    md_settings_set_resolution_scale(s_set_res_mode == 0 ? 1.f : s_set_res_mode == 1 ? 0.f : s_set_res_scale);
+#endif
+}
+
 static float f3_parse_f(const char* buf, const char* key) {
     const char* p = strstr(buf, key); if (!p) return 0.f;
     p += strlen(key);
@@ -47,7 +65,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
                     float* out_fspd = nullptr, F3SettingsState* out_set = nullptr) {
     FILE* f = fopen(F3_LAYOUT_PATH, "rb");
     if (!f) return;
-    char buf[600]; size_t n = fread(buf, 1, 599, f); buf[n] = '\0'; fclose(f);
+    char buf[1024]; size_t n = fread(buf, 1, 1023, f); buf[n] = '\0'; fclose(f);
     // Reject files not written by this code (no version tag = stale/foreign file).
     if (!strstr(buf, F3_VERSION_TAG)) return;
     const char* dk[6] = {"\"scene\"","\"ai\"","\"anim\"","\"flow\"","\"debug\"","\"cam\""};
@@ -76,6 +94,13 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         float v = f3_parse_f(buf, "\"fspd\"");
         if (v > 0.f) *out_fspd = v;
     }
+    if (strstr(buf, "\"rm\"")) {
+        s_set_res_mode = (int)f3_parse_f(buf, "\"rm\"");
+        if (s_set_res_mode < 0 || s_set_res_mode > 2) s_set_res_mode = 0;
+        const float rs = f3_parse_f(buf, "\"rs\"");
+        if (rs >= 0.5f && rs <= 1.f) s_set_res_scale = rs;
+        s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
+    }
     if (out_set) {
         const char* p = strstr(buf, "\"sdet\"");
         if (p) {
@@ -102,7 +127,8 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"flx\":%.0f,\"fly\":%.0f,\"flw\":%.0f,\"flh\":%.0f,"
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
-        "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f}\n",
+        "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -111,7 +137,8 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[3].x,pos[3].y,siz[3].x,siz[3].y,
         pos[4].x,pos[4].y,siz[4].x,siz[4].y,
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
-        set.pos.x,set.pos.y,set.siz.x,set.siz.y);
+        set.pos.x,set.pos.y,set.siz.x,set.siz.y,
+        s_set_res_mode, s_set_res_scale, s_set_chunk);
     fclose(f);
 }
 
@@ -126,6 +153,15 @@ void EditorCore::Init() {
     ImVec2 siz6[6] = { f3_size_scene, f3_size_ai, f3_size_anim, f3_size_flow, f3_size_debug, f3_size_cam };
     F3SettingsState set6{f3_det_settings, f3_pos_settings, f3_size_settings};
     f3_load(det6, pos6, siz6, &cam_speed, &set6);
+#ifndef MONKEY_DUST_STANDALONE_EDITOR
+    // saved Settings: read at start (a run without a saved file keeps the code defaults: native 1.0, chunk 16)
+    {
+        FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
+        char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); }
+        else s_set_chunk = md_settings_get_terrain_chunk();
+    }
+#endif
     f3_det_scene = det6[0];  f3_det_ai    = det6[1]; f3_det_anim  = det6[2];
     f3_det_flow  = det6[3];  f3_det_debug = det6[4]; f3_det_cam   = det6[5];
     f3_det_settings = set6.det;
@@ -379,6 +415,36 @@ void EditorCore::Update(float dt) {
                 ImGui::SetNextItemWidth(220.f);
                 ImGui::SliderFloat("Fly speed (m/s)##fset", &cam_speed, 5.f, 5000.f, "%.0f",
                                    ImGuiSliderFlags_Logarithmic);
+#ifndef MONKEY_DUST_STANDALONE_EDITOR
+                // #114: internal 3D resolution. Native = 1.0; Bilinear auto = the old window-size rule (720p in a 1080p window);
+                // Bilinear fixed = the slider. FSR 2 entries come with #156.
+                ImGui::Separator();
+                ImGui::TextUnformatted("Upscaling");
+                {
+                    // radio buttons, not a combo: every choice is one click (and addressable by the UI driver)
+                    if (ImGui::RadioButton("Native (1.0)##upsc0", s_set_res_mode == 0)) { s_set_res_mode = 0; apply_res_mode(); }
+                    if (ImGui::RadioButton("Bilinear (auto: 720p in a 1080p window)##upsc1", s_set_res_mode == 1)) { s_set_res_mode = 1; apply_res_mode(); }
+                    if (ImGui::RadioButton("Bilinear (fixed)##upsc2", s_set_res_mode == 2)) { s_set_res_mode = 2; apply_res_mode(); }
+                    if (s_set_res_mode == 2) {
+                        ImGui::SetNextItemWidth(220.f);
+                        if (ImGui::SliderFloat("resolution_scale##upsc", &s_set_res_scale, 0.5f, 1.0f, "%.2f")) apply_res_mode();
+                    }
+                    int iw = 0, ih = 0, ow = 0, oh = 0;
+                    md_settings_render_size(&iw, &ih, &ow, &oh);
+                    ImGui::Text("internal %dx%d -> output %dx%d", iw, ih, ow, oh);
+                }
+                // #154: patch size of the terrain LOD (Kenshi's "Terrain Chunk Size"). Read at start.
+                ImGui::Separator();
+                ImGui::TextUnformatted("Terrain");
+                {
+                    if (ImGui::RadioButton("Small (16)##tcs16", s_set_chunk == 16)) s_set_chunk = 16;
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Large (64)##tcs64", s_set_chunk == 64)) s_set_chunk = 64;
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted("Terrain Chunk Size");
+                    ImGui::TextDisabled("applies after a restart; keep it with Save config");
+                }
+#endif
                 // 2026-09-20 (docs/RESOLVE_OPT.md session): time-of-day
                 // override, requested after the ambient-probe/live-sun fix
                 // made it hard to verify lighting at a chosen hour without

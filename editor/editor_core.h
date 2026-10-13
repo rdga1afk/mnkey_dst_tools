@@ -39,7 +39,7 @@ public:
     ImVec2 f3_pos_flow     = {230.f,  85.f},  f3_size_flow     = {820.f, 570.f};
     ImVec2 f3_pos_debug    = {870.f, 255.f},  f3_size_debug    = {390.f, 410.f};
     ImVec2 f3_pos_cam      = {960.f,  85.f},  f3_size_cam      = {300.f, 225.f};
-    ImVec2 f3_pos_settings = {400.f, 200.f},  f3_size_settings = {360.f, 200.f};
+    ImVec2 f3_pos_settings = {400.f, 200.f},  f3_size_settings = {380.f, 470.f};
     EditorGizmoOp    gizmo_op    = EditorGizmoOp::TRANSLATE;
     EditorGizmoSpace gizmo_space = EditorGizmoSpace::WORLD;
 
