@@ -3,6 +3,9 @@
 #include <monkey_dust/world/terrain_gen.h>
 #include "editor_world_3d_sdlgpu.h"
 #include "editor_screenshot.h"
+#ifdef MD_SDL_GPU
+#include "editor_char_preview_sdlgpu.h"
+#endif
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -20,6 +23,42 @@ extern "C" {
 // are accepted (stored, no error) but do nothing yet; wire them the same
 // way if a future scenario needs them — don't pre-wrap every panel.
 static char s_forced_tab[64] = {};
+
+// ── md.char_preview_force_morph(name | nil, weight, yaw) ── diagnostic: only that morph at that weight, preview yaw in radians (nil name = off)
+static int l_md_char_preview_force_morph(lua_State* L) {
+#ifdef MD_SDL_GPU
+    const char* n = lua_isstring(L, 1) ? lua_tostring(L, 1) : nullptr;
+    CharPreviewSDLGPU::DebugForceMorph(n, (float)luaL_optnumber(L, 2, 0.0), (float)luaL_optnumber(L, 3, -1000.0));
+#else
+    (void)L;
+#endif
+    return 0;
+}
+
+// ── md.char_preview_def(body{18}, face{24} | nil) ── diagnostic: the preview uses these slider values (nil = the editor's own)
+static int l_md_char_preview_def(lua_State* L) {
+#ifdef MD_SDL_GPU
+    if (!lua_istable(L, 1) || !lua_istable(L, 2)) { CharPreviewSDLGPU::DebugOverrideDef(nullptr, nullptr); return 0; }
+    float b[18], f[24];
+    for (int i = 0; i < 18; ++i) { lua_rawgeti(L, 1, i + 1); b[i] = (float)lua_tonumber(L, -1); lua_pop(L, 1); }
+    for (int i = 0; i < 24; ++i) { lua_rawgeti(L, 2, i + 1); f[i] = (float)lua_tonumber(L, -1); lua_pop(L, 1); }
+    CharPreviewSDLGPU::DebugOverrideDef(b, f);
+#else
+    (void)L;
+#endif
+    return 0;
+}
+
+// ── md.char_preview_tab(n) ── diagnostic: preview camera of the BODY (0) or FACE / HAIR (1, 2) tab
+static int l_md_char_preview_tab(lua_State* L) {
+#ifdef MD_SDL_GPU
+    CharPreviewSDLGPU::DebugForceMorph(nullptr, 0.f, -1000.f); // also freezes the portrait auto-rotation
+    CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
+#else
+    (void)L;
+#endif
+    return 0;
+}
 
 static int l_md_editor_open_panel(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
@@ -150,6 +189,9 @@ static int l_md_editor_screenshot(lua_State* L) {
 
 void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("editor_open_panel",  l_md_editor_open_panel);
+    sys.RegisterNamespaceFunction("char_preview_force_morph", l_md_char_preview_force_morph);
+    sys.RegisterNamespaceFunction("char_preview_def", l_md_char_preview_def);
+    sys.RegisterNamespaceFunction("char_preview_tab", l_md_char_preview_tab);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
     sys.RegisterNamespaceFunction("editor_camera_pos",  l_md_editor_camera_pos);
     sys.RegisterNamespaceFunction("editor_terrain_op",  l_md_editor_terrain_op);

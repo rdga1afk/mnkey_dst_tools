@@ -22,6 +22,10 @@ void DrawInImGui(float W, float H,
 void ReloadPipelines();
 void SetBoneScalesFromDef(const float body[18], const float face[24]);
 void SetBodyMorphWeights(const float body[18], const float face[24]);
+// Scenario/diagnostic hook: while on, every morph weight is 0 except `name` = w (name == nullptr switches it off); yaw in radians, < -100 leaves the view alone.
+void DebugForceMorph(const char* name, float w, float yaw);
+// Scenario/diagnostic hook: while set, the preview uses these 18 body / 24 face slider values instead of the editor's (nullptr clears).
+void DebugOverrideDef(const float* body, const float* face);
 void SetMorphWeightsFromFace(const float face[], const float def[],
                               const float lo[], const float hi[]);
 void SetCameraForTab(int tab);

@@ -324,7 +324,19 @@ void ReloadPipelines() {
 // Bone axes: localX=+worldY(height) for spine/leg; localX=arm-direction for arm bones.
 // setBoneSize → s_boneScales (vertex deformation only, doesn't move children).
 // setBonePositionalSize → s_posScale (scales bind translation from parent).
-void SetBoneScalesFromDef(const float body[18], const float face[24]) {
+static bool  s_dbg_freeze_view = false;   // diagnostic hooks: no portrait auto-rotation
+static bool  s_dbg_def_on = false;
+static float s_dbg_body[18], s_dbg_face[24];
+void DebugOverrideDef(const float* body, const float* face) {
+    s_dbg_freeze_view = true;
+    s_dbg_def_on = body && face;
+    if (s_dbg_def_on) { memcpy(s_dbg_body, body, sizeof(s_dbg_body)); memcpy(s_dbg_face, face, sizeof(s_dbg_face)); }
+    s_morphs_dirty = true;
+}
+
+void SetBoneScalesFromDef(const float body_in[18], const float face_in[24]) {
+    const float* body = s_dbg_def_on ? s_dbg_body : body_in;
+    const float* face = s_dbg_def_on ? s_dbg_face : face_in;
     if (s_pose_idle_clip < 0 || !s_pose_mesh.loaded) return;
 
     CharScales scales;
@@ -408,24 +420,26 @@ static int s_morph_idx_by_name(const char* name) {
     return -1;
 }
 
-// Body morph weights — SECONDARY organic layer (bone scale is primary, matches Kenshi RE).
-// Kenshi uses bone-only; morphs here add soft-tissue deformation on top.
-// Weights are reduced (0.3x) to avoid fighting with bone scale.
-// Negative deviations → no morph (bone scale handles the "thin" side).
-void SetBodyMorphWeights(const float body[18], const float face[24]) {
-    auto set = [](const char* n, float w) {
-        int mi=s_morph_idx_by_name(n);
-        if(mi>=0) {
-            float cw = w<0.f?0.f:(w>1.f?1.f:w);
-            static float s_nt_logged = -1.f; // the weight is reset every frame by SetMorphWeightsFromFace, so log changes of the computed value only
-            if (!strcmp(n, "narrow_torso") && cw != s_nt_logged) { s_nt_logged = cw; fprintf(stdout, "[CharPreview] narrow_torso weight %.3f\n", cw); fflush(stdout); }
-            s_morph_weights[mi]=cw;
-        } else {
-            static const char* s_reported[16]; static int s_n_reported = 0; // a body morph the mesh does not have: say so once per name
-            bool seen = false; for (int i = 0; i < s_n_reported; ++i) if (!strcmp(s_reported[i], n)) seen = true;
-            if (!seen && s_n_reported < 16) { s_reported[s_n_reported++] = n; fprintf(stdout, "[CharPreview] note: body morph '%s' is not in the loaded mesh (the female mesh has face morphs only)\n", n); }
-        }
-    };
+static char  s_force_name[48] = {};
+static float s_force_w = 0.f;
+void DebugForceMorph(const char* name, float w, float yaw) {
+    s_dbg_freeze_view = true; // the portrait camera orbits with the wall clock
+    if (name) { snprintf(s_force_name, sizeof(s_force_name), "%s", name); s_force_w = w; } else s_force_name[0] = '\0';
+    if (yaw > -100.f) s_yaw = yaw;
+    s_morphs_dirty = true;
+}
+
+// Body morph weights. The body sliders already scale bones (CharCustomization_ComputeScales, RE-verified: Kenshi has no body morphs, 0x14052e6c0), so a
+// feature is applied once: by the bone scale. The procedural targets of tools/morph_gen_b.py that only scale or move a body part (tall, longlegs, bighead,
+// broadshdr, wide_hips, female_body, stocky) would apply the same feature a second time (and wide_hips / female_body also splay the legs), so no slider
+// drives them. fat, muscular and narrow_torso push the surface along its normals -- soft tissue a bone scale cannot express -- and stay as a thin organic
+// layer: slider intensity 0..1 times a cap taken from the mesh itself, so that the slider's extreme moves no vertex by more than kSoftTissueMaxM.
+static constexpr float kSoftTissueMaxM = 0.012f;
+float s_morph_max_delta[kMaxMorphs] = {};   // largest vertex displacement of each target (m), filled by s_load_mesh
+
+void SetBodyMorphWeights(const float body_in[18], const float face[24]) {
+    (void)face;
+    const float* body = s_dbg_def_on ? s_dbg_body : body_in;
     // pd: positive deviation above neutral (0 at neutral, 1 at neutral+range)
     auto pd = [](float v, float neu, float rng) -> float {
         float d=(v-neu)/rng; return d<0.f?0.f:(d>1.f?1.f:d);
@@ -434,46 +448,36 @@ void SetBodyMorphWeights(const float body[18], const float face[24]) {
     auto nd = [](float v, float neu, float rng) -> float {
         float d=(neu-v)/rng; return d<0.f?0.f:(d>1.f?1.f:d);
     };
-
-    // ── existing 6 morphs ────────────────────────────────────────────────────
-    set("fat",      (pd(body[13],100.f,90.f)*0.65f
-                   + pd(body[15],100.f,45.f)*0.20f
-                   + pd(body[12],100.f,40.f)*0.15f) * 0.3f);
-
-    set("muscular", (pd(body[9], 100.f,45.f)*0.65f
-                   + pd(body[8], 100.f,10.f)*0.15f
-                   + pd(body[12],100.f,40.f)*0.20f) * 0.3f);
-
-    set("longlegs", pd(body[7], 100.f,15.f) * 0.3f);
-    set("bighead",  pd(face[0], 100.f,10.f) * 0.3f);
-
-    set("broadshdr",(pd(body[3], 100.f,20.f)*0.55f
-                   + pd(body[8], 100.f,10.f)*0.45f) * 0.6f);
-
-    set("tall",     pd(body[2], 100.f,20.f) * 0.15f);
-
-    // ── нові 4 морфи ─────────────────────────────────────────────────────────
-    // female_body: широкі стегна + вузькі плечі → hourglass силует
-    // body[15]=Hips(75-145), body[8]=Shoulders(90-110)
-    set("female_body", (pd(body[15],100.f,45.f)*0.6f
-                      + nd(body[8], 100.f,10.f)*0.4f) * 0.55f);
-
-    // wide_hips: прямо від Hips слайдера (доповнює female_body)
-    set("wide_hips",   pd(body[15],100.f,45.f) * 0.4f);
-
-    // stocky: активний тільки коли Frame HIGH і Height LOW разом
-    // body[3]=Frame(80-120), body[2]=Height(80-120)
-    set("stocky",      pd(body[3],100.f,20.f) * nd(body[2],100.f,20.f) * 1.2f);
-
-    // narrow_torso: активний коли Frame LOW (lean тулуб)
-    set("narrow_torso",nd(body[3],100.f,20.f) * 0.4f);
-
+    auto set = [](const char* n, float intensity) {
+        int mi = s_morph_idx_by_name(n);
+        if (mi < 0) {
+            static const char* s_reported[16]; static int s_n_reported = 0; // a body morph the mesh does not have: say so once per name
+            bool seen = false; for (int i = 0; i < s_n_reported; ++i) if (!strcmp(s_reported[i], n)) seen = true;
+            if (!seen && s_n_reported < 16) { s_reported[s_n_reported++] = n; fprintf(stdout, "[CharPreview] note: body morph '%s' is not in the loaded mesh (the female mesh has face morphs only)\n", n); }
+            return;
+        }
+        float cap = s_morph_max_delta[mi] > 1e-6f ? kSoftTissueMaxM / s_morph_max_delta[mi] : 0.f;
+        if (cap > 1.f) cap = 1.f;
+        s_morph_weights[mi] = (intensity < 0.f ? 0.f : (intensity > 1.f ? 1.f : intensity)) * cap;
+    };
+    set("fat",          pd(body[13], 100.f, 90.f));  // Stomach 100..190
+    set("muscular",     pd(body[9],  100.f, 45.f));  // Arm bulk 100..145
+    set("narrow_torso", nd(body[3],  100.f, 20.f));  // Frame 100..80
+    if (s_force_name[0]) { // diagnostic override (DebugForceMorph)
+        memset(s_morph_weights, 0, sizeof(s_morph_weights));
+        int fi = s_morph_idx_by_name(s_force_name);
+        if (fi >= 0) s_morph_weights[fi] = s_force_w;
+    }
+    static float s_sum_logged = -1.f; // the sum of all morph weights (0 at default sliders and default face): logged when it changes
+    float sum = 0.f; for (int i = 0; i < s_morph_count; ++i) sum += s_morph_weights[i];
+    if (fabsf(sum - s_sum_logged) > 1e-4f) { s_sum_logged = sum; fprintf(stdout, "[CharPreview] morph weight sum %.4f\n", sum); fflush(stdout); }
     s_morphs_dirty = true;
 }
 
 // Call once per frame with current face[], def[], lo[], hi[] arrays.
-void SetMorphWeightsFromFace(const float face[], const float def[],
+void SetMorphWeightsFromFace(const float face_in[], const float def[],
                                      const float lo[],  const float hi[]) {
+    const float* face = s_dbg_def_on ? s_dbg_face : face_in;
     memset(s_morph_weights, 0, sizeof(s_morph_weights));
     for (int e = 0; e < kFaceMorphMapN; ++e) {
         const FME& m = kFaceMorphMap[e];
@@ -585,7 +589,7 @@ void DrawInImGui(float W, float H,
     // Auto-rotation runs only while portrait mode is active AND user hasn't taken manual control.
     // First RMB drag disables portrait mode so the user can hold a custom view for screenshots.
     if (dragging) s_portrait_mode = false;
-    if (s_portrait_mode) {
+    if (s_portrait_mode && !s_dbg_freeze_view) {
         uint64_t ms = SDL_GetTicks() - s_anim_epoch_ms;
         uint32_t fr = (uint32_t)(ms / 33);
         s_yaw = ((float)(fr % 500) / 1000.f - 0.25f) * 3.14159f * 0.6f;

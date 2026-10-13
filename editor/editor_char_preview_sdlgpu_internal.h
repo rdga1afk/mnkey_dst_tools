@@ -191,6 +191,7 @@ extern int    s_morph_count;
 constexpr int kMaxMorphs = 64;  // morph targets per mesh (md_human_t.glb has 33, md_human_female_t.glb 29); more is an error in the log, not a silent cut
 extern char   s_morph_names[kMaxMorphs][48];
 extern float  s_morph_weights[kMaxMorphs];
+extern float  s_morph_max_delta[kMaxMorphs];  // largest vertex displacement of each target (m)
 extern bool   s_morphs_dirty;
 extern float s_height;
 extern float s_bulk;

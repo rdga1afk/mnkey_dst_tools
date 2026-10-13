@@ -197,6 +197,7 @@ bool s_load_mesh(const char* glb_path) {
     s_morph_count = 0;
     memset(s_morph_names,  0, sizeof(s_morph_names));
     memset(s_morph_weights,0, sizeof(s_morph_weights));
+    memset(s_morph_max_delta,0, sizeof(s_morph_max_delta));
 
     int n_mt = (int)pr.targets_count;
     if (n_mt > kMaxMorphs) {
@@ -225,15 +226,19 @@ bool s_load_mesh(const char* glb_path) {
                     cgltf_accessor* dacc = tgt.attributes[ai].data;
                     float* base = s_morph_deltas + (size_t)mt * vc * 3;
                     cgltf_size rn = dacc->count < vc ? dacc->count : vc;
-                    for (cgltf_size vi = 0; vi < rn; ++vi)
+                    float mx2 = 0.f;
+                    for (cgltf_size vi = 0; vi < rn; ++vi) {
                         cgltf_accessor_read_float(dacc, vi, base + vi*3, 3);
+                        const float* q = base + vi*3; float l2 = q[0]*q[0] + q[1]*q[1] + q[2]*q[2]; if (l2 > mx2) mx2 = l2;
+                    }
+                    s_morph_max_delta[mt] = sqrtf(mx2);
                     break;
                 }
             }
             s_morph_count = n_mt;
         }
         fprintf(stdout,"[CharPreview] %s: %d morph targets:", glb_path, s_morph_count);
-        for (int mt = 0; mt < s_morph_count; ++mt) fprintf(stdout, " %s", s_morph_names[mt]);
+        for (int mt = 0; mt < s_morph_count; ++mt) fprintf(stdout, " %s(%.3fm)", s_morph_names[mt], s_morph_max_delta[mt]);
         fprintf(stdout, "\n");
     }
     s_morphs_dirty = false;
