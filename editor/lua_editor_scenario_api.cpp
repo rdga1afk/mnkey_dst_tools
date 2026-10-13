@@ -60,6 +60,16 @@ static int l_md_char_preview_tab(lua_State* L) {
     return 0;
 }
 
+// ── md.char_preview_clothes(bool) ── diagnostic: show / hide the worn clothes in the preview
+static int l_md_char_preview_clothes(lua_State* L) {
+#ifdef MD_SDL_GPU
+    CharPreviewSDLGPU::s_clothes_visible = lua_toboolean(L, 1) != 0;
+#else
+    (void)L;
+#endif
+    return 0;
+}
+
 static int l_md_editor_open_panel(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
     strncpy(s_forced_tab, name, sizeof(s_forced_tab) - 1);
@@ -192,6 +202,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_preview_force_morph", l_md_char_preview_force_morph);
     sys.RegisterNamespaceFunction("char_preview_def", l_md_char_preview_def);
     sys.RegisterNamespaceFunction("char_preview_tab", l_md_char_preview_tab);
+    sys.RegisterNamespaceFunction("char_preview_clothes", l_md_char_preview_clothes);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
     sys.RegisterNamespaceFunction("editor_camera_pos",  l_md_editor_camera_pos);
     sys.RegisterNamespaceFunction("editor_terrain_op",  l_md_editor_terrain_op);

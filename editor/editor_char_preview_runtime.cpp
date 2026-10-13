@@ -460,9 +460,11 @@ void SetBodyMorphWeights(const float body_in[18], const float face[24]) {
         if (cap > 1.f) cap = 1.f;
         s_morph_weights[mi] = (intensity < 0.f ? 0.f : (intensity > 1.f ? 1.f : intensity)) * cap;
     };
-    set("fat",          pd(body[13], 100.f, 90.f));  // Stomach 100..190
-    set("muscular",     pd(body[9],  100.f, 45.f));  // Arm bulk 100..145
-    set("narrow_torso", nd(body[3],  100.f, 20.f));  // Frame 100..80
+    // worn clothes are skinned meshes that follow the bone scale but not the morph targets, so the layer would push the skin through them: bare body only
+    const float on = s_clothes_visible ? 0.f : 1.f;
+    set("fat",          on * pd(body[13], 100.f, 90.f));  // Stomach 100..190
+    set("muscular",     on * pd(body[9],  100.f, 45.f));  // Arm bulk 100..145
+    set("narrow_torso", on * nd(body[3],  100.f, 20.f));  // Frame 100..80
     if (s_force_name[0]) { // diagnostic override (DebugForceMorph)
         memset(s_morph_weights, 0, sizeof(s_morph_weights));
         int fi = s_morph_idx_by_name(s_force_name);
