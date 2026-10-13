@@ -33,6 +33,9 @@ float s_ws_mat[30][16];
 float s_inv_bind[30][16];   // inverseBindMatrices from GLB (world→bone local)
 float s_bind[30][16];       // bind matrices = inv(inv_bind)
 float s_bind_local[30][16]; // bind_local[i] = inv_bind[parent] * bind[i]
+char   s_joint_name[30][32] = {};
+bool   s_pose_map_ready = false;
+int8_t s_pose_map[30] = {};
 int8_t s_bone_parent[30];   // parent joint index, -1 for root
 float s_idle_rot[30][4];    // idle_stand_normal frame-0 quaternion (xyzw) per bone
 bool  s_idle_has_rot[30];   // true if bone has explicit rotation channel in idle_stand_normal

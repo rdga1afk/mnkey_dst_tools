@@ -267,8 +267,10 @@ bool s_load_mesh(const char* glb_path) {
             int ni=(int)(sk.joints[ji]-d->nodes);
             if(ni>=0&&ni<2048) node_to_ji[ni]=ji;
         }
+        memset(s_joint_name,0,sizeof(s_joint_name)); s_pose_map_ready=false;
         for (int ji=0;ji<jn;ji++) {
             cgltf_node* n=sk.joints[ji];
+            if (n->name) snprintf(s_joint_name[ji],32,"%s",n->name);
             if (n->parent) {
                 int pni=(int)(n->parent-d->nodes);
                 if(pni>=0&&pni<2048&&node_to_ji[pni]>=0) s_bone_parent[ji]=(int8_t)node_to_ji[pni];

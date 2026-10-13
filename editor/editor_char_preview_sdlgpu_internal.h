@@ -126,6 +126,9 @@ extern float s_ws_mat[30][16];
 extern float s_inv_bind[30][16];   // inverseBindMatrices from GLB (world→bone local)
 extern float s_bind[30][16];       // bind matrices = inv(inv_bind)
 extern float s_bind_local[30][16]; // bind_local[i] = inv_bind[parent] * bind[i]
+extern char   s_joint_name[30][32];     // joint names of the loaded mesh (the female skeleton has no Jaw / JawNub but L / R Boob)
+extern bool   s_pose_map_ready;         // s_pose_map is valid for the loaded mesh
+extern int8_t s_pose_map[30];           // mesh joint -> bone of the pose skeleton (md_human.glb) that drives it
 extern int8_t s_bone_parent[30];   // parent joint index, -1 for root
 extern float s_idle_rot[30][4];    // idle_stand_normal frame-0 quaternion (xyzw) per bone
 extern bool  s_idle_has_rot[30];   // true if bone has explicit rotation channel in idle_stand_normal

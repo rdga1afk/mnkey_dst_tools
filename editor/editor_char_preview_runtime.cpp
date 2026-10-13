@@ -379,8 +379,23 @@ void SetBoneScalesFromDef(const float body_in[18], const float face_in[24]) {
     // GetFinalBonesScaled writes MAX_SKIN_BONES entries — use flat buffer to avoid overflow.
     static float ws_flat[MAX_SKIN_BONES * 16];
     s_pose_mesh.GetFinalBonesScaled(s_pose_idle_clip, 0.f, scales, ws_flat);
+    // the pose skeleton is the male one: a joint of the loaded mesh takes the matrix of the pose bone with the same name (the female skeleton has no Jaw / JawNub, so
+    // its right-hand joints sit two places earlier, and L / R Boob exist only there); a joint without a namesake follows its parent
+    if (!s_pose_map_ready) {
+        for (int i = 0; i < 30; ++i) {
+            s_pose_map[i] = -1;
+            for (int b = 0; b < s_pose_mesh.bone_count && b < 30; ++b)
+                if (s_joint_name[i][0] && strcmp(s_joint_name[i], s_pose_mesh.bone_names[b]) == 0) { s_pose_map[i] = (int8_t)b; break; }
+        }
+        for (int i = 0; i < 30; ++i) { // parents have lower indices than children in both skeletons
+            int p = i; while (s_pose_map[i] < 0 && p >= 0 && (p = s_bone_parent[p]) >= 0) s_pose_map[i] = s_pose_map[p];
+            if (s_pose_map[i] < 0) s_pose_map[i] = (int8_t)i;
+            if (s_pose_map[i] != i) fprintf(stdout, "[CharPreview] joint %d '%s' driven by pose bone %d\n", i, s_joint_name[i], s_pose_map[i]);
+        }
+        s_pose_map_ready = true;
+    }
     for (int i = 0; i < 30; ++i)
-        memcpy(s_ws_mat[i], ws_flat + i * 16, 64);
+        memcpy(s_ws_mat[i], ws_flat + s_pose_map[i] * 16, 64);
 }
 
 // ── Face morph target wiring ─────────────────────────────────────────────────
