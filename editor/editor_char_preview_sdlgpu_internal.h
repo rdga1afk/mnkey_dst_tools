@@ -188,8 +188,9 @@ extern Vtx*   s_base_verts_cpu;   // persistent base mesh (not freed after GPU u
 extern int    s_base_vc;
 extern float* s_morph_deltas;   // [morph_count × vc × 3] heap-allocated
 extern int    s_morph_count;
-extern char   s_morph_names[32][48];
-extern float  s_morph_weights[32];
+constexpr int kMaxMorphs = 64;  // morph targets per mesh (md_human_t.glb has 33, md_human_female_t.glb 29); more is an error in the log, not a silent cut
+extern char   s_morph_names[kMaxMorphs][48];
+extern float  s_morph_weights[kMaxMorphs];
 extern bool   s_morphs_dirty;
 extern float s_height;
 extern float s_bulk;

@@ -415,7 +415,16 @@ static int s_morph_idx_by_name(const char* name) {
 void SetBodyMorphWeights(const float body[18], const float face[24]) {
     auto set = [](const char* n, float w) {
         int mi=s_morph_idx_by_name(n);
-        if(mi>=0) s_morph_weights[mi]=w<0.f?0.f:(w>1.f?1.f:w);
+        if(mi>=0) {
+            float cw = w<0.f?0.f:(w>1.f?1.f:w);
+            static float s_nt_logged = -1.f; // the weight is reset every frame by SetMorphWeightsFromFace, so log changes of the computed value only
+            if (!strcmp(n, "narrow_torso") && cw != s_nt_logged) { s_nt_logged = cw; fprintf(stdout, "[CharPreview] narrow_torso weight %.3f\n", cw); fflush(stdout); }
+            s_morph_weights[mi]=cw;
+        } else {
+            static const char* s_reported[16]; static int s_n_reported = 0; // a body morph the mesh does not have: say so once per name
+            bool seen = false; for (int i = 0; i < s_n_reported; ++i) if (!strcmp(s_reported[i], n)) seen = true;
+            if (!seen && s_n_reported < 16) { s_reported[s_n_reported++] = n; fprintf(stdout, "[CharPreview] note: body morph '%s' is not in the loaded mesh (the female mesh has face morphs only)\n", n); }
+        }
     };
     // pd: positive deviation above neutral (0 at neutral, 1 at neutral+range)
     auto pd = [](float v, float neu, float rng) -> float {

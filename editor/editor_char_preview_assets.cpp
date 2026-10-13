@@ -199,45 +199,21 @@ bool s_load_mesh(const char* glb_path) {
     memset(s_morph_weights,0, sizeof(s_morph_weights));
 
     int n_mt = (int)pr.targets_count;
-    if (n_mt > 32) n_mt = 32;
+    if (n_mt > kMaxMorphs) {
+        fprintf(stderr, "[CharPreview] ERROR: %s has %d morph targets, the limit is %d: the rest are dropped\n", glb_path, n_mt, kMaxMorphs);
+        n_mt = kMaxMorphs;
+    }
     if (n_mt > 0) {
-        // Hard-coded morph order for md_human_t.glb / md_human_female_t.glb.
-        // cgltf extras.data is unreliable across platforms; order matches Python audit.
-        // md_human_t.glb: 29 morphs in this exact order (verified 2026-05-30).
-        static const char* kKnownMorphs[] = {
-            "wide_cheekbones","narrow_cheekbones","big_mouth","wide_mouth",
-            "wide_nose","long_nose","arch_nose","high_nose",
-            "high_brow","low_brow","shallow_eyes","narrow_eyes","close_eyes",
-            "tiltdown_eyes","tiltup_eyes","high_eyes","big_eyes",
-            "tiltup_nose","tiltdown_nose","tiltdown_brow","tiltup_brow",
-            "overbite","underbite",
-            "tall","fat","muscular","longlegs","bighead","broadshdr"
-        };
-        static constexpr int kKnownN = (int)(sizeof(kKnownMorphs)/sizeof(kKnownMorphs[0]));
+        // names come from the mesh's glTF target names (cgltf_mesh::target_names, the order of the targets); there is no built-in list
         int names_found = 0;
-        // Try extras JSON first (works when cgltf populates it)
-        const char* ej = d->meshes[0].extras.data;
-        if (ej) {
-            const char* p = strstr(ej, "\"targetNames\"");
-            if (p) { p = strchr(p, '['); if (p) { ++p;
-                while (*p && names_found < n_mt) {
-                    while (*p && *p != '"' && *p != ']') ++p;
-                    if (!*p || *p == ']') break;
-                    ++p; int len=0;
-                    while (*p && *p != '"' && len<47) s_morph_names[names_found][len++]=*p++;
-                    s_morph_names[names_found][len]='\0';
-                    if (*p=='"') ++p;
-                    ++names_found;
-                }
-            }}
+        const cgltf_mesh& mesh0 = d->meshes[0];
+        for (cgltf_size i = 0; i < mesh0.target_names_count && names_found < n_mt; ++i) {
+            if (!mesh0.target_names[i]) break;
+            snprintf(s_morph_names[names_found], 48, "%s", mesh0.target_names[i]);
+            ++names_found;
         }
-        // Fallback: use hard-coded order if extras failed or count mismatch
-        if (names_found == 0 && n_mt == kKnownN) {
-            for (int i = 0; i < kKnownN; ++i)
-                snprintf(s_morph_names[i], 48, "%s", kKnownMorphs[i]);
-            names_found = kKnownN;
-            fprintf(stdout,"[CharPreview] morph names: using hard-coded order (%d)\n", kKnownN);
-        }
+        if (names_found < n_mt)
+            fprintf(stderr, "[CharPreview] ERROR: %s: only %d of %d morph names read from the glTF target names; the rest are named morph_N and the sliders do not find them\n", glb_path, names_found, n_mt);
         s_morph_deltas = (float*)calloc((size_t)n_mt * vc * 3, sizeof(float));
         if (s_morph_deltas) {
             for (int mt = 0; mt < n_mt; ++mt) {
@@ -256,7 +232,9 @@ bool s_load_mesh(const char* glb_path) {
             }
             s_morph_count = n_mt;
         }
-        fprintf(stdout,"[CharPreview] %d morph targets\n", s_morph_count);
+        fprintf(stdout,"[CharPreview] %s: %d morph targets:", glb_path, s_morph_count);
+        for (int mt = 0; mt < s_morph_count; ++mt) fprintf(stdout, " %s", s_morph_names[mt]);
+        fprintf(stdout, "\n");
     }
     s_morphs_dirty = false;
 
