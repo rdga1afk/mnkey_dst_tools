@@ -1,4 +1,5 @@
 #include "character/appearance.h"
+#include "character/face_poses.h"
 #include "character/pose_solver.h"
 #include "character/race_assets.h"
 #include "character/session.h"
@@ -183,18 +184,11 @@ bool Rebuild() {
     return true;
 }
 
-// Face sliders -> pose weights: value * 0.01 on the target, a negative value on target_opposite (weight = -value * 0.01).
 void PoseWeights(std::vector<float>& w) {
-    w.assign(g_body.poses.size(), 0.f);
+    std::vector<std::string> names;
+    for (const SkinnedPose& p : g_body.poses) names.push_back(p.name);
     const Config* cfg = g_session->Limits();
-    if (!cfg) return;
-    auto idx = [&](const std::string& n) { for (size_t i = 0; i < g_body.poses.size(); ++i) if (g_body.poses[i].name == n) return int(i); return -1; };
-    for (const Category& c : cfg->categories) for (const Range& r : c.ranges) {
-        if (r.target.empty() && r.target_opposite.empty()) continue;
-        float v = g_session->Value(r);
-        if (v < 0.f && !r.target_opposite.empty()) { int k = idx(r.target_opposite); if (k >= 0) w[k] += -v * 0.01f; }
-        else { int k = idx(r.target); if (k >= 0) w[k] += v * 0.01f; }
-    }
+    w = cfg ? FacePoseWeights(*cfg, names, std::map<std::string, float>(g_session->Values().values.begin(), g_session->Values().values.end())) : std::vector<float>(names.size(), 0.f);
 }
 
 // Skin matrices from the idle stance and the body sliders; face poses uploaded into the vertex buffer. Runs inside the frame's command buffer.
