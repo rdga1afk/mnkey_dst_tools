@@ -152,6 +152,22 @@ int main(int argc, char** argv) {
     // rendering normally internally. No-op if the window is already
     // shown by the time this runs.
     SDL_ShowWindow(_wnd::ptr());
+    if (scenario_cfg.active) {   // --exec: the picture must not depend on the monitor or the window manager: fixed, non-resizable, size set again after the window is shown
+        SDL_SetWindowFullscreen(_wnd::ptr(), false);
+        SDL_SetWindowResizable(_wnd::ptr(), true);
+        int aw = 0, ah = 0;
+        for (int i = 0; i < 60; ++i) {   // the window manager may maximise or tile the new window: restore and set the size again until it holds (3 s at most)
+            SDL_RestoreWindow(_wnd::ptr());
+            SDL_SetWindowSize(_wnd::ptr(), 1366, 706);
+            SDL_SyncWindow(_wnd::ptr());
+            SDL_PumpEvents();
+            SDL_GetWindowSize(_wnd::ptr(), &aw, &ah);
+            if (aw == 1366 && ah == 706) break;
+            SDL_Delay(50);
+        }
+        SDL_SetWindowResizable(_wnd::ptr(), false);
+        fprintf(stdout, "[Editor] --exec window %dx%d (wanted 1366x706)\n", aw, ah);
+    }
     md::GpuDeviceHandle gpu = md::GpuDevice::Get().SDLDevice();
     SDL_GPUTextureFormat sc_fmt = SDL_GetGPUSwapchainTextureFormat(gpu, _wnd::ptr());
 
