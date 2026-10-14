@@ -81,7 +81,7 @@ def _where(a):
     return ("%s+0x%x" % (f.getName(), a.subtract(f.getEntryPoint()))) if f is not None else "-"
 
 
-def t_decompile(target):
+def t_decompile(target, offset=0):
     from ghidra.util.task import ConsoleTaskMonitor
     f = None
     try:
@@ -94,7 +94,12 @@ def t_decompile(target):
     r = _decomp.decompileFunction(f, 90, ConsoleTaskMonitor())
     if not r.decompileCompleted():
         return "ERROR: decompile failed: " + str(r.getErrorMessage())
-    return _clip("// %s @ %s\n%s" % (f.getName(), f.getEntryPoint(), r.getDecompiledFunction().getC()))
+    text = "// %s @ %s\n%s" % (f.getName(), f.getEntryPoint(), r.getDecompiledFunction().getC())
+    off = max(0, int(offset))
+    if off:  # long functions: read them in MAX_CHARS pieces
+        piece = text[off:off + MAX_CHARS]
+        return "// chars %d..%d of %d\n%s%s" % (off, off + len(piece), len(text), piece, "" if off + MAX_CHARS >= len(text) else "\n... [continue with offset=%d]" % (off + MAX_CHARS))
+    return _clip(text)
 
 
 def t_disasm(addr, n=20):
@@ -168,7 +173,7 @@ def t_read_bytes(addr, n=64):
 
 
 TOOLS = {
-    "decompile": (t_decompile, "Decompile the function containing an address (0x...) or with a name.", {"target": "string"}, ["target"]),
+    "decompile": (t_decompile, "Decompile the function containing an address (0x...) or with a name; offset reads a long function in pieces.", {"target": "string", "offset": "integer"}, ["target"]),
     "disasm": (t_disasm, "Disassemble n instructions from an address.", {"addr": "string", "n": "integer"}, ["addr"]),
     "xrefs_to": (t_xrefs_to, "References to an address (from, type, containing function).", {"addr": "string", "limit": "integer"}, ["addr"]),
     "xrefs_from": (t_xrefs_from, "References from an address.", {"addr": "string", "limit": "integer"}, ["addr"]),
