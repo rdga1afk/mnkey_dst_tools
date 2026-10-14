@@ -10,7 +10,7 @@ endif()
 
 # ── md_character: character editor data library (no ImGui, no editor globals) ──
 add_library(md_character STATIC
-    editor/character/xml_mini.cpp editor/character/editor_limits.cpp editor/character/races.cpp editor/character/appearance.cpp editor/character/bod2.cpp editor/character/race_assets.cpp editor/character/bone_scales.cpp editor/character/skinned_body.cpp)
+    editor/character/xml_mini.cpp editor/character/editor_limits.cpp editor/character/races.cpp editor/character/appearance.cpp editor/character/bod2.cpp editor/character/race_assets.cpp editor/character/bone_scales.cpp editor/character/skinned_body.cpp editor/character/pose_solver.cpp)
 target_include_directories(md_character PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor/character)
 target_link_libraries(md_character PUBLIC monkey_dust::engine)
 
