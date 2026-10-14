@@ -42,7 +42,7 @@ public:
     bool SelectSubraceByName(const std::string& name, bool female);
     float Value(const Range& r) const;  // current value of a slider (mid when unset)
     void SetValue(const std::string& slider, float v) { values_.values[slider] = v; ++revision_; }
-    void Reset() { if (config_) Reset(*config_, values_); stance_ = DefaultStance(); ++revision_; }
+    void Reset() { if (config_) Reset(*config_, values_); stance_ = DefaultStance(); head_ = 0; ++revision_; }
     // Heads: the race's `heads male` / `heads female` HEAD records that have a `texture map` (M:docs/characters.md "Head"); index 0 is the default.
     size_t HeadCount() const { return heads_.size(); }
     const std::string& HeadId(size_t i) const { return heads_[i]; }

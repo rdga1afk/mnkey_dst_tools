@@ -25,7 +25,7 @@ extern "C" {
 static char s_forced_tab[64] = {};
 
 // ── Character editor, for scenarios (the editor itself has no switches): the session is the editor's own, the UI only draws it.
-// md.char_editor_select(subrace_name, female) -> bool   md.char_editor_set(slider, value) / md.char_editor_set(nil) = RESET
+// md.char_editor_select(subrace_name, female) -> bool   md.char_editor_set(slider, value) / md.char_editor_set(nil) = RESET; "head" and "idle stance" take a 0-based index
 // md.char_editor_view(tab, yaw_radians)                 tab 0 = whole body, others = head
 static int l_md_char_editor_select(lua_State* L) {
 #ifdef MD_SDL_GPU
@@ -37,7 +37,10 @@ static int l_md_char_editor_select(lua_State* L) {
 }
 static int l_md_char_editor_set(lua_State* L) {
 #ifdef MD_SDL_GPU
-    if (!lua_isstring(L, 1)) CharacterEditor::GetSession().Reset();
+    const std::string key = lua_isstring(L, 1) ? lua_tostring(L, 1) : "";
+    if (key.empty()) CharacterEditor::GetSession().Reset();
+    else if (key == "head") CharacterEditor::GetSession().SelectHead((int)luaL_checkinteger(L, 2));
+    else if (key == "idle stance") CharacterEditor::GetSession().SelectStance((int)luaL_checkinteger(L, 2));
     else CharacterEditor::GetSession().SetValue(lua_tostring(L, 1), (float)luaL_checknumber(L, 2));
 #else
     (void)L;
@@ -46,6 +49,7 @@ static int l_md_char_editor_set(lua_State* L) {
 }
 static int l_md_char_editor_view(lua_State* L) {
 #ifdef MD_SDL_GPU
+    CharacterEditor::SetTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
 #else
