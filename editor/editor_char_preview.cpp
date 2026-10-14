@@ -218,7 +218,15 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
     for (const std::string& n : g_body.bone_name) { if (n == "L Boob") in.has_breast_bones = true; if (n == "Bip01 Jaw") in.has_jaw_bone = true; }
     std::map<std::string, float> vals(g_session->Values().values.begin(), g_session->Values().values.end());
     static std::vector<M4> skin;
-    SolveSkinMatrices(g_body, g_skeleton, FindAnimation(g_skeleton, "idle_stand_normal"), 0.f, ComputeBoneScales(vals, in), skin);
+    // layers (weight 1, cumulative): the idle stance, then Posture -> "postures", Neck position -> "shoulder set", Shoulder set -> "neck set" (names crossed in the original, exe 0x14084b890),
+    // time = animation length * slider value * 0.01
+    std::vector<AnimLayer> layers = {{FindAnimation(g_skeleton, "idle_stand_normal"), 0.f}};
+    for (const auto& m : {std::make_pair("Posture", "postures"), std::make_pair("Neck position", "shoulder set"), std::make_pair("Shoulder set", "neck set")}) {
+        const md::ogre::Animation* a = FindAnimation(g_skeleton, m.second);
+        auto it = vals.find(m.first);
+        if (a && it != vals.end()) layers.push_back({a, a->length * it->second * 0.01f});
+    }
+    SolveSkinMatrices(g_body, g_skeleton, layers, ComputeBoneScales(vals, in), skin);
     float miny = 1e9f;
     for (const SkinnedVertex& v : g_body.vertices) {
         float y = 0.f;

@@ -36,10 +36,10 @@ std::vector<BoneScale> ComputeBoneScales(const std::map<std::string, float>& val
     auto positional = [&](size_t i, float x, float y, float z) { out[i].has_positional = true; out[i].positional[0] = x; out[i].positional[1] = y; out[i].positional[2] = z; };
     auto pair = [&](const char* l, const char* r, float x, float y, float z) { size_t a = size(l, x, y, z), b = size(r, x, y, z); return std::make_pair(a, b); };
 
-    // legs
+    // legs (M:docs/animation.md "The formulas"; exe 0x14052e6c0)
     { auto t = pair("Bip01 R Thigh", "Bip01 L Thigh", base, y184 * kThighY, base); float py = fr * m2h * hp; positional(t.first, 1.f, py, 1.f); positional(t.second, 1.f, py, 1.f); }
     const float calf = (2.f - ls) * lb * fr;
-    pair("Bip01 L Calf", "Bip01 R Calf", calf * calf, y184 * calf, calf * calf);
+    pair("Bip01 L Calf", "Bip01 R Calf", calf, y184, calf);
 
     // torso
     const float ch = sv("Chest") * q1a0 * p1b8, wa = sv("Waist") * p198, st = sv("Stomach") * p180;
@@ -57,28 +57,24 @@ std::vector<BoneScale> ComputeBoneScales(const std::map<std::string, float>& val
         if (bs < 1.f) { bx = (bs - 1.f) * kBoobBelow + 1.f; by = (bs - 1.f) * kBoobHalf + 1.f; }
         const float bh = in.female ? sv("Breast height") : 1.f, bsp = in.female ? sv("Breast spacing") : 1.f;
         auto b = pair("L Boob", "R Boob", bx * fr, by * h, bs * fr);
-        const float px = bh, py = bsp * chz * fr * ((m2h - 1.f) * kBoobHalf + 1.f), pz = ((m2h - 1.f) + 1.f) * (chz * fr);
+        const float px = bh, py = bsp * chz * fr * ((m2h - 1.f) * kBoobHalf + 1.f), pz = m2h * chz * fr;
         positional(b.first, px, py, pz); positional(b.second, px, py, pz);
     }
 
     // arms
     const float ab = sv("Arm bulk") * p198 * q188, sho = sv("Shoulders") * q1a0;
-    const float ab2 = ab * fr;
+    const float abf = ab * fr;
     const float armz = ((ab - 1.f) * kArmZ + 1.f) * fr;
-    pair("Bip01 L UpperArm", "Bip01 R UpperArm", ab2 * ab2, h * ab2, armz * ab2);
-    pair("Bip01 L Forearm", "Bip01 R Forearm", ab2 * ab2, h * ab2, ab2 * ab2);
+    { auto u = pair("Bip01 L UpperArm", "Bip01 R UpperArm", abf, h, armz); float px = sho * chx; positional(u.first, px, 1.f, 1.f); positional(u.second, px, 1.f, 1.f); }
+    pair("Bip01 L Forearm", "Bip01 R Forearm", abf, h, abf);
     pair("Bip01 L Clavicle", "Bip01 R Clavicle", sho * fr, ((sho - 1.f) * kClavicleY + 1.f) * fr, sho * fr);
-    { // the UpperArm entries above get their positional size
-        float px = sho * chx;
-        for (BoneScale& b : out) if (b.bone == "Bip01 L UpperArm" || b.bone == "Bip01 R UpperArm") { b.has_positional = true; b.positional[0] = px; b.positional[1] = 1.f; b.positional[2] = 1.f; }
-    }
     const float hd = sv("Hands");
-    pair("Bip01 L Hand", "Bip01 R Hand", ab2 * hd * hd, h * hd * hd, ab2 * hd * hd);
+    pair("Bip01 L Hand", "Bip01 R Hand", abf * hd, h * hd, abf * hd);
 
     // feet
     const float ft = sv("Feet") * h;
-    pair("Bip01 L Foot", "Bip01 R Foot", ft * ft, ll * ft, ft * ft);
-    { auto t = pair("Bip01 L Toe0", "Bip01 R Toe0", ft * ft, ft * ft, ft * ft); positional(t.first, 1.f, 1.f, ft); positional(t.second, 1.f, 1.f, ft); }
+    pair("Bip01 L Foot", "Bip01 R Foot", ft, ll, ft);
+    { auto t = pair("Bip01 L Toe0", "Bip01 R Toe0", ft, ft, ft); positional(t.first, 1.f, 1.f, ft); positional(t.second, 1.f, 1.f, ft); }
 
     // neck, head, jaw
     const float hs = sv("Head size"), hsh = raw("Head shape"), nk = sv("Neck") * p198, nw = sv("Neck width") * p180 * q1a0, nl = raw("Neck length");

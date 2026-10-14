@@ -33,6 +33,8 @@ void Sample(const md::ogre::Track& tr, float time, float t[3], float q[4]) {
     n = std::sqrt(n); if (n > 0) for (int c = 0; c < 4; ++c) q[c] /= n;
 }
 
+M4 Translate3(float x, float y, float z) { M4 m = Identity(); m[12] = x; m[13] = y; m[14] = z; return m; }
+
 } // namespace
 
 const md::ogre::Animation* FindAnimation(const md::ogre::Skeleton& sk, const std::string& name) {
@@ -40,13 +42,14 @@ const md::ogre::Animation* FindAnimation(const md::ogre::Skeleton& sk, const std
     return nullptr;
 }
 
-void SolveSkinMatrices(const SkinnedBody& body, const md::ogre::Skeleton& sk, const md::ogre::Animation* anim, float time,
+void SolveSkinMatrices(const SkinnedBody& body, const md::ogre::Skeleton& sk, const std::vector<AnimLayer>& layers,
                        const std::vector<BoneScale>& scales, std::vector<M4>& out) {
     const size_t nb = body.bone_name.size();
     std::map<std::string, const BoneScale*> by_name;
     for (const BoneScale& s : scales) by_name[s.bone] = &s;
-    std::map<uint16_t, const md::ogre::Track*> track;
-    if (anim) for (const md::ogre::Track& t : anim->tracks) track[t.bone] = &t;
+    std::vector<std::map<uint16_t, const md::ogre::Track*>> track(layers.size());
+    for (size_t l = 0; l < layers.size(); ++l)
+        if (layers[l].anim) for (const md::ogre::Track& t : layers[l].anim->tracks) track[l][t.bone] = &t;
 
     std::vector<M4> world(nb, Identity());
     std::vector<char> done(nb, 0);
@@ -61,15 +64,20 @@ void SolveSkinMatrices(const SkinnedBody& body, const md::ogre::Skeleton& sk, co
             if (p >= 0 && !done[p]) { stack.push_back(p); continue; }
             const md::ogre::Bone& b = sk.bones[i];
             float t[3] = {b.position[0], b.position[1], b.position[2]}, q[4] = {b.orientation[0], b.orientation[1], b.orientation[2], b.orientation[3]};
-            auto it = track.find(b.handle);
-            if (it != track.end()) {
-                float kt[3], kq[4]; Sample(*it->second, time, kt, kq);
+            for (size_t l = 0; l < layers.size(); ++l) {
+                auto it = track[l].find(b.handle);
+                if (it == track[l].end()) continue;
+                float kt[3], kq[4]; Sample(*it->second, layers[l].time, kt, kq);
                 for (int c = 0; c < 3; ++c) t[c] += kt[c];
-                float r[4]; QMul(b.orientation, kq, r); std::memcpy(q, r, sizeof q);
+                float r[4]; QMul(q, kq, r); std::memcpy(q, r, sizeof q);
             }
-            if (p >= 0) {   // the parent's size scales this bone's offset in the parent's frame (OldBone::updateFromParentImpl, OgreMain 0x1801e20e0)
+            if (p >= 0) {   // OldBone::updateFromParentImpl (OgreMain 0x1801e20e0; M:formats/ogre-skeleton.md "Bone maths"): offset = local position x this bone's positional size, per axis,
+                            // x the Y component of the parent's size on all three axes (the parent's own scale is not inherited)
+                float py = 1.f;
                 auto ps = by_name.find(body.bone_name[p]);
-                if (ps != by_name.end()) { const float* z = ps->second->size; t[0] *= z[1]; t[1] *= z[0]; t[2] *= z[2]; }
+                if (ps != by_name.end()) py = ps->second->size[1];
+                auto me = by_name.find(body.bone_name[i]);
+                for (int c = 0; c < 3; ++c) t[c] *= py * (me != by_name.end() && me->second->has_positional ? me->second->positional[c] : 1.f);
             }
             M4 local = Trs(t, q, b.has_scale ? b.scale : nullptr);
             world[i] = p >= 0 ? Mul(world[p], local) : local;
@@ -77,11 +85,17 @@ void SolveSkinMatrices(const SkinnedBody& body, const md::ogre::Skeleton& sk, co
         }
     }
     out.assign(nb, Identity());
+    // OgreMain OldBone::_getOffsetTransform (0x1801e1dc0): v' = derivedPos + R_rel * (S * (v - bindPos)), R_rel = derivedOrientation * inverse(bindOrientation); the size vector is
+    // applied in the model axes (x left-right, y up, z front-back), not in the bone's own axes.
     for (size_t i = 0; i < nb; ++i) {
-        M4 sz = Identity();
         auto s = by_name.find(body.bone_name[i]);
-        if (s != by_name.end()) { sz[0] = s->second->size[1]; sz[5] = s->second->size[0]; sz[10] = s->second->size[2]; }
-        out[i] = Mul(world[i], Mul(sz, body.inverse_bind[i]));
+        const float* z = s != by_name.end() ? s->second->size : nullptr;
+        M4 rel = Identity();   // R_rel = world3 * bind3^T
+        for (int c = 0; c < 3; ++c) for (int r = 0; r < 3; ++r) { float v = 0; for (int k = 0; k < 3; ++k) v += world[i][k * 4 + r] * body.bind[i][k * 4 + c]; rel[c * 4 + r] = v; }
+        M4 sm = Identity(); if (z) { sm[0] = z[0]; sm[5] = z[1]; sm[10] = z[2]; }
+        M4 m = Mul(rel, Mul(sm, Translate3(-body.bind[i][12], -body.bind[i][13], -body.bind[i][14])));
+        m[12] += world[i][12]; m[13] += world[i][13]; m[14] += world[i][14];
+        out[i] = m;
     }
 }
 
