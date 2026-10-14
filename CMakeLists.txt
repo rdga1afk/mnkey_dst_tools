@@ -8,6 +8,12 @@ if(MONKEY_DUST_TOOLS_NEED_SDL3)
     find_package(SDL3 REQUIRED CONFIG)
 endif()
 
+# ── md_character: character editor data library (no ImGui, no editor globals) ──
+add_library(md_character STATIC
+    editor/character/xml_mini.cpp editor/character/editor_limits.cpp editor/character/races.cpp)
+target_include_directories(md_character PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor/character)
+target_link_libraries(md_character PUBLIC monkey_dust::engine)
+
 # ── monkey_dust_editor ────────────────────────────────────
 # Standalone 3D editor. UI: Dear ImGui via imgui_impl_sdl3/sdlgpu3 (SDL_GPU=Vulkan).
 # Same backend as the game — enables full TerrainRenderer/PropRenderer reuse.
