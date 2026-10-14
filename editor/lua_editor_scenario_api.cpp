@@ -6,6 +6,7 @@
 #ifdef MD_SDL_GPU
 #include "editor_char_preview.h"
 #include "character_editor.h"
+#include "character/appearance_io.h"
 #include "character/session.h"
 #endif
 #include <cstring>
@@ -46,6 +47,28 @@ static int l_md_char_editor_set(lua_State* L) {
     (void)L;
 #endif
     return 0;
+}
+static int l_md_char_editor_export(lua_State* L) {
+#ifdef MD_SDL_GPU
+    std::string err;
+    bool ok = md::character::ExportAppearance(CharacterEditor::GetSession(), luaL_checkstring(L, 1), err);
+    if (!ok) fprintf(stderr, "[CharacterEditor] export: %s\n", err.c_str());
+    lua_pushboolean(L, ok);
+    return 1;
+#else
+    (void)L; return 0;
+#endif
+}
+static int l_md_char_editor_import(lua_State* L) {
+#ifdef MD_SDL_GPU
+    std::string err;
+    bool ok = md::character::ImportAppearance(CharacterEditor::GetSession(), luaL_checkstring(L, 1), err);
+    if (!ok) fprintf(stderr, "[CharacterEditor] import: %s\n", err.c_str());
+    lua_pushboolean(L, ok);
+    return 1;
+#else
+    (void)L; return 0;
+#endif
 }
 static int l_md_char_editor_view(lua_State* L) {
 #ifdef MD_SDL_GPU
@@ -190,6 +213,8 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_select", l_md_char_editor_select);
     sys.RegisterNamespaceFunction("char_editor_set", l_md_char_editor_set);
     sys.RegisterNamespaceFunction("char_editor_view", l_md_char_editor_view);
+    sys.RegisterNamespaceFunction("char_editor_export", l_md_char_editor_export);
+    sys.RegisterNamespaceFunction("char_editor_import", l_md_char_editor_import);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
     sys.RegisterNamespaceFunction("editor_camera_pos",  l_md_editor_camera_pos);
     sys.RegisterNamespaceFunction("editor_terrain_op",  l_md_editor_terrain_op);

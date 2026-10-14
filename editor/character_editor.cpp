@@ -1,4 +1,5 @@
 #include "character/appearance.h"
+#include "character/appearance_io.h"
 #include "character/race_stats.h"
 #include "character/session.h"
 #include "character_editor.h"
@@ -21,6 +22,10 @@ Session g_session;
 int g_tab = 0;                    // 0 BODY, 1 FACE, 2 HAIR
 char g_name[48] = "";
 bool g_clothes = true;
+int g_io_mode = 0;                // 1 IMPORT, 2 EXPORT
+bool g_io_open = false;
+char g_io_path[512] = "";
+std::string g_io_msg;
 
 // ◀ label ▶ row: returns -1 / +1 when an arrow is pressed
 int NavRow(const char* id, const char* text, bool enabled) {
@@ -128,7 +133,9 @@ void Draw(bool) {
     d = NavRow("gen", s.SingleGender() ? "-" : (s.gender() == Gender::Female ? "Female" : "Male"), !s.SingleGender());
     if (d) g_session.SetGender(s.gender() == Gender::Female ? Gender::Male : Gender::Female);
     const float hw = (ImGui::GetContentRegionAvail().x - sp) * 0.5f;
-    ImGui::Button("IMPORT", {hw, 0.f}); ImGui::SameLine(0.f, sp); ImGui::Button("EXPORT", {hw, 0.f});
+    if (ImGui::Button("IMPORT", {hw, 0.f})) { g_io_mode = 1; g_io_open = true; }
+    ImGui::SameLine(0.f, sp);
+    if (ImGui::Button("EXPORT", {hw, 0.f})) { g_io_mode = 2; g_io_open = true; }
     ImGui::Checkbox("CLOTHES", &g_clothes);
     ImGui::TextDisabled("CHANGE CHARACTER");
     NavRow("chr", "1/1", false);
@@ -153,6 +160,26 @@ void Draw(bool) {
     ImGui::Button("CONFIRM", {-1.f, -1.f});
     ImGui::EndChild();
     ImGui::EndGroup();
+
+    if (g_io_open) {
+        if (!g_io_path[0] && g_io_mode == 2) snprintf(g_io_path, sizeof g_io_path, "character.bod2");
+        ImGui::OpenPopup("##io");
+        g_io_open = false; g_io_msg.clear();
+    }
+    if (ImGui::BeginPopupModal("##io", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+        ImGui::TextUnformatted(g_io_mode == 1 ? "IMPORT: path of a .bod2" : "EXPORT: path of the .bod2 to write");
+        ImGui::SetNextItemWidth(420.f);
+        ImGui::InputText("##path", g_io_path, sizeof g_io_path);
+        if (ImGui::Button("OK", {100.f, 0.f})) {
+            std::string err;
+            bool ok = g_io_mode == 1 ? md::character::ImportAppearance(g_session, g_io_path, err) : md::character::ExportAppearance(g_session, g_io_path, err);
+            if (ok) ImGui::CloseCurrentPopup(); else g_io_msg = err;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("CANCEL", {100.f, 0.f})) ImGui::CloseCurrentPopup();
+        if (!g_io_msg.empty()) ImGui::TextColored({0.85f, 0.42f, 0.36f, 1.f}, "%s", g_io_msg.c_str());
+        ImGui::EndPopup();
+    }
 
     // ── centre: the 3D preview (it moves the cursor itself, so every column is placed by screen position) ──
     ImGui::SetCursorScreenPos({origin.x + left_w + sp, origin.y});
