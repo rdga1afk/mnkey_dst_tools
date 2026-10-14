@@ -35,6 +35,28 @@ static int l_md_char_preview_force_morph(lua_State* L) {
     return 0;
 }
 
+
+// ── md.char_v2(race_name | nil, female) ── preview v2: the race body from the Kenshi install; nil switches back to the old preview. Returns true when loaded.
+static int l_md_char_v2(lua_State* L) {
+#ifdef MD_SDL_GPU
+    if (!lua_isstring(L, 1)) { CharPreviewSDLGPU::V2Off(); lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, CharPreviewSDLGPU::V2Load(lua_tostring(L, 1), lua_toboolean(L, 2) != 0));
+    return 1;
+#else
+    (void)L; return 0;
+#endif
+}
+// ── md.char_v2_set(slider, value) / md.char_v2_set(nil) resets all sliders to mid
+static int l_md_char_v2_set(lua_State* L) {
+#ifdef MD_SDL_GPU
+    if (!lua_isstring(L, 1)) CharPreviewSDLGPU::V2ResetValues();
+    else CharPreviewSDLGPU::V2SetValue(lua_tostring(L, 1), (float)luaL_checknumber(L, 2));
+#else
+    (void)L;
+#endif
+    return 0;
+}
+
 // ── md.char_preview_def(body{18}, face{24} | nil) ── diagnostic: the preview uses these slider values (nil = the editor's own)
 static int l_md_char_preview_def(lua_State* L) {
 #ifdef MD_SDL_GPU
@@ -199,6 +221,8 @@ static int l_md_editor_screenshot(lua_State* L) {
 
 void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("editor_open_panel",  l_md_editor_open_panel);
+    sys.RegisterNamespaceFunction("char_v2", l_md_char_v2);
+    sys.RegisterNamespaceFunction("char_v2_set", l_md_char_v2_set);
     sys.RegisterNamespaceFunction("char_preview_force_morph", l_md_char_preview_force_morph);
     sys.RegisterNamespaceFunction("char_preview_def", l_md_char_preview_def);
     sys.RegisterNamespaceFunction("char_preview_tab", l_md_char_preview_tab);

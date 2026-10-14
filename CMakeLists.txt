@@ -82,6 +82,7 @@ target_compile_definitions(monkey_dust_editor PRIVATE
     $<$<BOOL:${USE_GRANITE}>:IMGUI_IMPL_VULKAN_NO_PROTOTYPES>
 )
 target_link_libraries(monkey_dust_editor PRIVATE
+    md_character
     monkey_dust::engine
     Recast Detour DetourCrowd
     $<IF:$<BOOL:${MD_STATIC_DEPS}>,SDL3::SDL3-static,SDL3::SDL3>

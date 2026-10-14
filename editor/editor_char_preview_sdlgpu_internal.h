@@ -67,6 +67,15 @@ extern md::GpuTextureHandle s_bones_tex;
 extern SDL_GPUSampler* s_bones_sampler;
 extern int             s_ni;
 extern bool            s_ok;
+// v2 body (editor_char_preview_v2.cpp)
+extern GpuStaticBuffer s_v2_vbo;
+extern GpuStaticBuffer s_v2_ibo;
+extern int             s_v2_ni;
+extern GpuTexture      s_v2_tex;
+extern GpuTexture      s_v2_tex_head;
+extern float           s_v2_ws[30][16];
+extern bool            s_v2_active;
+extern float           s_v2_ground;
 
 // ── Hair system ───────────────────────────────────────────────────────────────
 struct HairFU { float hair[3]; float pad; };   // set=3, 16 bytes

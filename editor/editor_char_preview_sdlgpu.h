@@ -32,6 +32,14 @@ void SetCameraForTab(int tab);
 bool LoadHairStyle(int style_idx);
 void SetClothingItem(int item_idx);
 void DumpState(FILE* f);
+
+// ── Preview v2: a race body read from the Kenshi install (editor_char_preview_v2.cpp) ──
+bool V2Load(const char* race_name, bool female);   // false (old preview stays) when KENSHI_DIR / race / files are missing
+void V2Off();
+bool V2Active();
+void V2SetValue(const char* slider, float value);
+void V2ResetValues();
+void V2Prepare(md::GpuCommandBufferHandle cmd);
 void ResetAnimPhase();
 
 // ── Clothing constants ────────────────────────────────────────────────────────
