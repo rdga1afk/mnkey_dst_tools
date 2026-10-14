@@ -55,7 +55,7 @@ add_executable(monkey_dust_editor
     editor/main.cpp
     embedded_fonts.cpp
     # Header-only files: listed here so ninja tracks them and rebuilds on change
-    editor/editor_char_preview_sdlgpu.h
+    editor/editor_char_preview.h
     editor/character_editor.h
     ${EDITOR_PANEL_SOURCES}
     ${EDITOR_IMGUI_SRC}

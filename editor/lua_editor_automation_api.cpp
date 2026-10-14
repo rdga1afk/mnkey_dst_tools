@@ -9,7 +9,7 @@
 #include "editor_std_commands.h"
 #include "editor_reflect_bridge.h"
 #include "editor_screenshot.h"
-#include "editor_char_preview_sdlgpu.h"
+#include "editor_char_preview.h"
 #include "character_editor.h"
 #include <cstdio>
 #include <cstring>

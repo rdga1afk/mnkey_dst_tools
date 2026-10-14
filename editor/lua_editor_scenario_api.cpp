@@ -4,8 +4,9 @@
 #include "editor_world_3d_sdlgpu.h"
 #include "editor_screenshot.h"
 #ifdef MD_SDL_GPU
-#include "editor_char_preview_sdlgpu.h"
-#include "character_editor_v2_ui.h"
+#include "editor_char_preview.h"
+#include "character_editor.h"
+#include "character/session.h"
 #endif
 #include <cstring>
 #include <cstdio>
@@ -18,85 +19,35 @@ extern "C" {
 
 // ── md.editor_open_panel(name) ────────────────────────────────────────────────
 // Etap 4 scope: "3D World" and "Characters" force-select their tab (the
-// latter added for M1 HAL-closure A/B coverage of editor_char_preview_
-// game.h's depth_discard_after pass — needs CharacterEditor::Draw to run
-// once so CharPreviewSDLGPU::Init actually loads a mesh). Other tab names
+// latter needs CharacterEditor::Draw to run once so the install is loaded). Other tab names
 // are accepted (stored, no error) but do nothing yet; wire them the same
 // way if a future scenario needs them — don't pre-wrap every panel.
 static char s_forced_tab[64] = {};
 
-// ── md.char_preview_force_morph(name | nil, weight, yaw) ── diagnostic: only that morph at that weight, preview yaw in radians (nil name = off)
-static int l_md_char_preview_force_morph(lua_State* L) {
+// ── Character editor, for scenarios (the editor itself has no switches): the session is the editor's own, the UI only draws it.
+// md.char_editor_select(subrace_name, female) -> bool   md.char_editor_set(slider, value) / md.char_editor_set(nil) = RESET
+// md.char_editor_view(tab, yaw_radians)                 tab 0 = whole body, others = head
+static int l_md_char_editor_select(lua_State* L) {
 #ifdef MD_SDL_GPU
-    const char* n = lua_isstring(L, 1) ? lua_tostring(L, 1) : nullptr;
-    CharPreviewSDLGPU::DebugForceMorph(n, (float)luaL_optnumber(L, 2, 0.0), (float)luaL_optnumber(L, 3, -1000.0));
-#else
-    (void)L;
-#endif
-    return 0;
-}
-
-
-// ── md.char_v2(race_name | nil, female) ── preview v2: the race body from the Kenshi install; nil switches back to the old preview. Returns true when loaded.
-static int l_md_char_v2(lua_State* L) {
-#ifdef MD_SDL_GPU
-    if (!lua_isstring(L, 1)) { CharPreviewSDLGPU::V2Off(); lua_pushboolean(L, 0); return 1; }
-    lua_pushboolean(L, CharPreviewSDLGPU::V2Load(lua_tostring(L, 1), lua_toboolean(L, 2) != 0));
+    lua_pushboolean(L, CharacterEditor::GetSession().SelectSubraceByName(luaL_checkstring(L, 1), lua_toboolean(L, 2) != 0));
     return 1;
 #else
     (void)L; return 0;
 #endif
 }
-// ── md.char_editor_v2(bool) ── the whole character editor v2 (panel + preview from the install) on / off; returns true when active
-static int l_md_char_editor_v2(lua_State* L) {
+static int l_md_char_editor_set(lua_State* L) {
 #ifdef MD_SDL_GPU
-    CharEditorV2::Enable(lua_toboolean(L, 1) != 0);
-    lua_pushboolean(L, CharEditorV2::Active());
-    return 1;
-#else
-    (void)L; return 0;
-#endif
-}
-// ── md.char_v2_set(slider, value) / md.char_v2_set(nil) resets all sliders to mid
-static int l_md_char_v2_set(lua_State* L) {
-#ifdef MD_SDL_GPU
-    if (!lua_isstring(L, 1)) CharPreviewSDLGPU::V2ResetValues();
-    else CharPreviewSDLGPU::V2SetValue(lua_tostring(L, 1), (float)luaL_checknumber(L, 2));
+    if (!lua_isstring(L, 1)) CharacterEditor::GetSession().Reset();
+    else CharacterEditor::GetSession().SetValue(lua_tostring(L, 1), (float)luaL_checknumber(L, 2));
 #else
     (void)L;
 #endif
     return 0;
 }
-
-// ── md.char_preview_def(body{18}, face{24} | nil) ── diagnostic: the preview uses these slider values (nil = the editor's own)
-static int l_md_char_preview_def(lua_State* L) {
+static int l_md_char_editor_view(lua_State* L) {
 #ifdef MD_SDL_GPU
-    if (!lua_istable(L, 1) || !lua_istable(L, 2)) { CharPreviewSDLGPU::DebugOverrideDef(nullptr, nullptr); return 0; }
-    float b[18], f[24];
-    for (int i = 0; i < 18; ++i) { lua_rawgeti(L, 1, i + 1); b[i] = (float)lua_tonumber(L, -1); lua_pop(L, 1); }
-    for (int i = 0; i < 24; ++i) { lua_rawgeti(L, 2, i + 1); f[i] = (float)lua_tonumber(L, -1); lua_pop(L, 1); }
-    CharPreviewSDLGPU::DebugOverrideDef(b, f);
-#else
-    (void)L;
-#endif
-    return 0;
-}
-
-// ── md.char_preview_tab(n) ── diagnostic: preview camera of the BODY (0) or FACE / HAIR (1, 2) tab
-static int l_md_char_preview_tab(lua_State* L) {
-#ifdef MD_SDL_GPU
-    CharPreviewSDLGPU::DebugForceMorph(nullptr, 0.f, -1000.f); // also freezes the portrait auto-rotation
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
-#else
-    (void)L;
-#endif
-    return 0;
-}
-
-// ── md.char_preview_clothes(bool) ── diagnostic: show / hide the worn clothes in the preview
-static int l_md_char_preview_clothes(lua_State* L) {
-#ifdef MD_SDL_GPU
-    CharPreviewSDLGPU::s_clothes_visible = lua_toboolean(L, 1) != 0;
+    CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
 #else
     (void)L;
 #endif
@@ -232,13 +183,9 @@ static int l_md_editor_screenshot(lua_State* L) {
 
 void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("editor_open_panel",  l_md_editor_open_panel);
-    sys.RegisterNamespaceFunction("char_v2", l_md_char_v2);
-    sys.RegisterNamespaceFunction("char_v2_set", l_md_char_v2_set);
-    sys.RegisterNamespaceFunction("char_editor_v2", l_md_char_editor_v2);
-    sys.RegisterNamespaceFunction("char_preview_force_morph", l_md_char_preview_force_morph);
-    sys.RegisterNamespaceFunction("char_preview_def", l_md_char_preview_def);
-    sys.RegisterNamespaceFunction("char_preview_tab", l_md_char_preview_tab);
-    sys.RegisterNamespaceFunction("char_preview_clothes", l_md_char_preview_clothes);
+    sys.RegisterNamespaceFunction("char_editor_select", l_md_char_editor_select);
+    sys.RegisterNamespaceFunction("char_editor_set", l_md_char_editor_set);
+    sys.RegisterNamespaceFunction("char_editor_view", l_md_char_editor_view);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
     sys.RegisterNamespaceFunction("editor_camera_pos",  l_md_editor_camera_pos);
     sys.RegisterNamespaceFunction("editor_terrain_op",  l_md_editor_terrain_op);

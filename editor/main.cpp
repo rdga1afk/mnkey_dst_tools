@@ -29,7 +29,7 @@
 #include "editor_world_3d_sdlgpu.h"
 #include "editor_world_panel.h"
 #include "editor_3d_bridge.h"
-#include "editor_char_preview_sdlgpu.h"
+#include "editor_char_preview.h"
 #include "character_editor.h"
 #include "npc_archetype_editor.h"
 #include "editor_map_view.h"
@@ -236,8 +236,6 @@ int main(int argc, char** argv) {
     WorldEditor3D_SDLGPU::Init(
         "game/data/textures/md_terrain.dds",
         29, 25);  // 7×7 view centred near The Hub area
-    CharacterEditor::LoadJSON("game/data/chars/player.chardef");
-    CharacterEditor::LoadMorphNames("game/data/chars/morph_names.txt");
     MapViewPanel::Get().Init();
     EditorCore::Get().Init();
     // Single binary, no dlopen boundary — LuaSystem::Get() here is the

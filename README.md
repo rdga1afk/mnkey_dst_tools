@@ -60,7 +60,7 @@ python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png
 ### Editor notes
 - Tabs (from `editor/main.cpp`, the standalone window): Items, Factions, Map, World, 3D World, NPCs, Characters, Inspector, Settings. F3 editor overlay (`editor/editor_core.cpp`): Scene, AI (Director + ViewCone), Animation, FlowGraph, Debug, Camera, Settings. Command palette: `Ctrl+P`. (Listed from the code, not by running the editor.)
 - The 3D World viewport loads biomes from FCS (`BiomeRegistry::LoadPreferFcs`) and `blendmap.png` from the Kenshi install, with offline fallbacks; terrain loads on a background thread.
-- Characters: the preview renders the converted Kenshi body with the skeleton scaled from the sliders; `md.char_preview_clothes` toggles clothes for checks. Body sliders are applied as bone scales (Kenshi's own method); clothes follow bone scale but not the soft-tissue morphs.
+- Characters: the tab is the Kenshi character editor (layout `Kenshi_CharacterEditor.layout`): races, sliders and buttons come from the install (`md::character::Session`); the preview renders the race body read from `KENSHI_DIR` (Ogre mesh + skeleton), body sliders as bone sizes, face sliders as mesh poses. Scenarios: `md.char_editor_select`, `md.char_editor_set`, `md.char_editor_view`.
 - Game-coupled panels (Inspector, Terrain sculpt) live in the game repository and are compiled into the game with `-DMONKEY_DUST_EDITOR=ON`.
 - GPU debugging: `SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor`.
 
@@ -115,7 +115,7 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 ### Редактор
 - Вкладки (з `editor/main.cpp`, окреме вікно): Items, Factions, Map, World, 3D World, NPCs, Characters, Inspector, Settings. Оверлей F3 (`editor/editor_core.cpp`): Scene, AI (Director + ViewCone), Animation, FlowGraph, Debug, Camera, Settings. Палітра команд: `Ctrl+P`. (Перелік за кодом, редактор не запускався.)
 - 3D World бере біоми з FCS (`BiomeRegistry::LoadPreferFcs`) і `blendmap.png` з інсталяції Kenshi, із запасними офлайн-копіями; ландшафт вантажиться у фоновому потоці.
-- Characters: перегляд показує конвертоване тіло Kenshi зі скелетом, масштабованим слайдерами; `md.char_preview_clothes` вмикає й вимикає одяг для перевірок. Слайдери тіла — масштаб кісток (як у самій Kenshi); одяг іде за масштабом кісток, але не за морфами м'яких тканин.
+- Characters: вкладка — редактор персонажів Kenshi (розкладка `Kenshi_CharacterEditor.layout`): раси, слайдери й кнопки з інсталяції (`md::character::Session`); перегляд малює тіло раси з `KENSHI_DIR` (меш і скелет Ogre), слайдери тіла — розміри кісток, обличчя — пози меша. Сценарії: `md.char_editor_select`, `md.char_editor_set`, `md.char_editor_view`.
 - Панелі, прив'язані до гри (Inspector, скульптинг ландшафту), — у репозиторії гри, вмикаються `-DMONKEY_DUST_EDITOR=ON`.
 
 ### Архітектура

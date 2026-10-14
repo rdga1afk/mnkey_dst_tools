@@ -1,18 +1,22 @@
 #include "character/appearance.h"
 #include "character/session.h"
-#include "character_editor_v2_ui.h"
-#include "editor_char_preview_sdlgpu.h"
+#include "character_editor.h"
+#include "editor_char_preview.h"
 #include "imgui.h"
 #include <monkey_dust/io/kenshi_dir.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <string>
 
-namespace CharEditorV2 {
+namespace CharacterEditor {
+bool g_detached = false;
+ImVec2 g_win_pos = {160.f, 60.f};
+ImVec2 g_win_size = {900.f, 640.f};
+
 using namespace md::character;
 namespace {
 Session g_session;
-bool g_active = false;
 int g_tab = 0;                    // 0 BODY, 1 FACE, 2 HAIR
 char g_name[48] = "";
 bool g_clothes = true;
@@ -79,28 +83,34 @@ void ColourRow(const ColourRange& c) {
 const char* kTabCategory[3] = {"Body", "Face", "Hair"};
 }
 
-bool Enable(bool on) {
-    if (!on) { g_active = false; CharPreviewSDLGPU::V2Off(); return true; }
-    if (!g_session.Loaded()) {
-        std::string dir = md::KenshiDir(), err;
-        if (dir.empty()) { fprintf(stderr, "[CharEditorV2] KENSHI_DIR not set\n"); return false; }
-        if (!g_session.Load(dir, err)) { fprintf(stderr, "[CharEditorV2] %s\n", err.c_str()); return false; }
-    }
-    g_active = CharPreviewSDLGPU::V2Bind(&g_session);
-    return g_active;
+// Loads the install (KENSHI_DIR) on the first call. False when it is missing: the tab then says so.
+std::string g_load_error = "Kenshi not found: set KENSHI_DIR";
+bool EnsureLoaded() {
+    if (g_session.Loaded()) return true;
+    static bool tried = false;
+    if (tried) return false;
+    tried = true;
+    std::string dir = md::KenshiDir(), err;
+    if (dir.empty()) { g_load_error = "Kenshi not found: set KENSHI_DIR"; fprintf(stderr, "[CharacterEditor] %s\n", g_load_error.c_str()); return false; }
+    if (!g_session.Load(dir, err)) { g_load_error = "Kenshi data in " + dir + " not usable: " + err; fprintf(stderr, "[CharacterEditor] %s\n", g_load_error.c_str()); return false; }
+    CharPreviewSDLGPU::Bind(&g_session);
+    return true;
 }
-bool Active() { return g_active; }
 
-void Draw() {
+md::character::Session& GetSession() { return g_session; }
+
+void Draw(bool) {
+    if (!EnsureLoaded()) { ImGui::TextWrapped("%s", g_load_error.c_str()); return; }
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float W = avail.x, H = avail.y, sp = ImGui::GetStyle().ItemSpacing.x;
-    const float left_w = W * 0.161f, right_w = W * 0.30f, mid_w = W - left_w - right_w - 2.f * sp;
+    const float W = floorf(avail.x), H = floorf(avail.y), sp = ImGui::GetStyle().ItemSpacing.x;
+    // whole pixels everywhere: fractional child sizes move the label glyphs by a fraction of a pixel
+    const float left_w = floorf(W * 0.161f), right_w = floorf(W * 0.30f), mid_w = floorf(W - left_w - right_w - 2.f * sp);
     const Session& s = g_session;
     const ImVec2 origin = ImGui::GetCursorScreenPos();
 
     // ── left column: NamePanel, DescriptionPanel, StatsPanel, ConfirmPanel (fractions of §3a) ──
     ImGui::BeginGroup();
-    ImGui::BeginChild("##v2_name", {left_w, H * 0.398f}, true, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##v2_name", {left_w, floorf(H * 0.398f)}, true, ImGuiWindowFlags_NoScrollbar);
     ImGui::SetNextItemWidth(-1.f);
     ImGui::InputTextWithHint("##name", "NAME", g_name, sizeof g_name);
     ImGui::TextDisabled("RACE");
@@ -118,16 +128,16 @@ void Draw() {
     ImGui::TextDisabled("CHANGE CHARACTER");
     NavRow("chr", "1/1", false);
     ImGui::EndChild();
-    ImGui::BeginChild("##v2_desc", {left_w, H * 0.241f}, true);
+    ImGui::BeginChild("##v2_desc", {left_w, floorf(H * 0.241f)}, true);
     ImGui::TextDisabled("RACE DESCRIPTION");
     ImGui::PushTextWrapPos(0.f);
     ImGui::TextUnformatted(s.Current().description.c_str());
     ImGui::PopTextWrapPos();
     ImGui::EndChild();
-    ImGui::BeginChild("##v2_stats", {left_w, H * 0.241f}, true);
+    ImGui::BeginChild("##v2_stats", {left_w, floorf(H * 0.241f)}, true);
     ImGui::TextDisabled("RACE STATS");
     ImGui::EndChild();
-    ImGui::BeginChild("##v2_confirm", {left_w, H * 0.096f}, true, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##v2_confirm", {left_w, floorf(H * 0.096f)}, true, ImGuiWindowFlags_NoScrollbar);
     ImGui::Button("CONFIRM", {-1.f, -1.f});
     ImGui::EndChild();
     ImGui::EndGroup();
@@ -135,8 +145,7 @@ void Draw() {
     // ── centre: the 3D preview (it moves the cursor itself, so every column is placed by screen position) ──
     ImGui::SetCursorScreenPos({origin.x + left_w + sp, origin.y});
     ImGui::BeginGroup();
-    const float skin[3] = {0.82f, 0.65f, 0.52f};
-    CharPreviewSDLGPU::DrawInImGui(mid_w, H, 1.f, 1.f, skin, 0.f, 1.f, 0.f);
+    CharPreviewSDLGPU::DrawInImGui(mid_w, H);
     ImGui::EndGroup();
 
     // ── right column: TabsPanel ──
@@ -169,4 +178,4 @@ void Draw() {
     ImGui::EndChild();
 }
 
-} // namespace CharEditorV2
+} // namespace CharacterEditor
