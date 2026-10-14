@@ -355,6 +355,8 @@ void DrawInImGui(float W, float H) {
     if (iw < 4 || ih < 4) return;
     EnsureRtt(iw, ih);
     ImVec2 origin = ImGui::GetCursorScreenPos();
+    static bool s_logged = false;
+    if (!s_logged) { s_logged = true; fprintf(stdout, "[CharPreview] preview rect x %.0f y %.0f w %.0f h %.0f\n", origin.x, origin.y, W, H); }
     ImGui::InvisibleButton("##cpv", {W, H}, ImGuiButtonFlags_MouseButtonRight);
     const bool hov = ImGui::IsItemHovered();
     ImGuiIO& io = ImGui::GetIO();
