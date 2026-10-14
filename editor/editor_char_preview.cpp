@@ -342,7 +342,7 @@ void ReloadPipelines() {
 
 void SetCameraForTab(int tab) {
     if (tab == 0) { g_dist = 3.5f; g_pit = -0.06f; g_lookat_y = 0.9f; }
-    else { g_dist = 0.9f; g_pit = 0.f; g_lookat_y = 1.65f; }
+    else { g_dist = 0.55f; g_pit = 0.f; g_lookat_y = 1.62f; }
 }
 void SetYaw(float radians) { g_yaw = radians; }
 
