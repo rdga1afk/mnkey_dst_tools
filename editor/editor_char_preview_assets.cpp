@@ -678,6 +678,14 @@ bool s_create_pipelines(const char* glb_path) {
             s_pose_postures_clip = s_pose_mesh.ClipIndexByName("postures");
             s_pose_neck_clip     = s_pose_mesh.ClipIndexByName("neck set");
             s_pose_shoulder_clip = s_pose_mesh.ClipIndexByName("shoulder set");
+            { // CharCustomization_ComputeScales addresses the pose skeleton by index: check the indices against the names it was written for
+                static const char* kExpected[30] = { "Bip01","Bip01 Pelvis","Bip01 L Thigh","Bip01 L Calf","Bip01 L Foot","Bip01 L Toe0","Bip01 L Toe0Nub","Bip01 R Thigh","Bip01 R Calf",
+                    "Bip01 R Foot","Bip01 R Toe0","Bip01 R Toe0Nub","Bip01 Spine","Bip01 Spine1","Bip01 Spine2","Bip01 L Clavicle","Bip01 L UpperArm","Bip01 L Forearm","Bip01 L Hand",
+                    "Bip01 Prop1","Bip01 Neck","Bip01 Head","Bip01 HeadNub","Bip01 Jaw","Bip01 JawNub","Bip01 R Clavicle","Bip01 R UpperArm","Bip01 R Forearm","Bip01 R Hand","Bip01 Prop2" };
+                for (int i = 0; i < 30; ++i)
+                    if (strcmp(s_pose_mesh.bone_names[i], kExpected[i]) != 0)
+                        fprintf(stderr, "[CharPreview] ERROR: pose skeleton bone %d is '%s', the bone scales expect '%s'\n", i, s_pose_mesh.bone_names[i], kExpected[i]);
+            }
             if (s_pose_ozz.Init(s_pose_mesh))
                 fprintf(stdout, "[CharPreview] OzzAnimator ready, idle=%d postures=%d neck=%d shoulder=%d\n",
                         s_pose_idle_clip, s_pose_postures_clip, s_pose_neck_clip, s_pose_shoulder_clip);
