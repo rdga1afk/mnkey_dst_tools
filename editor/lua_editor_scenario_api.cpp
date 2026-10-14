@@ -5,6 +5,7 @@
 #include "editor_screenshot.h"
 #ifdef MD_SDL_GPU
 #include "editor_char_preview_sdlgpu.h"
+#include "character_editor_v2_ui.h"
 #endif
 #include <cstring>
 #include <cstdio>
@@ -41,6 +42,16 @@ static int l_md_char_v2(lua_State* L) {
 #ifdef MD_SDL_GPU
     if (!lua_isstring(L, 1)) { CharPreviewSDLGPU::V2Off(); lua_pushboolean(L, 0); return 1; }
     lua_pushboolean(L, CharPreviewSDLGPU::V2Load(lua_tostring(L, 1), lua_toboolean(L, 2) != 0));
+    return 1;
+#else
+    (void)L; return 0;
+#endif
+}
+// ── md.char_editor_v2(bool) ── the whole character editor v2 (panel + preview from the install) on / off; returns true when active
+static int l_md_char_editor_v2(lua_State* L) {
+#ifdef MD_SDL_GPU
+    CharEditorV2::Enable(lua_toboolean(L, 1) != 0);
+    lua_pushboolean(L, CharEditorV2::Active());
     return 1;
 #else
     (void)L; return 0;
@@ -223,6 +234,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("editor_open_panel",  l_md_editor_open_panel);
     sys.RegisterNamespaceFunction("char_v2", l_md_char_v2);
     sys.RegisterNamespaceFunction("char_v2_set", l_md_char_v2_set);
+    sys.RegisterNamespaceFunction("char_editor_v2", l_md_char_editor_v2);
     sys.RegisterNamespaceFunction("char_preview_force_morph", l_md_char_preview_force_morph);
     sys.RegisterNamespaceFunction("char_preview_def", l_md_char_preview_def);
     sys.RegisterNamespaceFunction("char_preview_tab", l_md_char_preview_tab);

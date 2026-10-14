@@ -5,6 +5,12 @@
 
 // ── Main Draw ─────────────────────────────────────────────────────────────────
 static void Draw(bool kenshi_theme = true) {
+    if (CharEditorV2::Active()) {   // v2 panel (character_editor_v2_ui.cpp): layout of the original editor, contents from the install
+        if (kenshi_theme) PushKenshiTheme();
+        CharEditorV2::Draw();
+        if (kenshi_theme) PopKenshiTheme();
+        return;
+    }
     if (kenshi_theme) PushKenshiTheme();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {4.f, 4.f});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   {4.f, 3.f});

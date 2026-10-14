@@ -16,6 +16,7 @@
 #  include "char_preview_gl.h"
 #endif
 #include "bug_capture.h"
+#include "character_editor_v2_ui.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>

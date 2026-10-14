@@ -9,6 +9,8 @@
 // RenderFrame() must be called once per frame before ImGui render (from main.cpp).
 // Implementation in editor_char_preview_sdlgpu.cpp.
 
+namespace md::character { class Session; }
+
 namespace CharPreviewSDLGPU {
 
 bool Init(const char* glb_path, const char* tex_path);
@@ -34,6 +36,7 @@ void SetClothingItem(int item_idx);
 void DumpState(FILE* f);
 
 // ── Preview v2: a race body read from the Kenshi install (editor_char_preview_v2.cpp) ──
+bool V2Bind(md::character::Session* session);      // the preview shows the session's current race, gender and sliders
 bool V2Load(const char* race_name, bool female);   // false (old preview stays) when KENSHI_DIR / race / files are missing
 void V2Off();
 bool V2Active();

@@ -6,6 +6,7 @@
 #include "character/pose_solver.h"
 #include "character/race_assets.h"
 #include "character/races.h"
+#include "character/session.h"
 #include <monkey_dust/io/fcs_gamedata.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/io/kenshi_resources.h>
@@ -31,24 +32,21 @@ namespace {
 using namespace md::character;
 
 struct V2State {
-    md::fcs::GameDataContainer data;
-    RaceData races;
-    std::vector<EditorLimits> limits;
-    md::KenshiResources res;
-    RaceInfo race;
-    Gender gender = Gender::Male;
-    const Config* config = nullptr;
+    Session* session = nullptr;
     md::ogre::Mesh mesh;
     md::ogre::Skeleton skeleton;
     SkinnedBody body;
     std::vector<Vtx> base;           // vertices in file units
-    Appearance values;
+    std::string key;                 // race id + gender of the loaded body
+    uint64_t revision = 0;
     bool dirty = true;
     bool loaded = false;
 } g;
 
+Session s_own_session;   // used by V2Load (scenarios); the editor panel binds its own with V2Bind
+
 std::string FileOf(const std::string& race_id, const char* field) {
-    const md::fcs::GameData* r = g.data.Get(race_id);
+    const md::fcs::GameData* r = g.session->Data().Get(race_id);
     if (!r) return "";
     auto it = r->files.find(field);
     return it == r->files.end() ? "" : it->second;
@@ -57,52 +55,40 @@ std::string FileOf(const std::string& race_id, const char* field) {
 // Face / body sliders -> pose weights: value * 0.01 on the target, a negative value on target_opposite (weight = -value * 0.01); without an opposite the signed weight stays on the target.
 void PoseWeights(std::vector<float>& w) {
     w.assign(g.body.poses.size(), 0.f);
-    if (!g.config) return;
+    const Config* cfg = g.session->Limits();
+    if (!cfg) return;
     auto idx = [&](const std::string& n) { for (size_t i = 0; i < g.body.poses.size(); ++i) if (g.body.poses[i].name == n) return int(i); return -1; };
-    for (const Category& c : g.config->categories) for (const Range& r : c.ranges) {
+    for (const Category& c : cfg->categories) for (const Range& r : c.ranges) {
         if (r.target.empty() && r.target_opposite.empty()) continue;
-        auto it = g.values.values.find(r.name);
-        float v = it == g.values.values.end() ? float(RangeMid(r)) : it->second;
+        float v = g.session->Value(r);
         if (v < 0.f && !r.target_opposite.empty()) { int k = idx(r.target_opposite); if (k >= 0) w[k] += -v * 0.01f; }
         else { int k = idx(r.target); if (k >= 0) w[k] += v * 0.01f; }
     }
 }
-} // namespace
 
-bool V2Load(const char* race_name, bool female) {
-    const char* kd = nullptr; std::string kdir = md::KenshiDir(); if (!kdir.empty()) kd = kdir.c_str();
-    if (!kd) { fprintf(stderr, "[CharV2] KENSHI_DIR not set: the old preview stays\n"); return false; }
-    g = V2State();
-    md::fcs::Install inst(kd); md::fcs::LoadOrder order; md::fcs::Error fe;
-    if (!inst.LoadOrderFor(order, fe) || !g.data.Load(order, fe)) { fprintf(stderr, "[CharV2] FCS load failed: %s\n", fe.Message().c_str()); return false; }
-    g.races = LoadRaces(g.data);
-    std::string err;
-    if (!LoadEditorLimitsDir(std::string(kd) + "/data/editor", g.limits, err)) { fprintf(stderr, "[CharV2] editor limits: %s\n", err.c_str()); return false; }
-    g.res.Index(kd);
-    const RaceInfo* ri = nullptr;
-    for (const RaceInfo& r : g.races.races) if (r.name == race_name) { ri = &r; break; }
-    if (!ri) { fprintf(stderr, "[CharV2] race '%s' not found\n", race_name); return false; }
-    g.race = *ri; g.gender = female ? Gender::Female : Gender::Male;
-    for (const EditorLimits& l : g.limits) if (l.file == g.race.editor_limits) g.config = l.For(g.gender);
-    std::string rel;
-    if (!LoadBodyMesh(g.res, g.race, g.gender, g.mesh, rel, err)) { fprintf(stderr, "[CharV2] %s\n", err.c_str()); return false; }
+// Loads the body, skeleton and textures of the session's current race and gender.
+bool Rebuild() {
+    const Session& ss = *g.session;
+    const RaceInfo& race = ss.Current();
+    const bool female = ss.gender() == Gender::Female;
+    std::string rel, err;
+    g.mesh = md::ogre::Mesh(); g.skeleton = md::ogre::Skeleton(); g.loaded = false;
+    if (!LoadBodyMesh(ss.Resources(), race, ss.gender(), g.mesh, rel, err)) { fprintf(stderr, "[CharV2] %s\n", err.c_str()); return false; }
     md::ogre::Error oe;
-    if (!md::ogre::ReadSkeleton(g.res.Path(g.mesh.skeleton), g.skeleton, oe)) { fprintf(stderr, "[CharV2] skeleton %s: %s\n", g.mesh.skeleton.c_str(), oe.Message().c_str()); return false; }
+    if (!md::ogre::ReadSkeleton(ss.Resources().Path(g.mesh.skeleton), g.skeleton, oe)) { fprintf(stderr, "[CharV2] skeleton %s: %s\n", g.mesh.skeleton.c_str(), oe.Message().c_str()); return false; }
     if (!BuildSkinnedBody(g.mesh, g.skeleton, g.body, err)) { fprintf(stderr, "[CharV2] %s\n", err.c_str()); return false; }
     if (g.body.bone_name.size() > 30) { fprintf(stderr, "[CharV2] %zu bones: the preview supports 30\n", g.body.bone_name.size()); return false; }
     g.base.resize(g.body.vertices.size());
     for (size_t i = 0; i < g.base.size(); ++i) {
-        const SkinnedVertex& s = g.body.vertices[i]; Vtx& v = g.base[i];
-        v.px = s.pos[0]; v.py = s.pos[1]; v.pz = s.pos[2]; v.nx = s.normal[0]; v.ny = s.normal[1]; v.nz = s.normal[2]; v.u = s.uv[0]; v.v = s.uv[1];
-        for (int k = 0; k < 4; ++k) { v.ji[k] = s.joint[k]; v.wt[k] = s.weight[k]; }
+        const SkinnedVertex& sv = g.body.vertices[i]; Vtx& v = g.base[i];
+        v.px = sv.pos[0]; v.py = sv.pos[1]; v.pz = sv.pos[2]; v.nx = sv.normal[0]; v.ny = sv.normal[1]; v.nz = sv.normal[2]; v.u = sv.uv[0]; v.v = sv.uv[1];
+        for (int k = 0; k < 4; ++k) { v.ji[k] = sv.joint[k]; v.wt[k] = sv.weight[k]; }
     }
-    if (g.config) g.values = MakeDefault(*g.config);
     // textures: the race's body texture, the first head's texture map (stored paths are stale: found by file name)
-    const char* body_field = female ? "body texture female" : "body texture male";
-    std::string body_tex = g.res.Path(FileOf(g.race.id, body_field));
-    const std::vector<std::string>& heads = female ? g.race.heads_female : g.race.heads_male;
+    std::string body_tex = ss.Resources().Path(FileOf(race.id, female ? "body texture female" : "body texture male"));
+    const std::vector<std::string>& heads = female ? race.heads_female : race.heads_male;
     std::string head_tex;
-    if (!heads.empty()) { const md::fcs::GameData* h = g.data.Get(heads[0]); if (h) { auto it = h->files.find("texture map"); if (it != h->files.end()) head_tex = g.res.Path(it->second); } }
+    if (!heads.empty()) { const md::fcs::GameData* h = ss.Data().Get(heads[0]); if (h) { auto it = h->files.find("texture map"); if (it != h->files.end()) head_tex = ss.Resources().Path(it->second); } }
     GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
     const char* bp = body_tex.c_str(); const char* hp = head_tex.c_str();
     if (body_tex.empty() || !s_v2_tex.InitFromDDSArray(&bp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; s_v2_tex.InitFromMemory(fb, 1, 1, sd); fprintf(stderr, "[CharV2] body texture '%s' not loaded\n", body_tex.c_str()); }
@@ -110,24 +96,49 @@ bool V2Load(const char* race_name, bool female) {
     s_v2_vbo.Init(0x8892u, g.base.data(), uint32_t(g.base.size() * sizeof(Vtx)));
     s_v2_ibo.Init(0x8893u, g.body.indices.data(), uint32_t(g.body.indices.size() * sizeof(uint32_t)));
     s_v2_ni = int(g.body.indices.size());
-    g.dirty = true; g.loaded = true; s_v2_active = true;
-    fprintf(stdout, "[CharV2] %s %s: %zu vertices, %zu bones, %zu poses, mesh %s, body texture %s, head texture %s\n", race_name, female ? "female" : "male", g.base.size(),
+    g.key = race.id + (female ? "|f" : "|m"); g.dirty = true; g.loaded = true;
+    fprintf(stdout, "[CharV2] %s %s: %zu vertices, %zu bones, %zu poses, mesh %s, body texture %s, head texture %s\n", race.name.c_str(), female ? "female" : "male", g.base.size(),
             g.body.bone_name.size(), g.body.poses.size(), rel.c_str(), body_tex.c_str(), head_tex.c_str());
     return true;
+}
+} // namespace
+
+bool V2Bind(md::character::Session* session) {
+    g.session = session; g.loaded = false; g.key.clear(); g.revision = 0;
+    if (!session || !session->Loaded()) { s_v2_active = false; return false; }
+    s_v2_active = Rebuild();
+    g.revision = session->revision();
+    return s_v2_active;
+}
+
+bool V2Load(const char* race_name, bool female) {
+    if (!s_own_session.Loaded()) {
+        std::string kdir = md::KenshiDir(), err;
+        if (kdir.empty()) { fprintf(stderr, "[CharV2] KENSHI_DIR not set: the old preview stays\n"); return false; }
+        if (!s_own_session.Load(kdir, err)) { fprintf(stderr, "[CharV2] %s\n", err.c_str()); return false; }
+    }
+    if (!s_own_session.SelectSubraceByName(race_name, female)) { fprintf(stderr, "[CharV2] race '%s' not found\n", race_name); return false; }
+    return V2Bind(&s_own_session);
 }
 
 void V2Off() { s_v2_active = false; }
 bool V2Active() { return s_v2_active && g.loaded; }
-void V2SetValue(const char* slider, float value) { g.values.values[slider] = value; g.dirty = true; }
-void V2ResetValues() { if (g.config) g.values = MakeDefault(*g.config); g.dirty = true; }
+void V2SetValue(const char* slider, float value) { if (g.session) g.session->SetValue(slider, value); }
+void V2ResetValues() { if (g.session) g.session->Reset(); }
 
 // Per frame, before the pass: skin matrices from the idle stance and the body sliders; face poses uploaded into the vertex buffer when a slider changed.
 void V2Prepare(md::GpuCommandBufferHandle cmd) {
     if (!V2Active()) return;
+    if (g.session->revision() != g.revision) {   // a slider or the selection changed
+        g.revision = g.session->revision();
+        const std::string key = g.session->Current().id + (g.session->gender() == Gender::Female ? "|f" : "|m");
+        if (key != g.key && !Rebuild()) { s_v2_active = false; return; }
+        g.dirty = true;
+    }
     if (g.dirty) {
-        BodyScaleInputs in; in.female = g.gender == Gender::Female;
+        BodyScaleInputs in; in.female = g.session->gender() == Gender::Female;
         for (const std::string& n : g.body.bone_name) { if (n == "L Boob") in.has_breast_bones = true; if (n == "Bip01 Jaw") in.has_jaw_bone = true; }
-        std::map<std::string, float> vals(g.values.values.begin(), g.values.values.end());
+        std::map<std::string, float> vals(g.session->Values().values.begin(), g.session->Values().values.end());
         static std::vector<md::character::M4> skin;
         SolveSkinMatrices(g.body, g.skeleton, FindAnimation(g.skeleton, "idle_stand_normal"), 0.f, ComputeBoneScales(vals, in), skin);
         for (size_t i = 0; i < 30; ++i) {
