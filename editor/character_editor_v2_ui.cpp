@@ -66,13 +66,12 @@ void ColourRow(const ColourRange& c) {
     bool changed = false; int iv = int(v);
     if (ImGui::ArrowButton("l", ImGuiDir_Left)) { iv -= 1; changed = true; }
     ImGui::SameLine(0.f, 2.f);
-    ImGui::SetNextItemWidth(w - label_w - 2.f * aw - 40.f - 10.f);
+    ImGui::SetNextItemWidth(w - label_w - 2.f * aw - 34.f - 10.f);
     if (ImGui::SliderInt("##v", &iv, 0, hi, "")) changed = true;
     ImGui::SameLine(0.f, 2.f);
     if (ImGui::ArrowButton("r", ImGuiDir_Right)) { iv += 1; changed = true; }
     ImGui::SameLine(0.f, 4.f);
-    auto col = ColourAt(c, iv);
-    ImGui::ColorButton("##c", ImVec4(col[0] / 255.f, col[1] / 255.f, col[2] / 255.f, 1.f), ImGuiColorEditFlags_NoTooltip, {32.f, ImGui::GetFrameHeight()});
+    ImGui::Text("%d", iv);
     ImGui::PopID();
     if (changed) g_session.SetValue(c.name, float(std::max(0, std::min(hi, iv))));
 }

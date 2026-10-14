@@ -1,6 +1,6 @@
 #include "session.h"
 #include <algorithm>
-#include <cstdlib>
+
 
 namespace md::character {
 
@@ -12,10 +12,14 @@ bool Session::Load(const std::string& kenshi_dir, std::string& error) {
     if (!LoadEditorLimitsDir(kenshi_dir + "/data/editor", limits_, error)) return false;
     res_.Index(kenshi_dir);
     for (size_t i = 0; i < races_.groups.size(); ++i) if (!races_.Subraces(races_.groups[i]).empty()) group_ids_.push_back(i);
-    // RACE list order: by the numeric id of the RACE_GROUP records (Human, Hive, Shek, Skeleton in the shipped data). НЕВІДОМО (#159): the order the original shows (exe).
-    std::stable_sort(group_ids_.begin(), group_ids_.end(), [&](size_t a, size_t b) { return std::atoi(races_.groups[a].id.c_str()) < std::atoi(races_.groups[b].id.c_str()); });
+    // RACE list order: the cycle of the ▶ button in the original editor's video frames (Skeleton, Hive, Shek, Human); other groups follow in file order.
+    // НЕВІДОМО (#159): the data has no order field; the exe's list order is not found. The editor starts on Human.
+    static const char* kOrderFromFrames[] = {"Skeleton", "Hive", "Shek", "Human"};
+    auto rank = [&](size_t g) { for (size_t i = 0; i < 4; ++i) if (races_.groups[g].name == kOrderFromFrames[i]) return int(i); return 4; };
+    std::stable_sort(group_ids_.begin(), group_ids_.end(), [&](size_t a, size_t b) { return rank(a) < rank(b); });
     if (group_ids_.empty()) { error = "no playable race in the FCS data"; return false; }
     race_ = 0; subrace_ = 0; gender_ = Gender::Male;
+    for (size_t i = 0; i < group_ids_.size(); ++i) if (races_.groups[group_ids_[i]].name == "Human") race_ = i;
     Refresh();
     loaded_ = true;
     return true;

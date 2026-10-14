@@ -26,6 +26,8 @@ GpuTexture      s_v2_tex;
 GpuTexture      s_v2_tex_head;
 float           s_v2_ws[30][16];
 bool            s_v2_active = false;
+GpuPipeline     s_v2_pipeline;
+float           s_v2_tint[4] = {1.f, 1.f, 1.f, 0.f};
 float           s_v2_ground = 0.f;   // lowest skinned vertex (file units): the body is lifted so that it stands on y = 0
 
 namespace {
@@ -106,6 +108,17 @@ bool Rebuild() {
 bool V2Bind(md::character::Session* session) {
     g.session = session; g.loaded = false; g.key.clear(); g.revision = 0;
     if (!session || !session->Loaded()) { s_v2_active = false; return false; }
+    if (!s_v2_pipeline.SDLPipeline()) {
+        GpuPipeline::Desc pd;
+        pd.vert_path = "shaders/char_preview.vert"; pd.frag_path = "shaders/char_v2.frag";
+        pd.layout.count = 5; pd.layout.stride = sizeof(Vtx);
+        pd.layout.attribs[0] = { 0,  0, GpuAttribFmt::F3 }; pd.layout.attribs[1] = { 1, 12, GpuAttribFmt::F3 }; pd.layout.attribs[2] = { 2, 24, GpuAttribFmt::F2 };
+        pd.layout.attribs[3] = { 3, 32, GpuAttribFmt::U8x4 }; pd.layout.attribs[4] = { 4, 36, GpuAttribFmt::F4 };
+        pd.raster.depth_test = true; pd.raster.depth_write = true; pd.raster.cull_back = true;
+        pd.vert_uniform_bufs = 2; pd.vert_samplers = 0; pd.frag_samplers = 2; pd.frag_uniform_bufs = 1;
+        pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
+        if (!s_v2_pipeline.Create(pd)) { fprintf(stderr, "[CharV2] pipeline create failed\n"); s_v2_active = false; return false; }
+    }
     s_v2_active = Rebuild();
     g.revision = session->revision();
     return s_v2_active;
@@ -136,6 +149,14 @@ void V2Prepare(md::GpuCommandBufferHandle cmd) {
         g.dirty = true;
     }
     if (g.dirty) {
+        s_v2_tint[0] = s_v2_tint[1] = s_v2_tint[2] = 1.f;   // no Skin Tone range (Hive, ...): the texture as it is
+        if (const Config* cfg = g.session->Limits())
+            for (const Category& c : cfg->categories) for (const ColourRange& cr : c.colour_ranges)
+                if (cr.name == "Skin Tone") {
+                    auto it = g.session->Values().values.find(cr.name);
+                    auto col = ColourAt(cr, int(it == g.session->Values().values.end() ? float(cr.has_mid ? cr.mid : 0) : it->second));
+                    for (int k = 0; k < 3; ++k) s_v2_tint[k] = col[k] / 255.f;
+                }
         BodyScaleInputs in; in.female = g.session->gender() == Gender::Female;
         for (const std::string& n : g.body.bone_name) { if (n == "L Boob") in.has_breast_bones = true; if (n == "Bip01 Jaw") in.has_jaw_bone = true; }
         std::map<std::string, float> vals(g.session->Values().values.begin(), g.session->Values().values.end());

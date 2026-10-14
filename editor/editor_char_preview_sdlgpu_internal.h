@@ -76,6 +76,8 @@ extern GpuTexture      s_v2_tex_head;
 extern float           s_v2_ws[30][16];
 extern bool            s_v2_active;
 extern float           s_v2_ground;
+extern GpuPipeline     s_v2_pipeline;   // char_preview.vert + char_v2.frag (skin tone multiplier)
+extern float           s_v2_tint[4];
 
 // ── Hair system ───────────────────────────────────────────────────────────────
 struct HairFU { float hair[3]; float pad; };   // set=3, 16 bytes

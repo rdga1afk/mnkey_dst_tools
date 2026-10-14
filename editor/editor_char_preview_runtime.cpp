@@ -199,26 +199,22 @@ static void DrawCharPreview(md::GpuCommandBufferHandle cmd) {
         pv.DrawIndexed(s_scene_ni, 1, 0, 0, 0);
     }
 
-    if (V2Active() && s_pipeline.SDLPipeline() && s_v2_vbo.SDLBuffer() && s_v2_ibo.SDLBuffer() && s_v2_tex.SDLTexture() && s_v2_tex_head.SDLTexture() &&
-        s_tex_muscle.SDLTexture() && s_tex_blood.SDLTexture()) {
+    if (V2Active() && s_v2_pipeline.SDLPipeline() && s_v2_vbo.SDLBuffer() && s_v2_ibo.SDLBuffer() && s_v2_tex.SDLTexture() && s_v2_tex_head.SDLTexture()) {
         // v2: file units are 0.1 m; the body stands on y = 0
         M4 sc; sc.m[0] = sc.m[5] = sc.m[10] = 0.1f;
         M4 v2_mvp = m4_mul(proj, m4_mul(view, m4_mul(m4_translate(0.f, -s_v2_ground * 0.1f, 0.f), sc)));
-        pv.BindPipeline(&s_pipeline);
+        pv.BindPipeline(&s_v2_pipeline);
         pv.BindVertexBuffer(&s_v2_vbo);
         pv.BindIndexBuffer(&s_v2_ibo, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         VU vu2; memcpy(vu2.mvp, v2_mvp.m, 64);
         pv.PushVertexUniforms(0, &vu2, sizeof(vu2));
         pv.PushVertexUniforms(1, s_v2_ws, sizeof(s_v2_ws));
-        FU fu2{}; fu2.skin[0] = s_skin[0]; fu2.skin[1] = s_skin[1]; fu2.skin[2] = s_skin[2]; fu2.str = 0.f; fu2.sat = 1.f; fu2.bri = 0.f; fu2.muscle = 0.f;
-        pv.PushFragmentUniforms(0, &fu2, sizeof(fu2));
-        SDL_GPUTextureSamplerBinding ftb2[4] = {
+        pv.PushFragmentUniforms(0, s_v2_tint, sizeof(s_v2_tint));
+        SDL_GPUTextureSamplerBinding ftb2[2] = {
             { s_v2_tex.SDLTexture(),      s_v2_tex.SDLSampler()      },
             { s_v2_tex_head.SDLTexture(), s_v2_tex_head.SDLSampler() },
-            { s_tex_muscle.SDLTexture(),  s_tex_muscle.SDLSampler()  },
-            { s_tex_blood.SDLTexture(),   s_tex_blood.SDLSampler()   },
         };
-        pv.BindFragmentSamplers(0, ftb2, 4);
+        pv.BindFragmentSamplers(0, ftb2, 2);
         pv.DrawIndexed((uint32_t)s_v2_ni, 1, 0, 0, 0);
         cb.EndPass();
         return;
