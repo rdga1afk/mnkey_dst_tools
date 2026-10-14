@@ -4,6 +4,7 @@
 #pragma once
 #include "appearance.h"
 #include "editor_limits.h"
+#include "attachments.h"
 #include "races.h"
 #include <monkey_dust/io/fcs_gamedata.h>
 #include <monkey_dust/io/kenshi_resources.h>
@@ -41,11 +42,28 @@ public:
     bool SelectSubraceByName(const std::string& name, bool female);
     float Value(const Range& r) const;  // current value of a slider (mid when unset)
     void SetValue(const std::string& slider, float v) { values_.values[slider] = v; ++revision_; }
-    void Reset() { if (config_) Reset(*config_, values_); ++revision_; }
+    void Reset() { if (config_) Reset(*config_, values_); stance_ = DefaultStance(); ++revision_; }
+    // Idle stance: the ANIMATION records `idle_stand_*` of chareditor.mod, record order; default `idle_stand_normal` (exe 0x14007a490, M:docs/characters.md).
+    size_t StanceCount() const { return stances_.size(); }
+    const std::string& StanceName(size_t i) const { return stances_[i]; }
+    size_t stance() const { return stance_; }
+    void SelectStance(int i) { if (!stances_.empty()) { stance_ = size_t((i + int(stances_.size())) % int(stances_.size())); ++revision_; } }
+    const std::string& StanceAnim() const { static const std::string d = "idle_stand_normal"; return stances_.empty() ? d : stances_[stance_]; }
     void RandomiseCategory(const std::string& category) { if (config_) md::character::RandomiseCategory(*config_, category, values_, rng_); ++revision_; }
     void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); ++revision_; }
     void Seed(uint32_t s) { rng_ = Rng(s); }
 
+    // Hair and beard of the current race and gender (RACE `hairs`, by attach slot); index 0 is the first record (a "Bald" / no-mesh entry when the race has one).
+    size_t HairCount() const { return hairs_.size(); }
+    const AttachmentInfo& Hair(size_t i) const { return hairs_[i]; }
+    size_t hair_index() const { return hair_; }
+    void SelectHair(size_t i) { if (i < hairs_.size()) { hair_ = i; ++revision_; } }
+    size_t BeardCount() const { return beards_.size(); }
+    const AttachmentInfo& Beard(size_t i) const { return beards_[i]; }
+    size_t beard_index() const { return beard_; }
+    void SelectBeard(size_t i) { if (i < beards_.size()) { beard_ = i; ++revision_; } }
+    // Hair colour of the appearance values (Hair Colour / Hair Saturation / Hair Brightness, x 0.01 as HSB), RGB 0..1.
+    std::array<float, 3> HairRgb() const;
     const md::fcs::GameDataContainer& Data() const { return data_; }
     const std::vector<EditorLimits>& AllLimits() const { return limits_; }
     const md::KenshiResources& Resources() const { return res_; }
@@ -64,6 +82,11 @@ private:
     std::vector<size_t> group_ids_;
     size_t race_ = 0, subrace_ = 0;
     std::vector<const RaceInfo*> subraces_;
+    std::vector<AttachmentInfo> hairs_, beards_;
+    size_t hair_ = 0, beard_ = 0;
+    std::vector<std::string> stances_;
+    size_t stance_ = 0;
+    size_t DefaultStance() const { for (size_t i = 0; i < stances_.size(); ++i) if (stances_[i] == "idle_stand_normal") return i; return 0; }
     Gender gender_ = Gender::Male;
     const Config* config_ = nullptr;
     Appearance values_;

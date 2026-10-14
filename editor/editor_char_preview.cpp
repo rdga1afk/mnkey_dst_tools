@@ -214,7 +214,7 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
     static std::vector<M4> skin;
     // layers (weight 1, cumulative): the idle stance, then Posture -> "postures", Neck position -> "shoulder set", Shoulder set -> "neck set" (names crossed in the original, exe 0x14084b890),
     // time = animation length * slider value * 0.01
-    std::vector<AnimLayer> layers = {{FindAnimation(g_skeleton, "idle_stand_normal"), 0.f}};
+    std::vector<AnimLayer> layers = {{FindAnimation(g_skeleton, g_session->StanceAnim()), 0.f}};
     for (const auto& m : {std::make_pair("Posture", "postures"), std::make_pair("Neck position", "shoulder set"), std::make_pair("Shoulder set", "neck set")}) {
         const md::ogre::Animation* a = FindAnimation(g_skeleton, m.second);
         auto it = vals.find(m.first);

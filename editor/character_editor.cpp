@@ -1,4 +1,5 @@
 #include "character/appearance.h"
+#include "character/race_stats.h"
 #include "character/session.h"
 #include "character_editor.h"
 #include "editor_char_preview.h"
@@ -139,6 +140,12 @@ void Draw(bool) {
     ImGui::EndChild();
     ImGui::BeginChild("##v2_stats", {left_w, floorf(H * 0.241f)}, true);
     ImGui::TextDisabled("RACE STATS");
+    for (const md::character::StatRow& row : md::character::RaceStatRows(s.Current())) {
+        ImGui::TextUnformatted(row.label.c_str());
+        if (row.value.empty()) continue;
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(row.value.c_str()).x);
+        if (row.bad) ImGui::TextColored({0.85f, 0.42f, 0.36f, 1.f}, "%s", row.value.c_str()); else ImGui::TextUnformatted(row.value.c_str());
+    }
     ImGui::EndChild();
     ImGui::BeginChild("##v2_confirm", {left_w, floorf(H * 0.096f)}, true, ImGuiWindowFlags_NoScrollbar);
     ImGui::Button("CONFIRM", {-1.f, -1.f});
@@ -166,6 +173,11 @@ void Draw(bool) {
     ImGui::BeginChild("##v2_content", {0.f, -ImGui::GetFrameHeightWithSpacing() - 4.f}, false);
     if (const Config* cfg = s.Limits()) {
         if (const Category* cat = cfg->Find(kTabCategory[g_tab])) {
+            if (g_tab == 0 && s.StanceCount()) {
+                char t[64];
+                std::snprintf(t, sizeof t, "Idle stance  %d/%d", int(s.stance()) + 1, int(s.StanceCount()));
+                if (int d = NavRow("stance", t, true)) g_session.SelectStance(int(s.stance()) + d);
+            }
             for (const ColourRange& c : cat->colour_ranges) ColourRow(c);
             for (const Range& r : cat->ranges) SliderRow(r);
             if (cat->ranges.empty() && cat->colour_ranges.empty()) ImGui::TextDisabled("(nothing to adjust)");

@@ -43,6 +43,10 @@ RaceData LoadRaces(const md::fcs::GameDataContainer& data) {
         r.no_hats = BoolOf(*g, "no hats"); r.no_shirts = BoolOf(*g, "no shirts"); r.no_shoes = BoolOf(*g, "no shoes");
         r.editor_limits = FileOf(*g, "editor limits"); r.male_mesh = FileOf(*g, "male mesh"); r.female_mesh = FileOf(*g, "female mesh");
         r.heads_male = RefsOf(*g, "heads male"); r.heads_female = RefsOf(*g, "heads female"); r.hairs = RefsOf(*g, "hairs"); r.hair_colors = RefsOf(*g, "hair colors");
+        if (const auto* ca = g->Refs("combat anatomy")) if (!ca->empty() && (*ca)[0].second[1] >= 1) r.hit_points = float((*ca)[0].second[1]);
+        if (auto it = g->floats.find("bleed rate"); it != g->floats.end()) r.bleed_rate = it->second;
+        if (auto it = g->floats.find("strength"); it != g->floats.end()) r.strength = it->second;
+        if (auto it = g->floats.find("dexterity"); it != g->floats.end()) r.dexterity = it->second;
         r.stats_good = StatsOf(*g, "stats good"); r.stats_bad = StatsOf(*g, "stats bad");
         r.portrait_distance = FloatOf(*g, "portrait distance");
         r.portrait_offset[0] = FloatOf(*g, "portrait offset x"); r.portrait_offset[1] = FloatOf(*g, "portrait offset y"); r.portrait_offset[2] = FloatOf(*g, "portrait offset z");

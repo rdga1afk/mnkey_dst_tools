@@ -36,8 +36,30 @@ void Session::Refresh() {
         // a single-gender race whose file has Male / Female configs (stick_prince, ...): the Male one. НЕВІДОМО (#159): which one the original takes (exe).
         if (!config_ && gender_ == Gender::Single) config_ = l.For(Gender::Male);
     }
+    if (stances_.empty()) {
+        for (const md::fcs::GameData* a : data_.OfType(24)) {
+            auto it = a->strings.find("anim name");
+            if (it != a->strings.end() && it->second.rfind("idle_stand_", 0) == 0) stances_.push_back(it->second);
+        }
+        stance_ = DefaultStance();
+    }
     values_ = Appearance();
     if (config_) Reset(*config_, values_);
+    // hair and beards of this race (female mesh falls back to the male one in AttachmentInfo)
+    hairs_.clear(); beards_.clear(); hair_ = beard_ = 0;
+    for (const std::string& id : Current().hairs) {
+        AttachmentInfo a;
+        if (!LoadAttachment(data_, id, a)) continue;
+        (a.slot == kSlotBeard ? beards_ : hairs_).push_back(a);
+    }
+    // the default hair colour: the first of the race's hair colours (COLOR_DATA `color 1`) as HSB x 100
+    for (const std::string& id : Current().hair_colors) {
+        std::array<int, 3> rgb;
+        if (!LoadColour(data_, id, rgb)) continue;
+        auto hsb = RgbToHsb(rgb[0] / 255.f, rgb[1] / 255.f, rgb[2] / 255.f);
+        values_.values["Hair Colour"] = hsb[0] * 100.f; values_.values["Hair Saturation"] = hsb[1] * 100.f; values_.values["Hair Brightness"] = hsb[2] * 100.f;
+        break;
+    }
     ++revision_;
 }
 
@@ -56,6 +78,11 @@ bool Session::SelectSubraceByName(const std::string& name, bool female) {
                 return true;
             }
     return false;
+}
+
+std::array<float, 3> Session::HairRgb() const {
+    auto v = [&](const char* k, float d) { auto it = values_.values.find(k); return (it == values_.values.end() ? d : it->second) * 0.01f; };
+    return HsbToRgb(v("Hair Colour", 0.f), v("Hair Saturation", 0.f), v("Hair Brightness", 0.5f));
 }
 
 float Session::Value(const Range& r) const {
