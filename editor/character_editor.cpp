@@ -110,6 +110,8 @@ void Draw(bool) {
 
     // ── left column: NamePanel, DescriptionPanel, StatsPanel, ConfirmPanel (fractions of §3a) ──
     ImGui::BeginGroup();
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {4.f, 2.f});   // the panel of §3a is 0.398 of the height: tighter rows so that CHANGE CHARACTER fits at 706 px
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, {4.f, 1.f});
     ImGui::BeginChild("##v2_name", {left_w, floorf(H * 0.398f)}, true, ImGuiWindowFlags_NoScrollbar);
     ImGui::SetNextItemWidth(-1.f);
     ImGui::InputTextWithHint("##name", "NAME", g_name, sizeof g_name);
@@ -128,6 +130,7 @@ void Draw(bool) {
     ImGui::TextDisabled("CHANGE CHARACTER");
     NavRow("chr", "1/1", false);
     ImGui::EndChild();
+    ImGui::PopStyleVar(2);
     ImGui::BeginChild("##v2_desc", {left_w, floorf(H * 0.241f)}, true);
     ImGui::TextDisabled("RACE DESCRIPTION");
     ImGui::PushTextWrapPos(0.f);
