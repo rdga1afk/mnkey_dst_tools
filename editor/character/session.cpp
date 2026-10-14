@@ -46,7 +46,11 @@ void Session::Refresh() {
     values_ = Appearance();
     if (config_) Reset(*config_, values_);
     // hair and beards of this race (female mesh falls back to the male one in AttachmentInfo)
-    hairs_.clear(); beards_.clear(); hair_ = beard_ = 0;
+    hairs_.clear(); beards_.clear(); hair_ = beard_ = head_ = 0; heads_.clear();
+    for (const std::string& id : gender_ == Gender::Female ? Current().heads_female : Current().heads_male) {
+        const md::fcs::GameData* h = data_.Get(id);
+        if (h && h->files.count("texture map") && !h->files.at("texture map").empty()) heads_.push_back(id);
+    }
     for (const std::string& id : Current().hairs) {
         AttachmentInfo a;
         if (!LoadAttachment(data_, id, a)) continue;

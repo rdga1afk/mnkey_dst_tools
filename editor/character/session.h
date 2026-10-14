@@ -43,6 +43,11 @@ public:
     float Value(const Range& r) const;  // current value of a slider (mid when unset)
     void SetValue(const std::string& slider, float v) { values_.values[slider] = v; ++revision_; }
     void Reset() { if (config_) Reset(*config_, values_); stance_ = DefaultStance(); ++revision_; }
+    // Heads: the race's `heads male` / `heads female` HEAD records that have a `texture map` (M:docs/characters.md "Head"); index 0 is the default.
+    size_t HeadCount() const { return heads_.size(); }
+    const std::string& HeadId(size_t i) const { return heads_[i]; }
+    size_t head() const { return head_; }
+    void SelectHead(int i) { if (!heads_.empty()) { head_ = size_t((i + int(heads_.size())) % int(heads_.size())); ++revision_; } }
     // Idle stance: the ANIMATION records `idle_stand_*` of chareditor.mod, record order; default `idle_stand_normal` (exe 0x14007a490, M:docs/characters.md).
     size_t StanceCount() const { return stances_.size(); }
     const std::string& StanceName(size_t i) const { return stances_[i]; }
@@ -83,7 +88,8 @@ private:
     size_t race_ = 0, subrace_ = 0;
     std::vector<const RaceInfo*> subraces_;
     std::vector<AttachmentInfo> hairs_, beards_;
-    size_t hair_ = 0, beard_ = 0;
+    size_t hair_ = 0, beard_ = 0, head_ = 0;
+    std::vector<std::string> heads_;
     std::vector<std::string> stances_;
     size_t stance_ = 0;
     size_t DefaultStance() const { for (size_t i = 0; i < stances_.size(); ++i) if (stances_[i] == "idle_stand_normal") return i; return 0; }

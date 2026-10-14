@@ -173,6 +173,11 @@ void Draw(bool) {
     ImGui::BeginChild("##v2_content", {0.f, -ImGui::GetFrameHeightWithSpacing() - 4.f}, false);
     if (const Config* cfg = s.Limits()) {
         if (const Category* cat = cfg->Find(kTabCategory[g_tab])) {
+            if (g_tab == 2 && s.HeadCount()) {
+                char t[64];
+                std::snprintf(t, sizeof t, "Head  %d/%d", int(s.head()) + 1, int(s.HeadCount()));
+                if (int d = NavRow("head", t, true)) g_session.SelectHead(int(s.head()) + d);
+            }
             if (g_tab == 0 && s.StanceCount()) {
                 char t[64];
                 std::snprintf(t, sizeof t, "Idle stance  %d/%d", int(s.stance()) + 1, int(s.StanceCount()));

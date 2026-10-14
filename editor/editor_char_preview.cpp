@@ -168,7 +168,7 @@ bool Rebuild() {
     }
     // body texture from the race, head texture = `texture map` of the first head (stored paths are stale: found by file name)
     std::string body_tex = ss.Resources().Path(FileOf(race.id, female ? "body texture female" : "body texture male"));
-    const std::vector<std::string>& heads = female ? race.heads_female : race.heads_male;
+    const std::vector<std::string> heads = ss.HeadCount() ? std::vector<std::string>{ss.HeadId(ss.head())} : std::vector<std::string>();
     std::string head_tex;
     if (!heads.empty()) { const md::fcs::GameData* h = ss.Data().Get(heads[0]); if (h) { auto it = h->files.find("texture map"); if (it != h->files.end()) head_tex = ss.Resources().Path(it->second); } }
     GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
@@ -179,7 +179,7 @@ bool Rebuild() {
     g_ibo.Init(0x8893u, g_body.indices.data(), uint32_t(g_body.indices.size() * sizeof(uint32_t)));
     g_ni = int(g_body.indices.size());
     g_error.clear();
-    g_key = race.id + (female ? "|f" : "|m"); g_dirty = true;
+    g_key = race.id + (female ? "|f" : "|m") + std::to_string(ss.head()); g_dirty = true;
     fprintf(stdout, "[CharPreview] %s %s: %zu vertices, %zu bones, %zu poses, mesh %s\n", race.name.c_str(), female ? "female" : "male", g_base.size(), g_body.bone_name.size(), g_body.poses.size(), rel.c_str());
     return true;
 }
@@ -195,7 +195,7 @@ void PoseWeights(std::vector<float>& w) {
 void Prepare(md::GpuCommandBufferHandle cmd) {
     if (g_session->revision() != g_revision) {
         g_revision = g_session->revision();
-        const std::string key = g_session->Current().id + (g_session->gender() == Gender::Female ? "|f" : "|m");
+        const std::string key = g_session->Current().id + (g_session->gender() == Gender::Female ? "|f" : "|m") + std::to_string(g_session->head());
         if (key != g_key && !Rebuild()) { g_active = false; return; }
         g_dirty = true;
     }
