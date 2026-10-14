@@ -172,6 +172,26 @@ def t_read_bytes(addr, n=64):
     return "\n".join("%s  %s" % (a.add(i), " ".join("%02x" % b for b in buf[i:i + 16])) for i in range(0, len(buf), 16))
 
 
+def t_find_bytes(hexbytes, limit=20):
+    pat = bytes.fromhex(re.sub(r"[^0-9a-fA-F]", "", hexbytes))
+    if not pat:
+        return "ERROR: empty pattern"
+    mem = _prog.getMemory()
+    from jpype import JArray, JByte
+    jp = JArray(JByte)([b - 256 if b > 127 else b for b in pat])
+    mask = JArray(JByte)([-1] * len(pat))
+    out, a = [], mem.getMinAddress()
+    while len(out) < int(limit):
+        a = mem.findBytes(a, jp, mask, True, None)
+        if a is None:
+            break
+        out.append("%s  in %s" % (a, _where(a)))
+        a = a.next()
+        if a is None:
+            break
+    return "\n".join(out) or "(none)"
+
+
 TOOLS = {
     "decompile": (t_decompile, "Decompile the function containing an address (0x...) or with a name; offset reads a long function in pieces.", {"target": "string", "offset": "integer"}, ["target"]),
     "disasm": (t_disasm, "Disassemble n instructions from an address.", {"addr": "string", "n": "integer"}, ["addr"]),
@@ -179,6 +199,7 @@ TOOLS = {
     "xrefs_from": (t_xrefs_from, "References from an address.", {"addr": "string", "limit": "integer"}, ["addr"]),
     "find_functions": (t_find_functions, "Functions whose name matches a regex.", {"regex": "string", "limit": "integer"}, ["regex"]),
     "find_strings": (t_find_strings, "Defined strings matching a regex, with reference counts.", {"regex": "string", "limit": "integer"}, ["regex"]),
+    "find_bytes": (t_find_bytes, "Addresses of a byte pattern (hex) in the program memory.", {"hexbytes": "string", "limit": "integer"}, ["hexbytes"]),
     "read_bytes": (t_read_bytes, "Hex dump of n bytes (max 512) from an address.", {"addr": "string", "n": "integer"}, ["addr"]),
 }
 
