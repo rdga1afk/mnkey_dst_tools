@@ -110,7 +110,9 @@ static void DrawCharPreview(md::GpuCommandBufferHandle cmd) {
     // Hierarchical bone propagation (sl[12] *= parent[0]) already moves origins —
     // per-bone H in setSpine([0]=H) IS setMovementScale. No separate model Y-scale.
     // Translate: put feet (bind-pose Y ≈ -0.95) at ground (Y=0); offset scales with H.
-    M4 model = m4_translate(0.f, -s_height*0.95f, 0.f);
+    // the old body is pelvis-centred (its origin 0.95 m above its feet); the v2 body stands on y = 0 and the ground and pole with it
+    const float scene_drop = V2Active() ? 0.f : s_height*0.95f;
+    M4 model = m4_translate(0.f, -scene_drop, 0.f);
 
     // Foot grounding: for non-default leg_Y the calf/foot bind-pose X-translation
     // is scaled by leg_Y → feet drift above platform top. Shift character-only downward.
@@ -175,7 +177,7 @@ static void DrawCharPreview(md::GpuCommandBufferHandle cmd) {
         bgu.up[0]=inv_view[4];    bgu.up[1]=inv_view[5];    bgu.up[2]=inv_view[6];    bgu.up[3]=tan_vfov;
         // Camera forward = -col2 of inv_view (camera looks along -Z in view space)
         bgu.fwd[0]=-inv_view[8];  bgu.fwd[1]=-inv_view[9];  bgu.fwd[2]=-inv_view[10];
-        bgu.fwd[3] = -(s_height*0.95f);  // ground_y in world = model offset (feet at Y=0)
+        bgu.fwd[3] = -scene_drop;  // ground_y in world = model offset (feet at Y=0)
         bgu.eye[0]=inv_view[12];  bgu.eye[1]=inv_view[13];  bgu.eye[2]=inv_view[14];  bgu.eye[3]=0;
         GpuPushFragmentUniforms(cmd, 0, &bgu, sizeof(bgu));
         // Bind desert ground textures (set=2, bindings 0 and 1)

@@ -173,6 +173,8 @@ void V2Prepare(md::GpuCommandBufferHandle cmd) {
             miny = std::min(miny, y);
         }
         s_v2_ground = miny;
+        fprintf(stdout, "[CharV2] lowest skinned vertex y = %.3f units before the lift (world y after the lift = 0), camera lookat_y %.3f dist %.3f pitch %.3f, ground and pole base at world y = 0\n",
+                double(miny), double(s_lookat_y), double(s_dist), double(s_pit));
         std::vector<float> w; PoseWeights(w);
         std::vector<Vtx> mv = g.base;
         for (size_t p = 0; p < w.size(); ++p) {
