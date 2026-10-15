@@ -55,7 +55,9 @@ public:
     void SelectStance(int i) { if (!stances_.empty()) { stance_ = size_t((i + int(stances_.size())) % int(stances_.size())); ++revision_; } }
     const std::string& StanceAnim() const { static const std::string d = "idle_stand_normal"; return stances_.empty() ? d : stances_[stance_]; }
     void RandomiseCategory(const std::string& category) { if (config_) md::character::RandomiseCategory(*config_, category, values_, rng_); ++revision_; }
-    void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); ++revision_; }
+    void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); RandomiseHair(); }
+    // Hair tab (exe 0x14007adc0): a weighted pick of the hair, of the beard (not for women) and of the hair colour; no colours in the race: brightness 100, saturation 0.
+    void RandomiseHair();
     void Seed(uint32_t s) { rng_ = Rng(s); }
 
     // Hair and beard of the current race and gender (RACE `hairs`, by attach slot); index 0 is the first record (a "Bald" / no-mesh entry when the race has one).

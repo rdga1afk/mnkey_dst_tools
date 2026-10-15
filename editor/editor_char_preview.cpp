@@ -242,9 +242,17 @@ bool Rebuild() {
 }
 
 void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
-    a.ok = false; a.ni = 0;
-    if (!info || !info->HasMesh(female)) return;
+    a.ok = false; a.ni = 0; a.head_ok = false;
+    if (!info) return;
     const Session& ss = *g_session;
+    GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    // the overlay on the head skin: also for an attachment without a mesh (Beard01 / 04 / 06 are only that)
+    const std::string hp = ss.Resources().Path(info->HeadTexture(female)); const char* hpc = hp.c_str();
+    if (!hp.empty() && a.head_tex.InitFromDDSArray(&hpc, 1, sd)) {
+        a.head_ok = true;
+        for (int k = 0; k < 4; ++k) { a.head_mult[k] = k == info->HeadChannel(female) ? 1.f : 0.f; a.head_alpha[k] = k == info->HeadAlphaChannel(female) ? 1.f : 0.f; }
+    }
+    if (!info->HasMesh(female)) return;
     md::ogre::Mesh mesh; md::ogre::Error oe; SkinnedBody sb; std::string err;
     if (!md::ogre::ReadMesh(ss.Resources().Path(info->Mesh(female)), mesh, oe)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), oe.Message().c_str()); return; }
     if (!BuildSkinnedBody(mesh, g_skeleton, sb, err)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), err.c_str()); return; }
@@ -254,7 +262,6 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
         v.px = sv.pos[0]; v.py = sv.pos[1]; v.pz = sv.pos[2]; v.nx = sv.normal[0]; v.ny = sv.normal[1]; v.nz = sv.normal[2]; v.u = sv.uv[0]; v.v = sv.uv[1];
         for (int k = 0; k < 4; ++k) { v.ji[k] = sv.joint[k]; v.wt[k] = sv.weight[k]; }
     }
-    GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
     std::string tp = ss.Resources().Path(info->Texture(female)); const char* tpc = tp.c_str();
     if (tp.empty() || !a.tex.InitFromDDSArray(&tpc, 1, sd)) { fprintf(stderr, "[CharPreview] hair texture not found: %s\n", info->Texture(female).c_str()); return; }
     a.vbo.Init(0x8892u, vtx.data(), uint32_t(vtx.size() * sizeof(Vtx)));
@@ -262,12 +269,6 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     a.ni = int(sb.indices.size());
     for (int k = 0; k < 4; ++k) { a.diffuse[k] = k == info->diffuse_channel ? 1.f : 0.f; a.alpha[k] = k == info->alpha_channel ? 1.f : 0.f; }
     a.threshold = float(info->alpha_rejection) / 255.f;
-    a.head_ok = false;
-    const std::string hp = ss.Resources().Path(info->HeadTexture(female)); const char* hpc = hp.c_str();
-    if (!hp.empty() && a.head_tex.InitFromDDSArray(&hpc, 1, sd)) {
-        a.head_ok = true;
-        for (int k = 0; k < 4; ++k) { a.head_mult[k] = k == info->HeadChannel(female) ? 1.f : 0.f; a.head_alpha[k] = k == info->HeadAlphaChannel(female) ? 1.f : 0.f; }
-    }
     a.ok = true;
 }
 
@@ -412,7 +413,7 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
         const auto hrgb = g_session->HairRgb();
         const Attach& ha = g_hair; const Attach& be = g_beard;
-        const bool hh = ha.ok && ha.head_ok, bh = be.ok && be.head_ok;
+        const bool hh = ha.head_ok, bh = be.head_ok;
         struct { float tint[4], colour[4], hair_mult[4], hair_alpha[4], beard_alpha[4]; } bu;
         memcpy(bu.tint, g_tint, 16);
         bu.colour[0] = hrgb[0]; bu.colour[1] = hrgb[1]; bu.colour[2] = hrgb[2]; bu.colour[3] = 1.f;

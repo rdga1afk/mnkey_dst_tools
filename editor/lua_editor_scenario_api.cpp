@@ -27,6 +27,7 @@ static char s_forced_tab[64] = {};
 
 // ── Character editor, for scenarios (the editor itself has no switches): the session is the editor's own, the UI only draws it.
 // md.char_editor_select(subrace_name, female) -> bool   md.char_editor_set(slider, value) / md.char_editor_set(nil) = RESET; "head" and "idle stance" take a 0-based index
+// md.char_editor_randomise("all"|"body"|"face"|"hair"[, seed])   the RANDOMISE buttons of the tabs; seed = the generator's start
 // md.char_editor_view(tab, yaw_radians[, pitch, distance, look_at_y])   tab 0 = whole body, others = head
 static int l_md_char_editor_select(lua_State* L) {
 #ifdef MD_SDL_GPU
@@ -86,6 +87,21 @@ static int l_md_char_editor_view(lua_State* L) {
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
     if (lua_gettop(L) >= 5) CharPreviewSDLGPU::SetCamera((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));
+#else
+    (void)L;
+#endif
+    return 0;
+}
+
+static int l_md_char_editor_randomise(lua_State* L) {
+#ifdef MD_SDL_GPU
+    const std::string what = luaL_checkstring(L, 1);
+    auto& ses = CharacterEditor::GetSession();
+    if (lua_gettop(L) >= 2) ses.Seed((uint32_t)luaL_checkinteger(L, 2));
+    if (what == "all") ses.RandomiseAll();
+    else if (what == "hair") ses.RandomiseHair();
+    else if (what == "face") ses.RandomiseCategory("Face");
+    else if (what == "body") ses.RandomiseCategory("Body");
 #else
     (void)L;
 #endif
@@ -224,6 +240,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_select", l_md_char_editor_select);
     sys.RegisterNamespaceFunction("char_editor_set", l_md_char_editor_set);
     sys.RegisterNamespaceFunction("char_editor_view", l_md_char_editor_view);
+    sys.RegisterNamespaceFunction("char_editor_randomise", l_md_char_editor_randomise);
     sys.RegisterNamespaceFunction("char_editor_export", l_md_char_editor_export);
     sys.RegisterNamespaceFunction("char_editor_import", l_md_char_editor_import);
     sys.RegisterNamespaceFunction("char_editor_confirm", l_md_char_editor_confirm);

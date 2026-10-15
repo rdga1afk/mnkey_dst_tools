@@ -51,9 +51,10 @@ void Session::Refresh() {
         const md::fcs::GameData* h = data_.Get(id);
         if (h && h->files.count("texture map") && !h->files.at("texture map").empty()) heads_.push_back(id);
     }
-    for (const std::string& id : Current().hairs) {
+    for (size_t i = 0; i < Current().hairs.size(); ++i) {
         AttachmentInfo a;
-        if (!LoadAttachment(data_, id, a)) continue;
+        if (!LoadAttachment(data_, Current().hairs[i], a)) continue;
+        a.weight = std::max(1, std::min(100, i < Current().hair_weights.size() ? Current().hair_weights[i] : 1));
         (a.slot == kSlotBeard ? beards_ : hairs_).push_back(a);
     }
     { AttachmentInfo none; none.name = "None"; beards_.insert(beards_.begin(), none); }   // `beard` may be empty (M:docs/characters.md "Body file")
@@ -65,6 +66,32 @@ void Session::Refresh() {
         values_.values["Hair Colour"] = hsb[0] * 100.f; values_.values["Hair Saturation"] = hsb[1] * 100.f; values_.values["Hair Brightness"] = hsb[2] * 100.f;
         break;
     }
+    ++revision_;
+}
+
+void Session::RandomiseHair() {
+    // weighted pick; the placeholder "None" at the front of the beards is not a record of the race
+    auto pick = [&](const std::vector<AttachmentInfo>& v, size_t first) {
+        float total = 0.f; for (size_t i = first; i < v.size(); ++i) total += float(v[i].weight);
+        float r = rng_.Next() * total;
+        for (size_t i = first; i < v.size(); ++i) { r -= float(v[i].weight); if (r < 0.f) return i; }
+        return v.size() > first ? v.size() - 1 : size_t(0);
+    };
+    if (gender_ != Gender::Female && beards_.size() > 1) beard_ = pick(beards_, 1);
+    if (!hairs_.empty()) hair_ = pick(hairs_, 0);
+    float total = 0.f; std::vector<float> w;
+    for (size_t i = 0; i < Current().hair_colors.size(); ++i) { int v = i < Current().hair_color_weights.size() ? Current().hair_color_weights[i] : 0; w.push_back(float(v == 0 ? 100 : v)); total += w.back(); }
+    std::array<int, 3> rgb{};
+    bool have = false;
+    if (total > 0.f) {
+        float r = rng_.Next() * total; size_t k = w.size() - 1;
+        for (size_t i = 0; i < w.size(); ++i) { r -= w[i]; if (r < 0.f) { k = i; break; } }
+        have = LoadColour(data_, Current().hair_colors[k], rgb);
+    }
+    if (have) {
+        auto hsb = RgbToHsb(rgb[0] / 255.f, rgb[1] / 255.f, rgb[2] / 255.f);
+        values_.values["Hair Colour"] = hsb[0] * 100.f; values_.values["Hair Saturation"] = hsb[1] * 100.f; values_.values["Hair Brightness"] = hsb[2] * 100.f;
+    } else { values_.values["Hair Brightness"] = 100.f; values_.values["Hair Saturation"] = 0.f; }
     ++revision_;
 }
 

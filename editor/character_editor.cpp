@@ -253,7 +253,7 @@ void Draw(bool) {
     const float bw = (ImGui::GetContentRegionAvail().x - 2.f * sp) / 3.f;
     if (ImGui::Button("RANDOMISE ALL", {bw, 0.f})) g_session.RandomiseAll();
     ImGui::SameLine(0.f, sp);
-    if (ImGui::Button("RANDOMISE", {bw, 0.f})) g_session.RandomiseCategory(kTabCategory[g_tab]);
+    if (ImGui::Button("RANDOMISE", {bw, 0.f})) { if (g_tab == 2) g_session.RandomiseHair(); else g_session.RandomiseCategory(kTabCategory[g_tab]); }
     ImGui::SameLine(0.f, sp);
     if (ImGui::Button("RESET", {bw, 0.f})) g_session.Reset();
     ImGui::EndChild();

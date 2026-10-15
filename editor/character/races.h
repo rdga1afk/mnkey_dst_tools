@@ -18,6 +18,7 @@ struct RaceInfo {
     std::string editor_limits;                 // base name of the `editor limits` file, "" = none
     std::string male_mesh, female_mesh;        // base names
     std::vector<std::string> heads_male, heads_female, hairs, hair_colors;   // string_ids, in merge order
+    std::vector<int> hair_weights, hair_color_weights;                       // the first integer of the reference, parallel to `hairs` / `hair_colors`
     std::vector<int> stats_good, stats_bad;    // `stats good0..` / `stats bad0..` (stat ids) in key order
     float bleed_rate = 1.f, hit_points = 100.f, strength = 1.f, dexterity = 1.f;   // hit_points: `combat anatomy` second value of the first part (100 when under 1); strength / dexterity: RACE floats
     float portrait_distance = 0.f, portrait_offset[3] = {0.f, 0.f, 0.f};

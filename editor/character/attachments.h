@@ -12,6 +12,7 @@ constexpr int kSlotHair = 2, kSlotBeard = 13;
 
 struct AttachmentInfo {
     std::string id, name, mesh, mesh_female, texture, texture_female, head_texture, head_texture_female;
+    int weight = 1;   // RANDOMISE: the reference's first integer clamped to 1..100 (M:docs/characters.md "Random appearance")
     int slot = 0, alpha_rejection = 128, diffuse_channel = 0, alpha_channel = 0;
     int head_channel = 0, head_alpha_channel = 1, head_channel_female = 0, head_alpha_channel_female = 1;   // the overlay on the head skin (`head texture`)
     bool HasMesh(bool female) const { return !(female && !mesh_female.empty() ? mesh_female : mesh).empty(); }

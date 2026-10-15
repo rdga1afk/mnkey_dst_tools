@@ -14,6 +14,11 @@ std::vector<std::string> RefsOf(const md::fcs::GameData& g, const char* cat) {
     if (const auto* r = g.Refs(cat)) for (const auto& t : *r) v.push_back(t.first);
     return v;
 }
+std::vector<int> WeightsOf(const md::fcs::GameData& g, const char* cat) {
+    std::vector<int> v;
+    if (const auto* r = g.Refs(cat)) for (const auto& t : *r) v.push_back(t.second[0]);
+    return v;
+}
 std::vector<int> StatsOf(const md::fcs::GameData& g, const std::string& prefix) {
     std::vector<int> v;   // std::map iterates the keys in order: "stats good0", "stats good1", ...
     for (const auto& kv : g.ints) if (kv.first.compare(0, prefix.size(), prefix) == 0) v.push_back(kv.second);
@@ -43,6 +48,7 @@ RaceData LoadRaces(const md::fcs::GameDataContainer& data) {
         r.no_hats = BoolOf(*g, "no hats"); r.no_shirts = BoolOf(*g, "no shirts"); r.no_shoes = BoolOf(*g, "no shoes");
         r.editor_limits = FileOf(*g, "editor limits"); r.male_mesh = FileOf(*g, "male mesh"); r.female_mesh = FileOf(*g, "female mesh");
         r.heads_male = RefsOf(*g, "heads male"); r.heads_female = RefsOf(*g, "heads female"); r.hairs = RefsOf(*g, "hairs"); r.hair_colors = RefsOf(*g, "hair colors");
+        r.hair_weights = WeightsOf(*g, "hairs"); r.hair_color_weights = WeightsOf(*g, "hair colors");
         if (const auto* ca = g->Refs("combat anatomy")) if (!ca->empty() && (*ca)[0].second[1] >= 1) r.hit_points = float((*ca)[0].second[1]);
         if (auto it = g->floats.find("bleed rate"); it != g->floats.end()) r.bleed_rate = it->second;
         if (auto it = g->floats.find("strength"); it != g->floats.end()) r.strength = it->second;
