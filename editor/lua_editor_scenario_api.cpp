@@ -27,7 +27,7 @@ static char s_forced_tab[64] = {};
 
 // ── Character editor, for scenarios (the editor itself has no switches): the session is the editor's own, the UI only draws it.
 // md.char_editor_select(subrace_name, female) -> bool   md.char_editor_set(slider, value) / md.char_editor_set(nil) = RESET; "head" and "idle stance" take a 0-based index
-// md.char_editor_view(tab, yaw_radians)                 tab 0 = whole body, others = head
+// md.char_editor_view(tab, yaw_radians[, pitch, distance, look_at_y])   tab 0 = whole body, others = head
 static int l_md_char_editor_select(lua_State* L) {
 #ifdef MD_SDL_GPU
     lua_pushboolean(L, CharacterEditor::GetSession().SelectSubraceByName(luaL_checkstring(L, 1), lua_toboolean(L, 2) != 0));
@@ -85,6 +85,7 @@ static int l_md_char_editor_view(lua_State* L) {
     CharacterEditor::SetTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
+    if (lua_gettop(L) >= 5) CharPreviewSDLGPU::SetCamera((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));
 #else
     (void)L;
 #endif

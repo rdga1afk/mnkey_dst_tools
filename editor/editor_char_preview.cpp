@@ -36,9 +36,10 @@ struct VU { float mvp[16]; };
 
 Session* g_session = nullptr;
 std::unique_ptr<md::render_backend::SdlGpuBackend> g_backend;
-GpuPipeline    g_body_pipe, g_hair_pipe, g_bg_pipe, g_scene_pipe;
-GpuStaticBuffer g_vbo, g_ibo, g_scene_vbo, g_scene_ibo;
-GpuTexture     g_tex, g_tex_head, g_tex_none, g_bg_sand, g_bg_dune;
+GpuPipeline    g_body_pipe, g_hair_pipe, g_bg_pipe, g_scene_pipe, g_plat_pipe;
+GpuStaticBuffer g_vbo, g_ibo, g_scene_vbo, g_scene_ibo, g_plat_vbo, g_plat_ibo;
+GpuTexture     g_tex, g_tex_head, g_tex_none, g_bg_sand, g_bg_dune, g_plat_tex, g_plat_tex2;
+int g_plat_ni = 0;
 GpuColorTexture g_color, g_depth;
 int g_ni = 0, g_scene_ni = 0, g_rtt_w = 0, g_rtt_h = 0;
 bool g_init = false, g_active = false;
@@ -68,7 +69,7 @@ struct Attach {
 Attach g_hair, g_beard;
 std::string g_att_key;
 
-float g_yaw = 0.f, g_pit = -0.06f, g_dist = 3.5f, g_lookat_y = 0.9f;
+float g_yaw = 0.f, g_pit = -0.35f, g_dist = 3.8f, g_lookat_y = 0.85f;
 
 M4 RotY(float a) { M4 r = Identity(); r[0] = cosf(a); r[2] = sinf(a); r[8] = -sinf(a); r[10] = cosf(a); return r; }
 M4 RotX(float a) { M4 r = Identity(); r[5] = cosf(a); r[6] = -sinf(a); r[9] = sinf(a); r[10] = cosf(a); return r; }
@@ -134,6 +135,15 @@ bool CreatePipelines() {
     sp.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; sp.has_depth_target = true;
     if (!g_scene_pipe.Create(sp)) fprintf(stderr, "[CharPreview] pole pipeline create failed\n");
 
+    GpuPipeline::Desc pp;   // platform and pole: character_editor_platform.mesh
+    pp.vert_path = "shaders/char_platform.vert"; pp.frag_path = "shaders/char_platform.frag";
+    pp.layout.count = 4; pp.layout.stride = 48;
+    pp.layout.attribs[0] = {0, 0, GpuAttribFmt::F3}; pp.layout.attribs[1] = {1, 12, GpuAttribFmt::F3}; pp.layout.attribs[2] = {2, 24, GpuAttribFmt::F2}; pp.layout.attribs[3] = {3, 32, GpuAttribFmt::F4};
+    pp.raster.depth_test = true; pp.raster.depth_write = true; pp.raster.cull_back = false;
+    pp.vert_uniform_bufs = 1; pp.frag_samplers = 2;
+    pp.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pp.has_depth_target = true;
+    if (!g_plat_pipe.Create(pp)) fprintf(stderr, "[CharPreview] platform pipeline create failed\n");
+
     struct SV { float x, y, z, r, g, b; };
     static SV verts[512]; static uint32_t idx[1024];
     int vi = 0, ii = 0;
@@ -164,8 +174,38 @@ std::string FileOf(const std::string& race_id, const char* field) {
     return it == r->files.end() ? "" : it->second;
 }
 
+// The editor platform and the measuring pole are one Kenshi mesh (BUILDING_PART `character_editor_platform_part`, MATERIAL_SPEC `furniture_atlas_modular`: props_atlas_regular / worn diffuse); once per run, a missing file keeps the drawn pole.
+void LoadPlatform() {
+    static bool tried = false;
+    if (tried) return;
+    tried = true;
+    const Session& ss = *g_session;
+    md::ogre::Mesh m; md::ogre::Error oe;
+    const std::string mp = ss.Resources().Path("character_editor_platform.mesh"), tp = ss.Resources().Path("props_atlas_regular_diffuse.dds"), tp2 = ss.Resources().Path("props_atlas_worn_diffuse.dds");
+    if (mp.empty() || tp.empty() || tp2.empty() || !md::ogre::ReadMesh(mp, m, oe) || m.submeshes.size() != 1 || m.submeshes[0].has_geometry == false) { fprintf(stderr, "[CharPreview] platform mesh or atlas not found\n"); return; }
+    const md::ogre::SubMesh& sm = m.submeshes[0];
+    std::vector<float> p, n, uv, col;
+    if (!sm.geometry.Positions(p) || !sm.geometry.Normals(n) || !sm.geometry.Uvs(0, uv)) return;
+    if (!sm.geometry.Colours(col)) col.assign(p.size() / 3 * 4, 1.f);
+    std::vector<float> v(p.size() / 3 * 12);
+    for (size_t i = 0; i < p.size() / 3; ++i) {   // turned half a circle about Y: the pole stands behind and to the right of the character
+        v[i * 12 + 0] = -p[i * 3]; v[i * 12 + 1] = p[i * 3 + 1]; v[i * 12 + 2] = -p[i * 3 + 2];
+        v[i * 12 + 3] = -n[i * 3]; v[i * 12 + 4] = n[i * 3 + 1]; v[i * 12 + 5] = -n[i * 3 + 2];
+        v[i * 12 + 6] = uv[i * 2]; v[i * 12 + 7] = uv[i * 2 + 1];
+        for (int k = 0; k < 4; ++k) v[i * 12 + 8 + k] = col[i * 4 + k];
+    }
+    GpuSamplerDesc rep; rep.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; rep.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    rep.wrap_s = rep.wrap_t = GpuSamplerDesc::Wrap::REPEAT;
+    const char* tpc = tp.c_str(); const char* tpc2 = tp2.c_str();
+    if (!g_plat_tex.InitFromDDSArray(&tpc, 1, rep) || !g_plat_tex2.InitFromDDSArray(&tpc2, 1, rep)) { fprintf(stderr, "[CharPreview] platform atlas: %s\n", tp.c_str()); return; }
+    g_plat_vbo.Init(0x8892u, v.data(), uint32_t(v.size() * sizeof(float)));
+    g_plat_ibo.Init(0x8893u, sm.indices.data(), uint32_t(sm.indices.size() * sizeof(uint32_t)));
+    g_plat_ni = int(sm.indices.size());
+}
+
 // Loads the body, skeleton and textures of the session's current race and gender.
 bool Rebuild() {
+    LoadPlatform();
     const Session& ss = *g_session;
     const RaceInfo& race = ss.Current();
     const bool female = ss.gender() == Gender::Female;
@@ -343,7 +383,19 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         pv.BindFragmentSamplers(0, t, 2);
         pv.Draw(3, 1, 0, 0);
     }
-    if (g_scene_pipe.SDLPipeline() && g_scene_vbo.SDLBuffer() && g_scene_ni > 0) {
+    const bool plat = g_plat_pipe.SDLPipeline() && g_plat_vbo.SDLBuffer() && g_plat_tex.SDLTexture() && g_plat_tex2.SDLTexture() && g_plat_ni > 0;
+    if (plat) {
+        pv.BindPipeline(&g_plat_pipe);
+        pv.BindVertexBuffer(&g_plat_vbo);
+        pv.BindIndexBuffer(&g_plat_ibo, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        M4 pm = Mul(mvp, scale);
+        VU pvu; memcpy(pvu.mvp, pm.data(), 64);
+        pv.PushVertexUniforms(0, &pvu, sizeof(pvu));
+        SDL_GPUTextureSamplerBinding pt[2] = {{g_plat_tex.SDLTexture(), g_plat_tex.SDLSampler()}, {g_plat_tex2.SDLTexture(), g_plat_tex2.SDLSampler()}};
+        pv.BindFragmentSamplers(0, pt, 2);
+        pv.DrawIndexed(uint32_t(g_plat_ni), 1, 0, 0, 0);
+    }
+    if (!plat && g_scene_pipe.SDLPipeline() && g_scene_vbo.SDLBuffer() && g_scene_ni > 0) {
         pv.BindPipeline(&g_scene_pipe);
         pv.BindVertexBuffer(&g_scene_vbo);
         pv.BindIndexBuffer(&g_scene_ibo, SDL_GPU_INDEXELEMENTSIZE_32BIT);
@@ -420,15 +472,16 @@ void RenderFrame(md::GpuCommandBufferHandle cmd) {
 }
 
 void ReloadPipelines() {
-    g_body_pipe.Reload(); g_bg_pipe.Reload(); g_scene_pipe.Reload();
+    g_body_pipe.Reload(); g_bg_pipe.Reload(); g_scene_pipe.Reload(); g_plat_pipe.Reload();
     fprintf(stdout, "[CharPreview] Pipelines reloaded\n");
 }
 
 void SetCameraForTab(int tab) {
-    if (tab == 0) { g_dist = 3.5f; g_pit = -0.06f; g_lookat_y = 0.9f; }
+    if (tab == 0) { g_dist = 3.8f; g_pit = -0.35f; g_lookat_y = 0.85f; }
     else { g_dist = 0.55f; g_pit = 0.f; g_lookat_y = 1.62f; }
 }
 void SetYaw(float radians) { g_yaw = radians; }
+void SetCamera(float pitch, float distance, float look_at_y) { g_pit = pitch; g_dist = distance; g_lookat_y = look_at_y; }
 
 void DumpState(FILE* f) {
     fprintf(f, "[CharPreview]\n  active=%d  ni=%d  rtt=%dx%d\n  yaw=%.4f  pit=%.4f  dist=%.4f\n\n", g_active ? 1 : 0, g_ni, g_rtt_w, g_rtt_h, g_yaw, g_pit, g_dist);

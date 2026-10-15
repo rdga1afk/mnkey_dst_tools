@@ -19,6 +19,7 @@ void DrawInImGui(float W, float H);
 void ReloadPipelines();
 void SetCameraForTab(int tab);          // 0 BODY: whole body, others: head and shoulders
 void SetYaw(float radians);             // scenarios: fixed view, no rotation by input
+void SetCamera(float pitch, float distance, float look_at_y);   // scenarios: pitch (radians), distance (m), height of the look-at point (m)
 void DumpState(FILE* f);
 
 } // namespace CharPreviewSDLGPU
