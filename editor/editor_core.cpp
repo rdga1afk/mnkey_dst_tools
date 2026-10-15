@@ -43,6 +43,8 @@ extern void  md_settings_set_resolution_scale(float s);
 extern void  md_settings_render_size(int* in_w, int* in_h, int* out_w, int* out_h);
 extern bool  md_settings_get_ground_reuse();
 extern void  md_settings_set_ground_reuse(bool on);
+extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
+extern void  md_settings_set_lighting(int mode);
 extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
 #endif
@@ -50,6 +52,7 @@ extern void  md_settings_set_terrain_chunk(int cells);
 static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
 static int   s_set_chunk     = 16;
+static int   s_set_light     = 2;      // "lgt": lighting (#140), Kenshi L2 by default
 static bool  s_set_reuse     = true;   // "gru": ground shading reuse (#163), on by default
 static void  apply_res_mode() {
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
@@ -104,6 +107,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (rs >= 0.5f && rs <= 1.f) s_set_res_scale = rs;
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
+        if (strstr(buf, "\"lgt\"")) { s_set_light = (int)f3_parse_f(buf, "\"lgt\""); if (s_set_light != 0 && (s_set_light < 2 || s_set_light > 4)) s_set_light = 2; }
     }
     if (out_set) {
         const char* p = strstr(buf, "\"sdet\"");
@@ -132,7 +136,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -142,7 +146,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[4].x,pos[4].y,siz[4].x,siz[4].y,
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
-        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0);
+        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light);
     fclose(f);
 }
 
@@ -162,8 +166,8 @@ void EditorCore::Init() {
     {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
-        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); }
-        else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); }
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); }
+        else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_light = md_settings_get_lighting(); }
     }
 #endif
     f3_det_scene = det6[0];  f3_det_ai    = det6[1]; f3_det_anim  = det6[2];
@@ -448,6 +452,12 @@ void EditorCore::Update(float dt) {
                     ImGui::TextUnformatted("Terrain Chunk Size");
                     ImGui::TextDisabled("applies after a restart; keep it with Save config");
                     if (ImGui::Checkbox("Ground reuse (faster, 1 frame history)##gru", &s_set_reuse)) md_settings_set_ground_reuse(s_set_reuse);
+                    {
+                        static const char* kLight[] = { "Ours", "Kenshi (L2)", "+ fog (L3)", "+ auto exposure (L4)" };
+                        static const int   kMode[]  = { 0, 2, 3, 4 };
+                        int li = 1; for (int k = 0; k < 4; ++k) if (kMode[k] == s_set_light) li = k;
+                        if (ImGui::Combo("Lighting##lgt", &li, kLight, 4)) { s_set_light = kMode[li]; md_settings_set_lighting(s_set_light); }
+                    }
                 }
 #endif
                 // 2026-09-20 (docs/RESOLVE_OPT.md session): time-of-day
