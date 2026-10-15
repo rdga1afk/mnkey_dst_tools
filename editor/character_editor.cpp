@@ -54,12 +54,12 @@ int NavRow(const char* id, const char* text, bool enabled) {
     return step;
 }
 
-void SliderRow(const Range& r) {
+void SliderRow(const Range& r, const char* label = nullptr) {
     float v = g_session.Value(r);
     ImGui::PushID(r.name.c_str());
     const float aw = ImGui::GetFrameHeight(), w = ImGui::GetContentRegionAvail().x;
     const float label_w = w * 0.34f, val_w = 34.f;
-    ImGui::Button(r.name.c_str(), {label_w, 0.f});
+    ImGui::Button(label ? label : r.name.c_str(), {label_w, 0.f});
     ImGui::SameLine(0.f, 2.f);
     bool changed = false;
     if (ImGui::ArrowButton("l", ImGuiDir_Left)) { v -= 1.f; changed = true; }
@@ -213,7 +213,8 @@ void Draw(bool) {
     ImGui::Separator();
     ImGui::BeginChild("##v2_content", {0.f, -ImGui::GetFrameHeightWithSpacing() - 4.f}, false);
     if (const Config* cfg = s.Limits()) {
-        if (const Category* cat = cfg->Find(kTabCategory[g_tab])) {
+        const Category* cat = cfg->Find(kTabCategory[g_tab]);
+        if (cat || g_tab == 2) {
             if (g_tab == 2 && s.HairCount()) {
                 char t[96];
                 std::snprintf(t, sizeof t, "Hair  %s  %d/%d", s.Hair(s.hair_index()).name.c_str(), int(s.hair_index()) + 1, int(s.HairCount()));
@@ -235,9 +236,17 @@ void Draw(bool) {
                 std::snprintf(t, sizeof t, "Idle stance  %d/%d", int(s.stance()) + 1, int(s.StanceCount()));
                 if (int d = NavRow("stance", t, true)) g_session.SelectStance(int(s.stance()) + d);
             }
-            for (const ColourRange& c : cat->colour_ranges) ColourRow(c);
-            for (const Range& r : cat->ranges) SliderRow(r);
-            if (cat->ranges.empty() && cat->colour_ranges.empty()) ImGui::TextDisabled("(nothing to adjust)");
+            if (g_tab == 2 && s.HairCount()) {
+                ImGui::Dummy({0.f, 4.f});
+                ImGui::Button("Hair colour", {-1.f, 0.f});
+                static const char* kHsb[3][2] = {{"Hair Colour", "Colour"}, {"Hair Saturation", "Saturation"}, {"Hair Brightness", "Brightness"}};
+                for (const auto& k : kHsb) { Range r; r.name = k[0]; r.min = 0; r.max = 100; SliderRow(r, k[1]); }
+            }
+            if (cat) {
+                for (const ColourRange& c : cat->colour_ranges) ColourRow(c);
+                for (const Range& r : cat->ranges) SliderRow(r);
+                if (cat->ranges.empty() && cat->colour_ranges.empty()) ImGui::TextDisabled("(nothing to adjust)");
+            }
         } else ImGui::TextDisabled("(no %s sliders)", kTabCategory[g_tab]);
     } else ImGui::TextDisabled("(this race has no editor limits)");
     ImGui::EndChild();
