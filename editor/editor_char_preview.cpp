@@ -55,6 +55,9 @@ bool g_dirty = true;
 float g_ws[30][16];
 float g_tint[4] = {1.f, 1.f, 1.f, 0.f};
 float g_ground = 0.f;                      // lowest skinned vertex (file units)
+constexpr float kHumanHeight = 18.25f;   // posed height of the male Greenlander at default sliders (file units); a race more than 4% taller moves the camera back so that it fits (ours, not from Kenshi)
+bool g_refit = false;
+float g_fit = 1.f;                         // camera distance and look-at height scale of the race: its bind-pose height / the male Greenlander's
 
 // Hair and beard: ATTACHMENT meshes skinned by the BODY skeleton's bones (the vertex bone handles index it directly, M:docs/characters.md "Binding worn meshes", mode 1).
 struct Attach {
@@ -237,6 +240,7 @@ bool Rebuild() {
     g_ni = int(g_body.indices.size());
     g_error.clear();
     g_key = race.id + (female ? "|f" : "|m") + std::to_string(ss.head()); g_dirty = true;
+    g_refit = true;
     fprintf(stdout, "[CharPreview] %s %s: %zu vertices, %zu bones, %zu poses, mesh %s\n", race.name.c_str(), female ? "female" : "male", g_base.size(), g_body.bone_name.size(), g_body.poses.size(), rel.c_str());
     return true;
 }
@@ -316,13 +320,14 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
         if (a && it != vals.end()) layers.push_back({a, a->length * it->second * 0.01f});
     }
     SolveSkinMatrices(g_body, g_skeleton, layers, ComputeBoneScales(vals, in), skin);
-    float miny = 1e9f;
+    float miny = 1e9f, maxy = -1e9f;
     for (const SkinnedVertex& v : g_body.vertices) {
         float y = 0.f;
         for (int k = 0; k < 4; ++k) { if (v.weight[k] <= 0.f) continue; const M4& a = skin[v.joint[k]]; y += v.weight[k] * (a[1] * v.pos[0] + a[5] * v.pos[1] + a[9] * v.pos[2] + a[13]); }
-        miny = std::min(miny, y);
+        miny = std::min(miny, y); maxy = std::max(maxy, y);
     }
     g_ground = miny;
+    if (g_refit) { g_refit = false; { const float r = (maxy - miny) / kHumanHeight; g_fit = r > 1.04f ? r : 1.f; } }
     for (size_t i = 0; i < 30; ++i) {
         if (i < skin.size()) memcpy(g_ws[i], skin[i].data(), 64);
         else { memset(g_ws[i], 0, 64); g_ws[i][0] = g_ws[i][5] = g_ws[i][10] = g_ws[i][15] = 1.f; }
@@ -353,7 +358,7 @@ void Draw(md::GpuCommandBufferHandle cmd) {
     Prepare(cmd);
     if (!g_active) return;
     // file units are 0.1 m; the body is lifted so that its lowest vertex is on y = 0, where the ground and the pole stand
-    M4 view = Mul(Translate(0.f, -g_lookat_y, -g_dist), Mul(RotX(g_pit), RotY(g_yaw)));
+    M4 view = Mul(Translate(0.f, -g_lookat_y * g_fit, -g_dist * g_fit), Mul(RotX(g_pit), RotY(g_yaw)));
     float asp = float(g_rtt_w) / float(g_rtt_h);
     M4 proj = Persp(0.78f, asp, 0.05f, 10.f);
     M4 scale = Identity(); scale[0] = scale[5] = scale[10] = 0.1f;
