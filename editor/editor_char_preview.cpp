@@ -38,7 +38,7 @@ Session* g_session = nullptr;
 std::unique_ptr<md::render_backend::SdlGpuBackend> g_backend;
 GpuPipeline    g_body_pipe, g_hair_pipe, g_bg_pipe, g_scene_pipe;
 GpuStaticBuffer g_vbo, g_ibo, g_scene_vbo, g_scene_ibo;
-GpuTexture     g_tex, g_tex_head, g_bg_sand, g_bg_dune;
+GpuTexture     g_tex, g_tex_head, g_tex_none, g_bg_sand, g_bg_dune;
 GpuColorTexture g_color, g_depth;
 int g_ni = 0, g_scene_ni = 0, g_rtt_w = 0, g_rtt_h = 0;
 bool g_init = false, g_active = false;
@@ -58,7 +58,9 @@ float g_ground = 0.f;                      // lowest skinned vertex (file units)
 // Hair and beard: ATTACHMENT meshes skinned by the BODY skeleton's bones (the vertex bone handles index it directly, M:docs/characters.md "Binding worn meshes", mode 1).
 struct Attach {
     GpuStaticBuffer vbo, ibo;
-    GpuTexture tex;
+    GpuTexture tex, head_tex;              // head_tex: the overlay on the head skin
+    float head_mult[4] = {1, 0, 0, 0}, head_alpha[4] = {0, 1, 0, 0};
+    bool head_ok = false;
     int ni = 0;
     bool ok = false;
     float diffuse[4] = {1, 0, 0, 0}, alpha[4] = {0, 0, 0, 1}, threshold = 0.5f;
@@ -98,7 +100,7 @@ bool CreatePipelines() {
     pd.layout.attribs[0] = {0, 0, GpuAttribFmt::F3}; pd.layout.attribs[1] = {1, 12, GpuAttribFmt::F3}; pd.layout.attribs[2] = {2, 24, GpuAttribFmt::F2};
     pd.layout.attribs[3] = {3, 32, GpuAttribFmt::U8x4}; pd.layout.attribs[4] = {4, 36, GpuAttribFmt::F4};
     pd.raster.depth_test = true; pd.raster.depth_write = true; pd.raster.cull_back = true;
-    pd.vert_uniform_bufs = 2; pd.vert_samplers = 0; pd.frag_samplers = 2; pd.frag_uniform_bufs = 1;
+    pd.vert_uniform_bufs = 2; pd.vert_samplers = 0; pd.frag_samplers = 4; pd.frag_uniform_bufs = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
     if (!g_body_pipe.Create(pd)) { fprintf(stderr, "[CharPreview] body pipeline create failed\n"); return false; }
     GpuPipeline::Desc hd = pd;
@@ -189,6 +191,7 @@ bool Rebuild() {
     const char* bp = body_tex.c_str(); const char* hp = head_tex.c_str();
     if (body_tex.empty() || !g_tex.InitFromDDSArray(&bp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; g_tex.InitFromMemory(fb, 1, 1, sd); g_error = "body texture not found: " + FileOf(race.id, female ? "body texture female" : "body texture male"); fprintf(stderr, "[CharPreview] %s\n", g_error.c_str()); }
     if (head_tex.empty() || !g_tex_head.InitFromDDSArray(&hp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; g_tex_head.InitFromMemory(fb, 1, 1, sd); g_error = "head texture not found: " + head_tex; fprintf(stderr, "[CharPreview] %s\n", g_error.c_str()); }
+    { GpuSamplerDesc nd; uint8_t z[4] = {0, 0, 0, 0}; if (!g_tex_none.SDLTexture()) g_tex_none.InitFromMemory(z, 1, 1, nd); }
     g_vbo.Init(0x8892u, g_base.data(), uint32_t(g_base.size() * sizeof(Vtx)));
     g_ibo.Init(0x8893u, g_body.indices.data(), uint32_t(g_body.indices.size() * sizeof(uint32_t)));
     g_ni = int(g_body.indices.size());
@@ -219,6 +222,12 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     a.ni = int(sb.indices.size());
     for (int k = 0; k < 4; ++k) { a.diffuse[k] = k == info->diffuse_channel ? 1.f : 0.f; a.alpha[k] = k == info->alpha_channel ? 1.f : 0.f; }
     a.threshold = float(info->alpha_rejection) / 255.f;
+    a.head_ok = false;
+    const std::string hp = ss.Resources().Path(info->HeadTexture(female)); const char* hpc = hp.c_str();
+    if (!hp.empty() && a.head_tex.InitFromDDSArray(&hpc, 1, sd)) {
+        a.head_ok = true;
+        for (int k = 0; k < 4; ++k) { a.head_mult[k] = k == info->HeadChannel(female) ? 1.f : 0.f; a.head_alpha[k] = k == info->HeadAlphaChannel(female) ? 1.f : 0.f; }
+    }
     a.ok = true;
 }
 
@@ -349,9 +358,19 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         VU vu; memcpy(vu.mvp, body_mvp.data(), 64);
         pv.PushVertexUniforms(0, &vu, sizeof(vu));
         pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
-        pv.PushFragmentUniforms(0, g_tint, sizeof(g_tint));
-        SDL_GPUTextureSamplerBinding t[2] = {{g_tex.SDLTexture(), g_tex.SDLSampler()}, {g_tex_head.SDLTexture(), g_tex_head.SDLSampler()}};
-        pv.BindFragmentSamplers(0, t, 2);
+        const auto hrgb = g_session->HairRgb();
+        const Attach& ha = g_hair; const Attach& be = g_beard;
+        const bool hh = ha.ok && ha.head_ok, bh = be.ok && be.head_ok;
+        struct { float tint[4], colour[4], hair_mult[4], hair_alpha[4], beard_alpha[4]; } bu;
+        memcpy(bu.tint, g_tint, 16);
+        bu.colour[0] = hrgb[0]; bu.colour[1] = hrgb[1]; bu.colour[2] = hrgb[2]; bu.colour[3] = 1.f;
+        for (int k = 0; k < 4; ++k) { bu.hair_mult[k] = hh ? ha.head_mult[k] : 0.f; bu.hair_alpha[k] = hh ? ha.head_alpha[k] : 0.f; bu.beard_alpha[k] = bh ? be.head_alpha[k] : 0.f; }
+        pv.PushFragmentUniforms(0, &bu, sizeof(bu));
+        SDL_GPUTexture* none = g_tex_none.SDLTexture(); SDL_GPUSampler* nsm = g_tex_none.SDLSampler();
+        SDL_GPUTextureSamplerBinding t[4] = {{g_tex.SDLTexture(), g_tex.SDLSampler()}, {g_tex_head.SDLTexture(), g_tex_head.SDLSampler()},
+                                             {hh ? ha.head_tex.SDLTexture() : none, hh ? ha.head_tex.SDLSampler() : nsm},
+                                             {bh ? be.head_tex.SDLTexture() : none, bh ? be.head_tex.SDLSampler() : nsm}};
+        pv.BindFragmentSamplers(0, t, 4);
         pv.DrawIndexed(uint32_t(g_ni), 1, 0, 0, 0);
     }
     if (g_hair_pipe.SDLPipeline()) {

@@ -11,10 +11,14 @@ namespace md::character {
 constexpr int kSlotHair = 2, kSlotBeard = 13;
 
 struct AttachmentInfo {
-    std::string id, name, mesh, mesh_female, texture, texture_female;
+    std::string id, name, mesh, mesh_female, texture, texture_female, head_texture, head_texture_female;
     int slot = 0, alpha_rejection = 128, diffuse_channel = 0, alpha_channel = 0;
+    int head_channel = 0, head_alpha_channel = 1, head_channel_female = 0, head_alpha_channel_female = 1;   // the overlay on the head skin (`head texture`)
     bool HasMesh(bool female) const { return !(female && !mesh_female.empty() ? mesh_female : mesh).empty(); }
     const std::string& Mesh(bool female) const { return female && !mesh_female.empty() ? mesh_female : mesh; }
+    const std::string& HeadTexture(bool female) const { return female && !head_texture_female.empty() ? head_texture_female : head_texture; }
+    int HeadChannel(bool female) const { return female ? head_channel_female : head_channel; }
+    int HeadAlphaChannel(bool female) const { return female ? head_alpha_channel_female : head_alpha_channel; }
     const std::string& Texture(bool female) const { return female && !texture_female.empty() ? texture_female : texture; }
 };
 

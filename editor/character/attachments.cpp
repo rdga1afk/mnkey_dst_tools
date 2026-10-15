@@ -17,6 +17,9 @@ bool LoadAttachment(const md::fcs::GameDataContainer& data, const std::string& i
     out.texture = FileOf(*g, "texture map"); out.texture_female = FileOf(*g, "texture map female");
     out.slot = IntOf(*g, "attach slot", 0); out.alpha_rejection = IntOf(*g, "alpha rejection", 128);
     out.diffuse_channel = IntOf(*g, "hair diffuse channel", 0); out.alpha_channel = IntOf(*g, "hair alpha channel", 0);
+    out.head_texture = FileOf(*g, "head texture"); out.head_texture_female = FileOf(*g, "head texture female");
+    out.head_channel = IntOf(*g, "head channel", 0); out.head_alpha_channel = IntOf(*g, "head alpha channel", 1);
+    out.head_channel_female = IntOf(*g, "head channel female", out.head_channel); out.head_alpha_channel_female = IntOf(*g, "head alpha channel female", out.head_alpha_channel);
     return true;
 }
 
