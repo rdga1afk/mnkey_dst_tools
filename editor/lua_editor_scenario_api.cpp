@@ -41,6 +41,8 @@ static int l_md_char_editor_set(lua_State* L) {
     const std::string key = lua_isstring(L, 1) ? lua_tostring(L, 1) : "";
     if (key.empty()) CharacterEditor::GetSession().Reset();
     else if (key == "head") CharacterEditor::GetSession().SelectHead((int)luaL_checkinteger(L, 2));
+    else if (key == "hair") CharacterEditor::GetSession().SelectHair((size_t)luaL_checkinteger(L, 2));
+    else if (key == "beard") CharacterEditor::GetSession().SelectBeard((size_t)luaL_checkinteger(L, 2));
     else if (key == "idle stance") CharacterEditor::GetSession().SelectStance((int)luaL_checkinteger(L, 2));
     else CharacterEditor::GetSession().SetValue(lua_tostring(L, 1), (float)luaL_checknumber(L, 2));
 #else

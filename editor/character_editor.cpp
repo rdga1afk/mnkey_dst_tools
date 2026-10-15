@@ -214,6 +214,16 @@ void Draw(bool) {
     ImGui::BeginChild("##v2_content", {0.f, -ImGui::GetFrameHeightWithSpacing() - 4.f}, false);
     if (const Config* cfg = s.Limits()) {
         if (const Category* cat = cfg->Find(kTabCategory[g_tab])) {
+            if (g_tab == 2 && s.HairCount()) {
+                char t[96];
+                std::snprintf(t, sizeof t, "Hair  %s  %d/%d", s.Hair(s.hair_index()).name.c_str(), int(s.hair_index()) + 1, int(s.HairCount()));
+                if (int d = NavRow("hair", t, true)) g_session.SelectHair(size_t((int(s.hair_index()) + d + int(s.HairCount())) % int(s.HairCount())));
+            }
+            if (g_tab == 2 && s.BeardCount() && s.gender() != Gender::Female) {
+                char t[96];
+                std::snprintf(t, sizeof t, "Beard  %s  %d/%d", s.Beard(s.beard_index()).name.c_str(), int(s.beard_index()) + 1, int(s.BeardCount()));
+                if (int d = NavRow("beard", t, true)) g_session.SelectBeard(size_t((int(s.beard_index()) + d + int(s.BeardCount())) % int(s.BeardCount())));
+            }
             if (g_tab == 1 && s.HeadCount()) {
                 char t[96];
                 const md::fcs::GameData* hd = s.Data().Get(s.HeadId(s.head()));

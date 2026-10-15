@@ -36,7 +36,7 @@ struct VU { float mvp[16]; };
 
 Session* g_session = nullptr;
 std::unique_ptr<md::render_backend::SdlGpuBackend> g_backend;
-GpuPipeline    g_body_pipe, g_bg_pipe, g_scene_pipe;
+GpuPipeline    g_body_pipe, g_hair_pipe, g_bg_pipe, g_scene_pipe;
 GpuStaticBuffer g_vbo, g_ibo, g_scene_vbo, g_scene_ibo;
 GpuTexture     g_tex, g_tex_head, g_bg_sand, g_bg_dune;
 GpuColorTexture g_color, g_depth;
@@ -54,6 +54,17 @@ bool g_dirty = true;
 float g_ws[30][16];
 float g_tint[4] = {1.f, 1.f, 1.f, 0.f};
 float g_ground = 0.f;                      // lowest skinned vertex (file units)
+
+// Hair and beard: ATTACHMENT meshes skinned by the BODY skeleton's bones (the vertex bone handles index it directly, M:docs/characters.md "Binding worn meshes", mode 1).
+struct Attach {
+    GpuStaticBuffer vbo, ibo;
+    GpuTexture tex;
+    int ni = 0;
+    bool ok = false;
+    float diffuse[4] = {1, 0, 0, 0}, alpha[4] = {0, 0, 0, 1}, threshold = 0.5f;
+};
+Attach g_hair, g_beard;
+std::string g_att_key;
 
 float g_yaw = 0.f, g_pit = -0.06f, g_dist = 3.5f, g_lookat_y = 0.9f;
 
@@ -90,6 +101,9 @@ bool CreatePipelines() {
     pd.vert_uniform_bufs = 2; pd.vert_samplers = 0; pd.frag_samplers = 2; pd.frag_uniform_bufs = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
     if (!g_body_pipe.Create(pd)) { fprintf(stderr, "[CharPreview] body pipeline create failed\n"); return false; }
+    GpuPipeline::Desc hd = pd;
+    hd.frag_path = "shaders/char_hair.frag"; hd.frag_samplers = 1; hd.raster.cull_back = false;
+    if (!g_hair_pipe.Create(hd)) fprintf(stderr, "[CharPreview] hair pipeline create failed\n");
 
     GpuPipeline::Desc bg;   // sky + ground plane by ray intersection, fullscreen triangle
     bg.vert_path = "shaders/char_bg.vert"; bg.frag_path = "shaders/char_bg.frag";
@@ -184,6 +198,30 @@ bool Rebuild() {
     return true;
 }
 
+void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
+    a.ok = false; a.ni = 0;
+    if (!info || !info->HasMesh(female)) return;
+    const Session& ss = *g_session;
+    md::ogre::Mesh mesh; md::ogre::Error oe; SkinnedBody sb; std::string err;
+    if (!md::ogre::ReadMesh(ss.Resources().Path(info->Mesh(female)), mesh, oe)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), oe.Message().c_str()); return; }
+    if (!BuildSkinnedBody(mesh, g_skeleton, sb, err)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), err.c_str()); return; }
+    std::vector<Vtx> vtx(sb.vertices.size());
+    for (size_t i = 0; i < vtx.size(); ++i) {
+        const SkinnedVertex& sv = sb.vertices[i]; Vtx& v = vtx[i];
+        v.px = sv.pos[0]; v.py = sv.pos[1]; v.pz = sv.pos[2]; v.nx = sv.normal[0]; v.ny = sv.normal[1]; v.nz = sv.normal[2]; v.u = sv.uv[0]; v.v = sv.uv[1];
+        for (int k = 0; k < 4; ++k) { v.ji[k] = sv.joint[k]; v.wt[k] = sv.weight[k]; }
+    }
+    GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    std::string tp = ss.Resources().Path(info->Texture(female)); const char* tpc = tp.c_str();
+    if (tp.empty() || !a.tex.InitFromDDSArray(&tpc, 1, sd)) { fprintf(stderr, "[CharPreview] hair texture not found: %s\n", info->Texture(female).c_str()); return; }
+    a.vbo.Init(0x8892u, vtx.data(), uint32_t(vtx.size() * sizeof(Vtx)));
+    a.ibo.Init(0x8893u, sb.indices.data(), uint32_t(sb.indices.size() * sizeof(uint32_t)));
+    a.ni = int(sb.indices.size());
+    for (int k = 0; k < 4; ++k) { a.diffuse[k] = k == info->diffuse_channel ? 1.f : 0.f; a.alpha[k] = k == info->alpha_channel ? 1.f : 0.f; }
+    a.threshold = float(info->alpha_rejection) / 255.f;
+    a.ok = true;
+}
+
 void PoseWeights(std::vector<float>& w) {
     std::vector<std::string> names;
     for (const SkinnedPose& p : g_body.poses) names.push_back(p.name);
@@ -197,6 +235,13 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
         g_revision = g_session->revision();
         const std::string key = g_session->Current().id + (g_session->gender() == Gender::Female ? "|f" : "|m") + std::to_string(g_session->head());
         if (key != g_key && !Rebuild()) { g_active = false; return; }
+        const std::string akey = key + "|h" + std::to_string(g_session->hair_index()) + "|b" + std::to_string(g_session->beard_index());
+        if (akey != g_att_key) {
+            g_att_key = akey;
+            const bool fem = g_session->gender() == Gender::Female;
+            LoadAttach(g_hair, g_session->HairCount() ? &g_session->Hair(g_session->hair_index()) : nullptr, fem);
+            LoadAttach(g_beard, g_session->BeardCount() && !fem ? &g_session->Beard(g_session->beard_index()) : nullptr, fem);
+        }
         g_dirty = true;
     }
     if (!g_dirty) return;
@@ -308,6 +353,24 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         SDL_GPUTextureSamplerBinding t[2] = {{g_tex.SDLTexture(), g_tex.SDLSampler()}, {g_tex_head.SDLTexture(), g_tex_head.SDLSampler()}};
         pv.BindFragmentSamplers(0, t, 2);
         pv.DrawIndexed(uint32_t(g_ni), 1, 0, 0, 0);
+    }
+    if (g_hair_pipe.SDLPipeline()) {
+        const auto rgb = g_session->HairRgb();
+        for (Attach* a : {&g_hair, &g_beard}) {
+            if (!a->ok || !a->vbo.SDLBuffer() || !a->tex.SDLTexture()) continue;
+            pv.BindPipeline(&g_hair_pipe);
+            pv.BindVertexBuffer(&a->vbo);
+            pv.BindIndexBuffer(&a->ibo, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            VU vu; memcpy(vu.mvp, body_mvp.data(), 64);
+            pv.PushVertexUniforms(0, &vu, sizeof(vu));
+            pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
+            struct { float colour[4], diffuse[4], alpha[4], params[4]; } fu = {{rgb[0], rgb[1], rgb[2], 1.f}, {a->diffuse[0], a->diffuse[1], a->diffuse[2], a->diffuse[3]},
+                                                                               {a->alpha[0], a->alpha[1], a->alpha[2], a->alpha[3]}, {a->threshold, 0.f, 0.f, 0.f}};
+            pv.PushFragmentUniforms(0, &fu, sizeof(fu));
+            SDL_GPUTextureSamplerBinding t1 = {a->tex.SDLTexture(), a->tex.SDLSampler()};
+            pv.BindFragmentSamplers(0, &t1, 1);
+            pv.DrawIndexed(uint32_t(a->ni), 1, 0, 0, 0);
+        }
     }
     cb.EndPass();
 }
