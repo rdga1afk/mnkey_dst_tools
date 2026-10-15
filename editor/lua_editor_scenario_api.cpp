@@ -59,6 +59,14 @@ static int l_md_char_editor_export(lua_State* L) {
     (void)L; return 0;
 #endif
 }
+static int l_md_char_editor_confirm(lua_State* L) {
+#ifdef MD_SDL_GPU
+    lua_pushboolean(L, CharacterEditor::ConfirmForScenario());
+    return 1;
+#else
+    (void)L; return 0;
+#endif
+}
 static int l_md_char_editor_import(lua_State* L) {
 #ifdef MD_SDL_GPU
     std::string err;
@@ -215,6 +223,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_view", l_md_char_editor_view);
     sys.RegisterNamespaceFunction("char_editor_export", l_md_char_editor_export);
     sys.RegisterNamespaceFunction("char_editor_import", l_md_char_editor_import);
+    sys.RegisterNamespaceFunction("char_editor_confirm", l_md_char_editor_confirm);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
     sys.RegisterNamespaceFunction("editor_camera_pos",  l_md_editor_camera_pos);
     sys.RegisterNamespaceFunction("editor_terrain_op",  l_md_editor_terrain_op);

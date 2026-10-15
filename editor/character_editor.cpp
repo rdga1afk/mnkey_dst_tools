@@ -26,6 +26,16 @@ int g_io_mode = 0;                // 1 IMPORT, 2 EXPORT
 bool g_io_open = false;
 char g_io_path[512] = "";
 std::string g_io_msg;
+std::string g_confirm_msg;        // result of the last CONFIRM, shown in the RACE STATS panel header
+
+// CONFIRM: the editor has no game character to give the appearance to; it writes the .bod2 to the last EXPORT / IMPORT path (character.bod2 before the first one).
+bool Confirm() {
+    std::string err;
+    const std::string path = g_io_path[0] ? g_io_path : "character.bod2";
+    const bool ok = md::character::ExportAppearance(g_session, path, err);
+    g_confirm_msg = ok ? "Saved " + path : "Not saved: " + err;
+    return ok;
+}
 
 // ◀ label ▶ row: returns -1 / +1 when an arrow is pressed
 int NavRow(const char* id, const char* text, bool enabled) {
@@ -103,6 +113,7 @@ bool EnsureLoaded() {
     return true;
 }
 
+bool ConfirmForScenario() { return Confirm(); }
 void SetTab(int tab) { g_tab = tab < 0 ? 0 : tab > 2 ? 2 : tab; }
 
 md::character::Session& GetSession() { return g_session; }
@@ -149,6 +160,7 @@ void Draw(bool) {
     ImGui::EndChild();
     ImGui::BeginChild("##v2_stats", {left_w, floorf(H * 0.241f)}, true);
     ImGui::TextDisabled("RACE STATS");
+    if (!g_confirm_msg.empty()) ImGui::TextWrapped("%s", g_confirm_msg.c_str());
     for (const md::character::StatRow& row : md::character::RaceStatRows(s.Current())) {
         ImGui::TextUnformatted(row.label.c_str());
         if (row.value.empty()) continue;
@@ -157,7 +169,7 @@ void Draw(bool) {
     }
     ImGui::EndChild();
     ImGui::BeginChild("##v2_confirm", {left_w, floorf(H * 0.096f)}, true, ImGuiWindowFlags_NoScrollbar);
-    ImGui::Button("CONFIRM", {-1.f, -1.f});
+    if (ImGui::Button("CONFIRM", {-1.f, -1.f})) Confirm();
     ImGui::EndChild();
     ImGui::EndGroup();
 
