@@ -38,6 +38,7 @@ struct F3SettingsState { bool det; ImVec2 pos, siz; };
 
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
 // Settings tab -> renderer (defined in game/src/render/npc_render_deferred.cpp; tools/ does not include game headers)
+extern void  md_settings_set_frames_in_flight(int n);   // #152: SDL_SetGPUAllowedFramesInFlight 1 / 2 / 3 (SDL default 2)
 extern void  md_settings_set_fsr1(int mode, float sharp);   // #156: 0 off, 1 Quality (1.5x), 2 Balanced (1.7x), 3 Performance (2x); RCAS 0..1
 extern float md_settings_get_resolution_scale();
 extern void  md_settings_set_resolution_scale(float s);
@@ -50,6 +51,7 @@ extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
 #endif
 // Upscaling / Terrain settings saved with the F3 layout ("rm": 0 Native, 1 Bilinear auto, 2 Bilinear fixed; "rs": fixed scale; "tcs": terrain chunk 16 or 64).
+static int   s_set_fif = 2;            // "fif": GPU frames in flight (the measured route: 1 = -1.5 ms p50 / p99, #152; the real loop is not measured)
 static float s_set_fsr1_sharp = 0.5f;   // "fs": the RCAS sharpness of FSR 1
 static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
@@ -111,6 +113,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (rs >= 0.5f && rs <= 1.f) s_set_res_scale = rs;
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
+        if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 2; }
         if (strstr(buf, "\"lgt\"")) { s_set_light = (int)f3_parse_f(buf, "\"lgt\""); if (s_set_light != 0 && (s_set_light < 2 || s_set_light > 4)) s_set_light = 2; }
     }
     if (out_set) {
@@ -140,7 +143,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -150,7 +153,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[4].x,pos[4].y,siz[4].x,siz[4].y,
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
-        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp);
+        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif);
     fclose(f);
 }
 
@@ -170,7 +173,7 @@ void EditorCore::Init() {
     {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
-        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); }
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); }
         else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_light = md_settings_get_lighting(); }
     }
 #endif
@@ -464,6 +467,11 @@ void EditorCore::Update(float dt) {
                     ImGui::TextUnformatted("Terrain Chunk Size");
                     ImGui::TextDisabled("applies after a restart; keep it with Save config");
                     if (ImGui::Checkbox("Ground reuse (faster, 1 frame history)##gru", &s_set_reuse)) md_settings_set_ground_reuse(s_set_reuse);
+                    {
+                        static const char* kFif[] = { "1 (lowest latency)", "2 (default)", "3" };
+                        int fi = s_set_fif - 1;
+                        if (ImGui::Combo("GPU frames in flight##fif", &fi, kFif, 3)) { s_set_fif = fi + 1; md_settings_set_frames_in_flight(s_set_fif); }
+                    }
                     {
                         static const char* kLight[] = { "Ours", "Kenshi (L2)", "+ fog (L3)", "+ auto exposure (L4)" };
                         static const int   kMode[]  = { 0, 2, 3, 4 };
