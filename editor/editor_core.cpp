@@ -38,6 +38,7 @@ struct F3SettingsState { bool det; ImVec2 pos, siz; };
 
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
 // Settings tab -> renderer (defined in game/src/render/npc_render_deferred.cpp; tools/ does not include game headers)
+extern void  md_settings_set_fsr1(int mode, float sharp);   // #156: 0 off, 1 Quality (1.5x), 2 Balanced (1.7x), 3 Performance (2x); RCAS 0..1
 extern float md_settings_get_resolution_scale();
 extern void  md_settings_set_resolution_scale(float s);
 extern void  md_settings_render_size(int* in_w, int* in_h, int* out_w, int* out_h);
@@ -49,6 +50,7 @@ extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
 #endif
 // Upscaling / Terrain settings saved with the F3 layout ("rm": 0 Native, 1 Bilinear auto, 2 Bilinear fixed; "rs": fixed scale; "tcs": terrain chunk 16 or 64).
+static float s_set_fsr1_sharp = 0.5f;   // "fs": the RCAS sharpness of FSR 1
 static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
 static int   s_set_chunk     = 16;
@@ -56,7 +58,8 @@ static int   s_set_light     = 2;      // "lgt": lighting (#140), Kenshi L2 by d
 static bool  s_set_reuse     = true;   // "gru": ground shading reuse (#163), on by default
 static void  apply_res_mode() {
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
-    md_settings_set_resolution_scale(s_set_res_mode == 0 ? 1.f : s_set_res_mode == 1 ? 0.f : s_set_res_scale);
+    md_settings_set_fsr1(s_set_res_mode >= 3 ? s_set_res_mode - 2 : 0, s_set_fsr1_sharp);   // 3..5 = FSR 1 Quality / Balanced / Performance
+    md_settings_set_resolution_scale(s_set_res_mode == 0 || s_set_res_mode >= 3 ? 1.f : s_set_res_mode == 1 ? 0.f : s_set_res_scale);
 #endif
 }
 
@@ -102,7 +105,8 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
     }
     if (strstr(buf, "\"rm\"")) {
         s_set_res_mode = (int)f3_parse_f(buf, "\"rm\"");
-        if (s_set_res_mode < 0 || s_set_res_mode > 2) s_set_res_mode = 0;
+        if (s_set_res_mode < 0 || s_set_res_mode > 5) s_set_res_mode = 0;
+        if (strstr(buf, "\"fs\"")) { const float fs = f3_parse_f(buf, "\"fs\""); if (fs >= 0.f && fs <= 1.f) s_set_fsr1_sharp = fs; }
         const float rs = f3_parse_f(buf, "\"rs\"");
         if (rs >= 0.5f && rs <= 1.f) s_set_res_scale = rs;
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
@@ -136,7 +140,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -146,7 +150,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[4].x,pos[4].y,siz[4].x,siz[4].y,
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
-        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light);
+        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp);
     fclose(f);
 }
 
@@ -425,7 +429,7 @@ void EditorCore::Update(float dt) {
                                    ImGuiSliderFlags_Logarithmic);
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
                 // #114: internal 3D resolution. Native = 1.0; Bilinear auto = the old window-size rule (720p in a 1080p window);
-                // Bilinear fixed = the slider. FSR 2 entries come with #156.
+                // Bilinear fixed = the slider; 3..5 = FSR 1 Quality / Balanced / Performance (#156).
                 ImGui::Separator();
                 ImGui::TextUnformatted("Upscaling");
                 {
@@ -436,6 +440,14 @@ void EditorCore::Update(float dt) {
                     if (s_set_res_mode == 2) {
                         ImGui::SetNextItemWidth(220.f);
                         if (ImGui::SliderFloat("resolution_scale##upsc", &s_set_res_scale, 0.5f, 1.0f, "%.2f")) apply_res_mode();
+                    }
+                    // #156: FSR 1 (EASU + RCAS): the scene at 1 / ratio, no jitter and no vectors (FSR 2 costs 26 ms on this GPU, see docs/FAILED_APPROACHES.md)
+                    if (ImGui::RadioButton("FSR 1 Quality (1.5x)##upsc3", s_set_res_mode == 3)) { s_set_res_mode = 3; apply_res_mode(); }
+                    if (ImGui::RadioButton("FSR 1 Balanced (1.7x)##upsc4", s_set_res_mode == 4)) { s_set_res_mode = 4; apply_res_mode(); }
+                    if (ImGui::RadioButton("FSR 1 Performance (2.0x)##upsc5", s_set_res_mode == 5)) { s_set_res_mode = 5; apply_res_mode(); }
+                    if (s_set_res_mode >= 3) {
+                        ImGui::SetNextItemWidth(220.f);
+                        if (ImGui::SliderFloat("Sharpness (RCAS)##upscs", &s_set_fsr1_sharp, 0.0f, 1.0f, "%.2f")) apply_res_mode();
                     }
                     int iw = 0, ih = 0, ow = 0, oh = 0;
                     md_settings_render_size(&iw, &ih, &ow, &oh);
