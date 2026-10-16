@@ -47,6 +47,7 @@ extern bool  md_settings_get_ground_reuse();
 extern void  md_settings_set_ground_reuse(bool on);
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
+extern void  md_settings_set_fxaa(bool on);   // #180: FXAA 3.11 (Kenshi's parameters), default off (owner 16.10)
 extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
 #endif
@@ -56,6 +57,7 @@ static float s_set_fsr1_sharp = 0.5f;   // "fs": the RCAS sharpness of FSR 1
 static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
 static int   s_set_chunk     = 16;
+static bool  s_set_fxaa      = false;  // F3 Settings: FXAA (not persisted)
 static int   s_set_light     = 2;      // "lgt": lighting (#140), Kenshi L2 by default
 static bool  s_set_reuse     = true;   // "gru": ground shading reuse (#163), on by default
 static void  apply_res_mode() {
@@ -477,6 +479,7 @@ void EditorCore::Update(float dt) {
                         static const int   kMode[]  = { 0, 2, 3, 4 };
                         int li = 1; for (int k = 0; k < 4; ++k) if (kMode[k] == s_set_light) li = k;
                         if (ImGui::Combo("Lighting##lgt", &li, kLight, 4)) { s_set_light = kMode[li]; md_settings_set_lighting(s_set_light); }
+                        if (ImGui::Checkbox("FXAA (+1.7 ms)##fxaa", &s_set_fxaa)) md_settings_set_fxaa(s_set_fxaa);
                     }
                 }
 #endif
