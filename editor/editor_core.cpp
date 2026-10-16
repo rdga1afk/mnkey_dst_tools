@@ -38,7 +38,7 @@ struct F3SettingsState { bool det; ImVec2 pos, siz; };
 
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
 // Settings tab -> renderer (defined in game/src/render/npc_render_deferred.cpp; tools/ does not include game headers)
-extern void  md_settings_set_frames_in_flight(int n);   // #152: SDL_SetGPUAllowedFramesInFlight 1 / 2 / 3 (SDL default 2)
+extern void  md_settings_set_frames_in_flight(int n);   // #152: SDL_SetGPUAllowedFramesInFlight 1 / 2 / 3 (engine default 1)
 extern void  md_settings_set_fsr1(int mode, float sharp);   // #156: 0 off, 1 Quality (1.5x), 2 Balanced (1.7x), 3 Performance (2x); RCAS 0..1
 extern float md_settings_get_resolution_scale();
 extern void  md_settings_set_resolution_scale(float s);
@@ -51,7 +51,7 @@ extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
 #endif
 // Upscaling / Terrain settings saved with the F3 layout ("rm": 0 Native, 1 Bilinear auto, 2 Bilinear fixed; "rs": fixed scale; "tcs": terrain chunk 16 or 64).
-static int   s_set_fif = 2;            // "fif": GPU frames in flight (the measured route: 1 = -1.5 ms p50 / p99, #152; the real loop is not measured)
+static int   s_set_fif = 1;            // "fif": GPU frames in flight (default 1: route -1.5 ms p50 / p99, #152, docs/DECISIONS.md)
 static float s_set_fsr1_sharp = 0.5f;   // "fs": the RCAS sharpness of FSR 1
 static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
@@ -113,7 +113,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (rs >= 0.5f && rs <= 1.f) s_set_res_scale = rs;
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
-        if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 2; }
+        if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
         if (strstr(buf, "\"lgt\"")) { s_set_light = (int)f3_parse_f(buf, "\"lgt\""); if (s_set_light != 0 && (s_set_light < 2 || s_set_light > 4)) s_set_light = 2; }
     }
     if (out_set) {
