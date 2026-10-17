@@ -9,12 +9,9 @@
 #include "editor_camera_panel.h"
 #include "editor_console.h"
 #include "editor_animation_panel.h"
-#include "editor_viewcone_panel.h"
 #include "editor_flowgraph_panel.h"
 #include "editor_sequencer_panel.h"
-#include "editor_director_panel.h"
 #include "editor_gpu_profiler_panel.h"
-#include "editor_node_graph.h"
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/platform/input.h>
 #include <monkey_dust/platform/window.h>  // _wnd::ptr() for RelativeMouseMode
@@ -188,7 +185,6 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
 
 void EditorCore::Init() {
     EditorConsole::Get().Init();
-    EditorNodeGraphPanel::Get().Init();
     for (int i = 0; i < MAX_SELECTED; ++i)
         selected[i] = MdEntity::Null();
 
@@ -325,36 +321,6 @@ void EditorCore::Update(float dt) {
 #endif
                 }
                 f3_end(f3_pos_scene, f3_size_scene);
-            }
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("AI", nullptr, tab_flags("AI"))) { s_f3_active_tab = 1;
-            if (!g_det_ai) {
-                ImGui::Separator();
-                ImVec2 av = ImGui::GetContentRegionAvail();
-                ImGui::BeginChild("##f3dir", {av.x * 0.50f, av.y}, false);
-                EditorDirectorPanel::Get().DrawContent();
-                ImGui::EndChild();
-                ImGui::SameLine(0, 4);
-                ImGui::BeginChild("##f3vc", {0.f, av.y}, false);
-                EditorViewConePanel::Get().DrawContent();
-                ImGui::EndChild();
-            } else {
-                if (f3_pos_ai.y < min_y) f3_pos_ai.y = min_y;
-                ImGui::SetNextWindowPos(f3_pos_ai, ImGuiCond_Appearing);
-                ImGui::SetNextWindowSize(f3_size_ai, ImGuiCond_Appearing);
-                if (ImGui::Begin("AI##float", &g_det_ai, FLOAT_FLAGS)) {
-                    ImGui::Separator();
-                    ImVec2 av = ImGui::GetContentRegionAvail();
-                    ImGui::BeginChild("##fdir", {av.x * 0.50f, av.y}, false);
-                    EditorDirectorPanel::Get().DrawContent();
-                    ImGui::EndChild();
-                    ImGui::SameLine(0, 4);
-                    ImGui::BeginChild("##fvc", {0.f, av.y}, false);
-                    EditorViewConePanel::Get().DrawContent();
-                    ImGui::EndChild();
-                }
-                f3_end(f3_pos_ai, f3_size_ai);
             }
             ImGui::EndTabItem();
         }
@@ -633,7 +599,6 @@ void EditorCore::Shutdown() {
     ImVec2 siz6[6] = { f3_size_scene, f3_size_ai, f3_size_anim, f3_size_flow, f3_size_debug, f3_size_cam };
     F3SettingsState set6{f3_det_settings, f3_pos_settings, f3_size_settings};
     f3_save(det6, pos6, siz6, cam_speed, set6);
-    EditorNodeGraphPanel::Get().Shutdown();
     EditorFlowGraphPanel::Get().Shutdown();
     DeselectAll();
 }

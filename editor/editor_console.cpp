@@ -4,13 +4,8 @@
 #include <string>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
-#include <monkey_dust/components/ai_agent.h>
 #include <monkey_dust/components/health.h>
-#include <monkey_dust/components/combat.h>
 #include <monkey_dust/scripting/lua_system.h>
-#include <monkey_dust/save/save_system.h>
-#include <monkey_dust/nav/nav_system.h>
-#include <monkey_dust/world/faction_system.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/cvar_registry.h>
 #include <monkey_dust/tools/graphics_settings.h>
@@ -70,7 +65,7 @@ void EditorConsole::ExecCommand(const char* raw) {
     PushHistory(raw);
 
     if (lua_mode_) {
-        LuaSystem::Get().CallAction(raw, MdEntity::Null());
+        LuaSystem::Get().Exec(raw, nullptr, 0);
         return;
     }
 
@@ -117,7 +112,7 @@ void EditorConsole::ExecCommand(const char* raw) {
     //                    doesn't command anything
     if (strncmp(cmd, "help", 4) == 0) {
         Log(MD_LOG_INFO, "/reload-shaders — hot-reload SPIR-V without restart");
-        Log(MD_LOG_INFO, "/spawn N x z  /kill N  /save  /load  /navmesh  /fps");
+        Log(MD_LOG_INFO, "/fps");
         Log(MD_LOG_INFO, "/ai N cmd  /faction a b v  /quest N  /help");
         Log(MD_LOG_INFO, "/set <cvar> <value>  /get <cvar>  /list — live-tunable params (ARCHITECTURE_IDEAS.md #1)");
         Log(MD_LOG_INFO, "/subsystem <name> on|off  (no args = list) — toggle a logic_tick.cpp Tick* (ARCH #5)");
@@ -196,62 +191,6 @@ void EditorConsole::ExecCommand(const char* raw) {
     }
     if (strncmp(cmd, "reload", 6) == 0) {
         Log(MD_LOG_INFO, "[Console] /reload-shaders — hot-reload SPIR-V without restart");
-        return;
-    }
-
-    if (strncmp(cmd, "spawn", 5) == 0) {
-        int faction = 1; float cx = 0.f, cz = 0.f;
-        sscanf(cmd + 5, "%d %f %f", &faction, &cx, &cz);
-        CmdArgs args; args.count = 3;
-        args.values[0].type = CmdArgType::I64; args.values[0].i64 = faction;
-        args.values[1].type = CmdArgType::F64; args.values[1].f64 = cx;
-        args.values[2].type = CmdArgType::F64; args.values[2].f64 = cz;
-        CmdResult out = DispatchEditorCmd("Spawn Entity", args);
-        Log(out.ok ? MD_LOG_INFO : MD_LOG_WARNING, out.msg);
-        return;
-    }
-
-    if (strncmp(cmd, "kill", 4) == 0) {
-        uint32_t eid = 0;
-        sscanf(cmd + 4, "%u", &eid);
-        CmdArgs args; args.count = 1;
-        args.values[0].type = CmdArgType::Entity; args.values[0].entity_id = eid;
-        CmdResult out = DispatchEditorCmd("Kill Entity", args);
-        Log(out.ok ? MD_LOG_INFO : MD_LOG_WARNING, out.msg);
-        return;
-    }
-
-    if (strncmp(cmd, "save", 4) == 0) {
-        CmdArgs args;
-        CmdResult out = DispatchEditorCmd("Save Game", args);
-        Log(out.ok ? MD_LOG_INFO : MD_LOG_WARNING, out.msg);
-        return;
-    }
-
-    if (strncmp(cmd, "load", 4) == 0) {
-        CmdArgs args;
-        CmdResult out = DispatchEditorCmd("Load Game", args);
-        Log(out.ok ? MD_LOG_INFO : MD_LOG_WARNING, out.msg);
-        return;
-    }
-
-    if (strncmp(cmd, "navmesh", 7) == 0) {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "[Console] NavSystem: %s",
-                 NavSystem::Get().IsReady() ? "READY" : "NOT READY");
-        Log(MD_LOG_INFO, msg);
-        return;
-    }
-
-    if (strncmp(cmd, "faction", 7) == 0) {
-        int a = 0, b = 0, v = 0;
-        sscanf(cmd + 7, "%d %d %d", &a, &b, &v);
-        CmdArgs args; args.count = 3;
-        args.values[0].type = CmdArgType::I64; args.values[0].i64 = a;
-        args.values[1].type = CmdArgType::I64; args.values[1].i64 = b;
-        args.values[2].type = CmdArgType::I64; args.values[2].i64 = v;
-        CmdResult out = DispatchEditorCmd("Set Faction Relation", args);
-        Log(out.ok ? MD_LOG_INFO : MD_LOG_WARNING, out.msg);
         return;
     }
 

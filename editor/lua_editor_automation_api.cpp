@@ -4,7 +4,6 @@
 #include <monkey_dust/editor/cmd_path_validate.h>
 #include <monkey_dust/ecs/component_reflect.h>
 #include <monkey_dust/ecs/md_registry.h>
-#include <monkey_dust/nav/nav_system.h>
 #include "editor_core.h"
 #include "editor_std_commands.h"
 #include "editor_reflect_bridge.h"
@@ -166,7 +165,6 @@ int l_md_editor_status(lua_State* L) {
     MdEach(q, [&](MdManagedTag) { ++entity_count; });
     lua_newtable(L);
     lua_pushinteger(L, entity_count); lua_setfield(L, -2, "entity_count");
-    lua_pushboolean(L, NavSystem::Get().IsReady()); lua_setfield(L, -2, "nav_ready");
     lua_pushnumber(L, EditorCore::Get().frame_fps); lua_setfield(L, -2, "fps");
     return 1;
 }
@@ -201,7 +199,6 @@ int l_md_editor_dump(lua_State* L) {
     fprintf(f, "  selection_count=%d\n", ec.selected_count);
     fprintf(f, "  camera=(%.2f,%.2f,%.2f) yaw=%.2f pitch=%.2f\n",
             ec.cam_target.x, ec.cam_target.y, ec.cam_target.z, camYawDeg, camPitchDeg);
-    fprintf(f, "  nav_ready=%d\n", NavSystem::Get().IsReady() ? 1 : 0);
     fprintf(f, "  fps=%.1f\n\n", ec.frame_fps);
 
     // Same panel-specific dump as main.cpp's F9 handler.

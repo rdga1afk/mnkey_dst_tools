@@ -5,7 +5,7 @@
 #include "imnodes.h"
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/scripting/flow_graph.h>
-#include <monkey_dust/ai/fnv.h>
+#include <monkey_dust/core/fnv.h>
 
 // Per-type node colors (ABGR for ImNodes IM_COL32)
 static const ImU32 kNodeColors[5] = {

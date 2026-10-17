@@ -1,7 +1,6 @@
 #ifdef MONKEY_DUST_EDITOR
 #include "editor_asset_browser.h"
 #include "editor_core.h"
-#include <monkey_dust/save/save_system.h>
 #include <monkey_dust/platform/md_log.h>
 #include <dirent.h>
 #include <cstring>
@@ -82,12 +81,7 @@ void EditorAssetBrowser::DrawFileEntry(const char* name, int idx) {
     ImGui::PopStyleColor();
 
     if (clicked && ImGui::IsMouseDoubleClicked(0)) {
-        if (is_save) {
-            char full[MAX_PATH * 2];
-            snprintf(full, sizeof(full), "%s%s", current_path_, name);
-            SaveSystem::Get().Load(full);
-            MD_LOG(MD_LOG_INFO, "[AssetBrowser] Loaded save: %s", full);
-        } else if (is_lua) {
+        if (is_lua) {
             MD_LOG(MD_LOG_INFO, "[AssetBrowser] Open script: %s", name);
         } else if (is_audio) {
             MD_LOG(MD_LOG_INFO, "[AssetBrowser] Preview audio: %s (stub)", name);
@@ -100,9 +94,6 @@ void EditorAssetBrowser::DrawFileEntry(const char* name, int idx) {
         snprintf(full, sizeof(full), "%s%s", current_path_, name);
         if (ImGui::MenuItem("Copy Path")) {
             ImGui::SetClipboardText(full);
-        }
-        if (is_save && ImGui::MenuItem("Load Save")) {
-            SaveSystem::Get().Load(full);
         }
         ImGui::EndPopup();
     }

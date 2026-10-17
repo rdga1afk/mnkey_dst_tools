@@ -7,18 +7,10 @@
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/components/health.h>
-#include <monkey_dust/components/ai_agent.h>
 #include <monkey_dust/components/renderable.h>
-#include <monkey_dust/components/combat.h>
-#include <monkey_dust/components/building.h>
-#include <monkey_dust/world/faction_system.h>
-#include <monkey_dust/building/build_system.h>
 #include "editor_game_context.h"
-#include <monkey_dust/nav/nav_system.h>
-#include <monkey_dust/save/save_system.h>
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
 #endif
-#include "scene_serializer.h"
 #include "icon_definitions.h"
 #include <monkey_dust/platform/md_log.h>
 #include "editor_console.h"
@@ -84,32 +76,6 @@ void EditorToolbar::DrawMenuBar() {
         // entries (now also migrated), violating the plan's "one execution
         // path" invariant. Import/Export take this file's own scene_path_
         // as their "path" CmdArgs string.
-        if (ImGui::MenuItem("New Scene")) {
-            CmdArgs args;
-            DispatchEditorCmd("New Scene", args);
-        }
-        if (ImGui::MenuItem("Import Scene (.json)...")) {
-            CmdArgs args; args.count = 1;
-            args.values[0].type = CmdArgType::Str;
-            snprintf(args.values[0].str, sizeof(args.values[0].str), "%s", scene_path_);
-            DispatchEditorCmd("Import Scene", args);
-        }
-        if (ImGui::MenuItem("Export Scene (.json)...")) {
-            CmdArgs args; args.count = 1;
-            args.values[0].type = CmdArgType::Str;
-            snprintf(args.values[0].str, sizeof(args.values[0].str), "%s", scene_path_);
-            DispatchEditorCmd("Export Scene", args);
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem(ICON_SAVE " Save Game (F5)")) {
-            CmdArgs args;
-            DispatchEditorCmd("Save Game", args);
-        }
-        if (ImGui::MenuItem(ICON_LOAD " Load Game (F9)")) {
-            CmdArgs args;
-            DispatchEditorCmd("Load Game", args);
-        }
-        ImGui::Separator();
         if (ImGui::MenuItem("Exit Editor")) {
             EditorCore::Get().editor_open = false;
             SDL_Event e = {}; e.type = SDL_EVENT_QUIT; SDL_PushEvent(&e);
@@ -149,10 +115,8 @@ void EditorToolbar::DrawMenuBar() {
         ImGui::MenuItem("Camera",             nullptr, &pv[5]);
         ImGui::MenuItem("Animation",          nullptr, &pv[6]);
         ImGui::Separator();
-        ImGui::MenuItem("ViewCone Inspector", nullptr, &pv[8]);
         ImGui::MenuItem("FlowGraph",          nullptr, &pv[9]);
         ImGui::MenuItem("Sequencer",          nullptr, &pv[13]);
-        ImGui::MenuItem("Director",           nullptr, &pv[10]);
         ImGui::MenuItem("GPU Profiler",       nullptr, &pv[11]);
         ImGui::Separator();
         if (ImGui::MenuItem("Reset Layout")) {
@@ -167,24 +131,9 @@ void EditorToolbar::DrawMenuBar() {
 
     // ── Scene ─────────────────────────────────────────────────
     if (ImGui::BeginMenu("Scene")) {
-        if (ImGui::MenuItem("Reload JSON Data")) {
-            FactionSystem::Get().LoadFromFile("data/factions/factions.json");
-            BuildSystem::Get().LoadFromFile("data/buildings/buildings.json");
-            auto& egc = EditorGameContext::Get();
-            if (egc.reload_dialogs) egc.reload_dialogs("data/dialogs/dialogs.json");
-            if (egc.reload_quests)  egc.reload_quests("data/quests/quests.json");
-            MD_LOG(MD_LOG_INFO, "[Editor] JSON data reloaded");
-        }
-        if (ImGui::MenuItem("Rebuild NavMesh")) {
-            CmdArgs args;
-            DispatchEditorCmd("Rebuild NavMesh", args);
-        }
         if (ImGui::MenuItem("Bake Lights (stub)")) {
             MD_LOG(MD_LOG_INFO, "[Editor] Bake not available: Phase 33 CSM is runtime-only");
         }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Spawn NPC here (Bandit)"))  SpawnEntity("NPC Bandit");
-        if (ImGui::MenuItem("Spawn NPC here (Trader)"))  SpawnEntity("NPC Trader");
         ImGui::EndMenu();
     }
 
@@ -226,10 +175,6 @@ void EditorToolbar::DrawButtonBar() {
     if (ImGui::Button(ICON_NEW_SCENE " New Entity")) ImGui::OpenPopup("NewEntityPopup");
     if (ImGui::BeginPopup("NewEntityPopup")) {
         if (ImGui::MenuItem("Transform (empty)")) SpawnEntity("Transform");
-        if (ImGui::MenuItem("NPC Bandit"))        SpawnEntity("NPC Bandit");
-        if (ImGui::MenuItem("NPC Trader"))        SpawnEntity("NPC Trader");
-        if (ImGui::MenuItem("NPC Holy"))          SpawnEntity("NPC Holy");
-        if (ImGui::MenuItem("Building (stub)"))   SpawnEntity("Building");
         if (ImGui::MenuItem("Light (Phase 36)"))  MD_LOG(MD_LOG_INFO, "[Editor] Light entity: Phase 36");
         ImGui::EndPopup();
     }
@@ -307,29 +252,5 @@ void EditorToolbar::SpawnEntity(const char* type) {
         return;
     }
 
-    uint32_t faction = 0;
-    if      (strcmp(type, "NPC Bandit") == 0) faction = 1;
-    else if (strcmp(type, "NPC Trader") == 0) faction = 2;
-    else if (strcmp(type, "NPC Holy")   == 0) faction = 3;
-    else if (strcmp(type, "Building")   == 0) {
-        MD_LOG(MD_LOG_INFO, "[Editor] Building spawn: use BuildSystem::Get().Place() directly");
-        return;
-    }
-
-    auto e = reg.Create();
-    reg.Handle(e).emplace<WorldTransform>();
-    auto& tr = reg.Handle(e).get_mut<WorldTransform>();
-    tr.x = pos.x; tr.y = 0.f; tr.z = pos.z; tr.rot_y = 0.f;
-    tr.slot = TransformSoA::Get().Alloc(e, pos.x, pos.z, faction);
-    reg.Handle(e).emplace<AIAgent>();
-    reg.Handle(e).emplace<AIAgentTickState>();
-    auto& ai = reg.Handle(e).get_mut<AIAgent>();
-    ai.faction_id = faction;
-    reg.Handle(e).set<Health>(LimbHealth::Make(100.f));
-    reg.Handle(e).emplace<Combat>();
-    reg.Handle(e).emplace<Renderable>();
-
-    ec.Select(e);
-    MD_LOG(MD_LOG_INFO, "[Editor] Spawned %s at (%.1f,%.1f)", type, pos.x, pos.z);
 }
 #endif

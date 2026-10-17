@@ -23,16 +23,12 @@
 #include "imgui.h"
 #include "editor_core.h"
 #include "editor_ui.h"
-#include "item_editor.h"
-#include "faction_editor.h"
 #include "settings_editor.h"
 #include "editor_world_3d_sdlgpu.h"
 #include "editor_world_panel.h"
 #include "editor_3d_bridge.h"
 #include "editor_char_preview.h"
 #include "character_editor.h"
-#include "npc_archetype_editor.h"
-#include "editor_node_graph.h"
 #include "editor_layout.h"
 #include "bug_capture.h"
 #include "editor_reflect_bridge.h"
@@ -225,9 +221,6 @@ int main(int argc, char** argv) {
     // assume L_ is already a live sandboxed Lua state.
     LuaSystem::Get().Init("data/scripts");
     SettingsEditor::Load(CFG_PATH);
-    ItemEditor::Load("data/items/items.json");
-    FactionEditor::Load("data/factions/factions.json");
-    NpcArchetypeEditor::Load("game/data/defs/npc_archetypes.json");
     WorldPanel::Init();
     // Terrain atlas (editable heightmap) + light system for editor 3D view
     LightSystem::Get().Init();
@@ -249,9 +242,6 @@ int main(int argc, char** argv) {
     {
         s_lay = EditorLayout::Layout{};
         EditorLayout::Load(LAYOUT_PATH, s_lay);
-        ItemEditor::g_detached         = s_lay.items.detached;    ItemEditor::g_win_pos         = s_lay.items.pos;    ItemEditor::g_win_size         = s_lay.items.size;
-        FactionEditor::g_detached      = s_lay.factions.detached; FactionEditor::g_win_pos      = s_lay.factions.pos; FactionEditor::g_win_size      = s_lay.factions.size;
-        NpcArchetypeEditor::g_detached = s_lay.npcs.detached;     NpcArchetypeEditor::g_win_pos = s_lay.npcs.pos;     NpcArchetypeEditor::g_win_size = s_lay.npcs.size;
         CharacterEditor::g_detached    = s_lay.chars.detached;    CharacterEditor::g_win_pos    = s_lay.chars.pos;    CharacterEditor::g_win_size    = s_lay.chars.size;
         SettingsEditor::g_detached     = s_lay.settings.detached; SettingsEditor::g_win_pos     = s_lay.settings.pos; SettingsEditor::g_win_size     = s_lay.settings.size;
     }
@@ -438,26 +428,6 @@ int main(int argc, char** argv) {
         static int s_active_tab = 0;
 
         if (ImGui::BeginTabBar("##tabs")) {
-            if (ImGui::BeginTabItem("Items")) { s_active_tab = 0;
-                DrawDockableTab("Items", ItemEditor::g_detached, ItemEditor::g_win_pos, ItemEditor::g_win_size,
-                                 toolbar_h, 8.f, [&]() {
-                    if (ItemEditor::DrawContent("data/items/items.json")) {
-                        snprintf(status_msg, sizeof(status_msg), "Items saved!");
-                        status_timer = 3.f;
-                    }
-                });
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Factions")) { s_active_tab = 1;
-                DrawDockableTab("Factions", FactionEditor::g_detached, FactionEditor::g_win_pos, FactionEditor::g_win_size,
-                                 toolbar_h, 8.f, [&]() {
-                    if (FactionEditor::DrawContent("data/factions/factions.json")) {
-                        snprintf(status_msg, sizeof(status_msg), "Factions saved!");
-                        status_timer = 3.f;
-                    }
-                });
-                ImGui::EndTabItem();
-            }
             if (ImGui::BeginTabItem("World")) { s_active_tab = 3;
                 DrawDockableTab("World", s_lay.world.detached, s_lay.world.pos, s_lay.world.size,
                                  toolbar_h, 8.f, [&]() { WorldPanel::Draw(dt); });
@@ -469,12 +439,6 @@ int main(int argc, char** argv) {
                 s_world3d_was_active = true;
                 ImVec2 avail = ImGui::GetContentRegionAvail();
                 WorldEditor3D_SDLGPU::DrawImGui(avail.x, avail.y - 2, dt);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("NPCs")) { s_active_tab = 5;
-                DrawDockableTab("NPC Archetypes", NpcArchetypeEditor::g_detached, NpcArchetypeEditor::g_win_pos,
-                                 NpcArchetypeEditor::g_win_size, toolbar_h, 8.f,
-                                 [&]() { NpcArchetypeEditor::DrawContent(); });
                 ImGui::EndTabItem();
             }
             ImGuiTabItemFlags characters_flags = (forced_tab && strcmp(forced_tab, "Characters") == 0)
@@ -503,10 +467,7 @@ int main(int argc, char** argv) {
             // docked. 3D World / Inspector have no detach concept — skipped.
             bool* active_det = nullptr;
             switch (s_active_tab) {
-                case 0: active_det = &ItemEditor::g_detached;         break;
-                case 1: active_det = &FactionEditor::g_detached;      break;
                 case 3: active_det = &s_lay.world.detached;           break;
-                case 5: active_det = &NpcArchetypeEditor::g_detached; break;
                 case 6: active_det = &CharacterEditor::g_detached;    break;
                 case 8: active_det = &SettingsEditor::g_detached;     break;
                 default: break;
@@ -567,9 +528,6 @@ int main(int argc, char** argv) {
 
     // Save panel layout before shutdown
     {
-        s_lay.items    = {ItemEditor::g_detached,         ItemEditor::g_win_pos,         ItemEditor::g_win_size};
-        s_lay.factions = {FactionEditor::g_detached,      FactionEditor::g_win_pos,      FactionEditor::g_win_size};
-        s_lay.npcs     = {NpcArchetypeEditor::g_detached, NpcArchetypeEditor::g_win_pos, NpcArchetypeEditor::g_win_size};
         s_lay.chars    = {CharacterEditor::g_detached,    CharacterEditor::g_win_pos,    CharacterEditor::g_win_size};
         s_lay.settings = {SettingsEditor::g_detached,     SettingsEditor::g_win_pos,     SettingsEditor::g_win_size};
         // map/world updated live above; terrain/world3d untouched here.

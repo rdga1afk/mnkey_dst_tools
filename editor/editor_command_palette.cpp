@@ -6,12 +6,8 @@
 #include "editor_std_commands.h"
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/world/transform_soa.h>
-#include <monkey_dust/components/ai_agent.h>
 #include <monkey_dust/components/health.h>
-#include <monkey_dust/components/combat.h>
 #include <monkey_dust/components/renderable.h>
-#include <monkey_dust/nav/nav_system.h>
-#include <monkey_dust/save/save_system.h>
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
 #endif
 #include <monkey_dust/platform/md_log.h>
@@ -89,22 +85,6 @@ static const PaletteCmd kCommands[] = {
     { "Edit: Redo",              "Ctrl+Y",    []{ EditorCore::Get().Redo(); } },
     // Spawn
     { "Spawn: Empty Transform",  "",          []{ EditorToolbar::Get().SpawnEntity("Transform");  } },
-    { "Spawn: NPC Bandit",       "",          []{ EditorToolbar::Get().SpawnEntity("NPC Bandit"); } },
-    { "Spawn: NPC Trader",       "",          []{ EditorToolbar::Get().SpawnEntity("NPC Trader"); } },
-    { "Spawn: NPC Holy",         "",          []{ EditorToolbar::Get().SpawnEntity("NPC Holy");   } },
-    // Scene — same "one execution path" migration as Select All above.
-    { "Scene: Rebuild NavMesh",  "",          []{
-        CmdArgs args;
-        DispatchEditorCmd("Rebuild NavMesh", args);
-    }},
-    { "Scene: Save Game",        "F5",        []{
-        CmdArgs args;
-        DispatchEditorCmd("Save Game", args);
-    }},
-    { "Scene: Load Game",        "F9",        []{
-        CmdArgs args;
-        DispatchEditorCmd("Load Game", args);
-    }},
     // Physics
     { "Physics: Toggle Pause",   "",          []{ EditorCore::Get().physics_paused ^= true; } },
     // Panels

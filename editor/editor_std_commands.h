@@ -23,16 +23,7 @@
 
 CmdResult DuplicateSelectedCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
 CmdResult SelectAllCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult NewSceneCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult ImportSceneCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult ExportSceneCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult SaveGameCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult LoadGameCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
 CmdResult ReloadShadersCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult RebuildNavMeshCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult SpawnEntityCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult KillEntityCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
-CmdResult SetFactionRelationCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
 CmdResult FpsQueryCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
 CmdResult AddComponentCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
 CmdResult SaveCameraBookmarkCmd(const CmdArgs& args, MdRegistry& reg, uint8_t undo_data[64]);
