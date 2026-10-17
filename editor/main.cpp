@@ -32,7 +32,6 @@
 #include "editor_char_preview.h"
 #include "character_editor.h"
 #include "npc_archetype_editor.h"
-#include "editor_map_view.h"
 #include "editor_node_graph.h"
 #include "editor_layout.h"
 #include "bug_capture.h"
@@ -236,7 +235,6 @@ int main(int argc, char** argv) {
     WorldEditor3D_SDLGPU::Init(
         "game/data/textures/md_terrain.dds",
         29, 25);  // 7×7 view centred near The Hub area
-    MapViewPanel::Get().Init();
     EditorCore::Get().Init();
     // Single binary, no dlopen boundary — LuaSystem::Get() here is the
     // same instance the scenario driver resumes against.
@@ -414,11 +412,9 @@ int main(int argc, char** argv) {
 
         static bool s_world3d_was_active  = false;
         static bool s_charpreview_active  = false;
-        static bool s_mapview_active      = false;
         EditorCore::Get().f3_passthrough = s_world3d_was_active;
         s_world3d_was_active = false;
         s_charpreview_active = false;
-        s_mapview_active     = false;
         EditorCore::Get().Update(dt);
 
         // Autonomy system: md.editor_open_panel(name) forces a tab select
@@ -460,20 +456,6 @@ int main(int argc, char** argv) {
                         status_timer = 3.f;
                     }
                 });
-                ImGui::EndTabItem();
-            }
-            ImGuiTabItemFlags map_flags = (forced_tab && strcmp(forced_tab, "Map") == 0)
-                ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-            if (ImGui::BeginTabItem("Map", nullptr, map_flags)) { s_active_tab = 2;
-                s_mapview_active = true;
-                auto draw_map = [&]() {
-                    ImGuiIO& mio = ImGui::GetIO();
-                    if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) MapViewPanel::Get().Undo();
-                    if (mio.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) MapViewPanel::Get().Redo();
-                    MapViewPanel::Get().Draw(dt);
-                };
-                DrawDockableTab("Map", s_lay.map.detached, s_lay.map.pos, s_lay.map.size,
-                                 toolbar_h, 8.f, draw_map);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("World")) { s_active_tab = 3;
@@ -523,7 +505,6 @@ int main(int argc, char** argv) {
             switch (s_active_tab) {
                 case 0: active_det = &ItemEditor::g_detached;         break;
                 case 1: active_det = &FactionEditor::g_detached;      break;
-                case 2: active_det = &s_lay.map.detached;             break;
                 case 3: active_det = &s_lay.world.detached;           break;
                 case 5: active_det = &NpcArchetypeEditor::g_detached; break;
                 case 6: active_det = &CharacterEditor::g_detached;    break;
@@ -546,7 +527,6 @@ int main(int argc, char** argv) {
             // by the ImGui::Image calls already recorded above via DrawImGui).
             if (s_world3d_was_active) WorldEditor3D_SDLGPU::RenderFrame(cmd, dt, true);
             if (s_charpreview_active) CharPreviewSDLGPU::RenderFrame(cmd);
-            if (s_mapview_active)     MapViewPanel::Get().RenderFrame(cmd);
 
             // 2. Acquire swapchain + clear + ImGui
             uint32_t sw=0, sh=0;

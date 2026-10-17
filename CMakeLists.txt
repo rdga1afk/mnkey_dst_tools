@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 project(monkey_dust_tools CXX)
 
-# SDL3 required only for editor + flare_demo; flare_convert is standalone.
-# Allows CI to build flare_convert without SDL3 installed.
-option(MONKEY_DUST_TOOLS_NEED_SDL3 "Require SDL3 (editor + flare_demo)" ON)
+# SDL3 required for the editor.
+option(MONKEY_DUST_TOOLS_NEED_SDL3 "Require SDL3 (editor)" ON)
 if(MONKEY_DUST_TOOLS_NEED_SDL3)
     find_package(SDL3 REQUIRED CONFIG)
 endif()
@@ -21,7 +20,7 @@ target_link_libraries(md_character PUBLIC monkey_dust::engine)
 # decision: repeated stale-.so debugging confusion outweighed the ~5-10s
 # panels-only rebuild it saved -- see tools/editor/CLAUDE.md).
 
-# All editor panel .cpp files (map_view + all wicked-style panels).
+# All editor panel .cpp files (all wicked-style panels).
 file(GLOB EDITOR_PANEL_SOURCES "editor/*.cpp")
 list(REMOVE_ITEM EDITOR_PANEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/editor/main.cpp")
 
@@ -47,7 +46,7 @@ if(USE_GRANITE)
 endif()
 
 if(NOT MONKEY_DUST_TOOLS_NEED_SDL3)
-    message(STATUS "[tools] SDL3 disabled — skipping monkey_dust_editor + md_flare_demo")
+    message(STATUS "[tools] SDL3 disabled — skipping monkey_dust_editor")
     # Only flare_convert builds without SDL3
 else()
 
@@ -142,19 +141,6 @@ endif()
 
 endif() # MONKEY_DUST_TOOLS_NEED_SDL3 — editor ends here
 
-# ── md_flare_convert ─────────────────────────────────────
-# Standalone INI→JSON converter — no SDL3, no engine, no third_party.
-add_executable(md_flare_convert
-    flare_convert/flare_ini_converter.cpp
-    flare_convert/flare_convert_main.cpp
-)
-target_include_directories(md_flare_convert PRIVATE
-    flare_convert/
-)
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(md_flare_convert PRIVATE -O2 -march=native)
-endif()
-
 # ── kenshi_navmesh_extract ────────────────────────────────
 # Standalone Havok .hkt navmesh -> OBJ geometry extractor — no SDL3, no
 # engine. See tools/third_party/hkxparse/README_MONKEYDUST.md for the parser
@@ -174,36 +160,3 @@ target_compile_options(kenshi_navmesh_extract PRIVATE -include "${CMAKE_CURRENT_
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(kenshi_navmesh_extract PRIVATE -O2)
 endif()
-
-if(MONKEY_DUST_TOOLS_NEED_SDL3)
-# ── md_flare_demo ─────────────────────────────────────────
-# Pure SDL_GPU demo: plain SDL3 window, no OpenGL context, no Raylib.
-add_executable(md_flare_demo
-    flare_demo/main.cpp
-    flare_demo/flare_demo_util.cpp
-    flare_demo/flare_demo_recording.cpp
-    flare_demo/flare_demo_world3d.cpp
-    flare_demo/flare_demo_ai.cpp
-    ${CMAKE_SOURCE_DIR}/engine/src/vendor/glad_impl.cpp
-    ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp
-    ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp
-)
-target_compile_definitions(md_flare_demo PRIVATE
-    MD_SDL_GPU
-    USE_SDL3
-    USE_GLM
-)
-target_link_libraries(md_flare_demo PRIVATE
-    monkey_dust::engine
-    Recast Detour
-    $<IF:$<BOOL:${MD_STATIC_DEPS}>,SDL3::SDL3-static,SDL3::SDL3>
-)
-target_include_directories(md_flare_demo PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/src/vendor
-    ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Recast/Include
-    ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Detour/Include
-)
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(md_flare_demo PRIVATE -O2 -march=native)
-endif()
-endif() # MONKEY_DUST_TOOLS_NEED_SDL3 — md_flare_demo

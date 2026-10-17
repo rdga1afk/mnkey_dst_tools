@@ -9,7 +9,6 @@
 #include "editor_camera_panel.h"
 #include "editor_console.h"
 #include "editor_animation_panel.h"
-#include "editor_flare_browser.h"
 #include "editor_viewcone_panel.h"
 #include "editor_flowgraph_panel.h"
 #include "editor_sequencer_panel.h"

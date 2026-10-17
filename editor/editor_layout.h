@@ -14,7 +14,6 @@ struct Panel { bool detached; ImVec2 pos; ImVec2 size; };
 struct Layout {
     Panel items     = {false, {120.f,  70.f}, {680.f, 520.f}};
     Panel factions  = {false, {140.f,  80.f}, {640.f, 500.f}};
-    Panel map       = {false, {80.f,  100.f}, {800.f, 600.f}};
     Panel world     = {false, {80.f,  100.f}, {800.f, 600.f}};
     Panel terrain   = {false, {80.f,  100.f}, {900.f, 600.f}};
     Panel world3d   = {false, {80.f,  100.f}, {1000.f,700.f}};
@@ -59,7 +58,6 @@ inline bool Load(const char* path, Layout& lay) {
 
     load_one("items",     lay.items);
     load_one("factions",  lay.factions);
-    load_one("map",       lay.map);
     load_one("world",     lay.world);
     load_one("terrain",   lay.terrain);
     load_one("world3d",   lay.world3d);
@@ -80,7 +78,6 @@ inline bool Save(const char* path, const Layout& lay) {
     fprintf(f, "{\n");
     wr("items",     lay.items,     false);
     wr("factions",  lay.factions,  false);
-    wr("map",       lay.map,       false);
     wr("world",     lay.world,     false);
     wr("terrain",   lay.terrain,   false);
     wr("world3d",   lay.world3d,   false);

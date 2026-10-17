@@ -2,7 +2,6 @@
 #include "editor_toolbar.h"
 #include <SDL3/SDL_events.h>
 #include "editor_command_palette.h"
-#include "editor_map_view.h"
 #include <monkey_dust/editor/cmd_registry.h>
 #include "editor_std_commands.h"
 #include <monkey_dust/ecs/md_registry.h>
@@ -79,21 +78,6 @@ void EditorToolbar::DrawMenuBar() {
 
     // ── File ─────────────────────────────────────────────────
     if (ImGui::BeginMenu("File")) {
-        // Map open/save (standalone editor)
-        if (ImGui::BeginMenu("Map")) {
-            static char s_open_buf[256] = "third_party/flare-game/mods/empyrean_campaign/maps/goblin_camp.txt";
-            static char s_save_buf[256] = "";
-            ImGui::SetNextItemWidth(320); ImGui::InputText("##mopen", s_open_buf, sizeof(s_open_buf));
-            ImGui::SameLine();
-            if (ImGui::Button("Open##mop")) MapViewPanel::Get().LoadMap(s_open_buf);
-            ImGui::Separator();
-            ImGui::SetNextItemWidth(320); ImGui::InputText("##msave", s_save_buf, sizeof(s_save_buf));
-            ImGui::SameLine();
-            if (ImGui::Button("Save As##msa")) MapViewPanel::Get().SaveTo(s_save_buf);
-            if (ImGui::MenuItem("Save##msc", "Ctrl+S", false, MapViewPanel::Get().IsLoaded()))
-                MapViewPanel::Get().SaveCurrent();
-            ImGui::EndMenu();
-        }
         ImGui::Separator();
         // Phase 1.3 (EDITOR_AUTOMATION_PLAN_v1.md): New Scene/Save/Load
         // dispatch through EditorCmdRegistry — this menu used to carry its
