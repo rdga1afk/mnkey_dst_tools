@@ -48,6 +48,9 @@ extern void  md_settings_set_ground_reuse(bool on);
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
 extern void  md_settings_set_fxaa(bool on);   // #180: FXAA 3.11 (Kenshi's parameters), default off (owner 16.10)
+extern void  md_settings_set_terrain_lod(float detail, float distant, float threshold);   // #175
+extern void  md_settings_set_vsync(bool on);   // #175
+extern void  md_settings_set_window_size(int w, int h);   // #175
 extern void  md_settings_set_dyn_res(float scale);   // #182: resolution while the camera moves (Native upscaling only); 0 = off
 extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
@@ -58,7 +61,14 @@ static float s_set_fsr1_sharp = 0.5f;   // "fs": the RCAS sharpness of FSR 1
 static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
 static int   s_set_chunk     = 16;
-static bool  s_set_fxaa      = false;  // F3 Settings: FXAA (not persisted)
+static bool  s_set_fxaa      = false;  // "fxaa": FXAA (#180), off by default (owner 16.10)
+// Kenshi's graphics sliders (#175, docs/research/KENSHI_GRAPHICS_OPTIONS.md): names, ranges and defaults of settings.cfg
+static float s_set_tdetail   = 1.f;    // "td": terrain detail 0..1, Kenshi 1.0
+static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.0
+static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
+static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
+static int   s_set_wres      = -1;     // "wres": index in kWinRes, -1 = the window as it is
+static const int kWinRes[][2] = { {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080} };
 static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, owner 17.10): 0 off, 1 = 0.75 (default), 2 = 0.5
 static float dyn_scale_of(int m) { return m == 1 ? 0.75f : (m == 2 ? 0.5f : 0.f); }
 static int   s_set_light     = 2;      // "lgt": lighting (#140), Kenshi L2 by default
@@ -119,6 +129,12 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
         if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
+        if (strstr(buf, "\"fxaa\"")) s_set_fxaa = f3_parse_f(buf, "\"fxaa\"") != 0.f;
+        if (strstr(buf, "\"td\"")) { s_set_tdetail = f3_parse_f(buf, "\"td\""); if (s_set_tdetail < 0.f || s_set_tdetail > 1.f) s_set_tdetail = 1.f; }
+        if (strstr(buf, "\"tdi\"")) { s_set_tdistant = f3_parse_f(buf, "\"tdi\""); if (s_set_tdistant < 0.f || s_set_tdistant > 1.f) s_set_tdistant = 0.f; }
+        if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
+        if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
+        if (strstr(buf, "\"wres\"")) { s_set_wres = (int)f3_parse_f(buf, "\"wres\""); if (s_set_wres < 0 || s_set_wres > 3) s_set_wres = -1; }
         if (strstr(buf, "\"dyn\"")) { s_set_dyn = (int)f3_parse_f(buf, "\"dyn\""); if (s_set_dyn < 0 || s_set_dyn > 2) s_set_dyn = 1; }
         if (strstr(buf, "\"lgt\"")) { s_set_light = (int)f3_parse_f(buf, "\"lgt\""); if (s_set_light != 0 && (s_set_light < 2 || s_set_light > 4)) s_set_light = 2; }
     }
@@ -149,7 +165,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"wres\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -159,7 +175,8 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[4].x,pos[4].y,siz[4].x,siz[4].y,
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
-        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif, s_set_dyn);
+        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif, s_set_dyn,
+        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_wres);
     fclose(f);
 }
 
@@ -179,7 +196,9 @@ void EditorCore::Init() {
     {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
-        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
+            md_settings_set_fxaa(s_set_fxaa); md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh); md_settings_set_vsync(s_set_vsync);
+            if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
         else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_light = md_settings_get_lighting(); }
     }
 #endif
@@ -469,6 +488,28 @@ void EditorCore::Update(float dt) {
                     md_settings_render_size(&iw, &ih, &ow, &oh);
                     ImGui::Text("internal %dx%d -> output %dx%d", iw, ih, ow, oh);
                 }
+                // #175: Kenshi's graphics options as separate sliders (no presets); names, ranges and defaults of settings.cfg
+                ImGui::Separator();
+                ImGui::TextUnformatted("Graphics");
+                {
+                    bool lod_ch = false;
+                    ImGui::SetNextItemWidth(220.f);
+                    lod_ch |= ImGui::SliderFloat("Terrain Detail##tdet", &s_set_tdetail, 0.f, 1.f, "%.2f");
+                    ImGui::SetNextItemWidth(220.f);
+                    lod_ch |= ImGui::SliderFloat("Terrain Distant##tdis", &s_set_tdistant, 0.f, 1.f, "%.2f");
+                    ImGui::SetNextItemWidth(220.f);
+                    lod_ch |= ImGui::SliderFloat("Terrain Threshold##tthr", &s_set_tthresh, 100.f, 3000.f, "%.0f");
+                    if (lod_ch) md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh);
+                    if (ImGui::Checkbox("FXAA (+1.7 ms)##fxaa", &s_set_fxaa)) md_settings_set_fxaa(s_set_fxaa);
+                    if (ImGui::Checkbox("VSync##vsy", &s_set_vsync)) md_settings_set_vsync(s_set_vsync);
+                    {
+                        static const char* kRes[] = { "1280x720", "1366x768", "1600x900", "1920x1080" };
+                        int ri = s_set_wres;
+                        ImGui::SetNextItemWidth(220.f);
+                        if (ImGui::Combo("Window resolution##wres", &ri, kRes, 4)) { s_set_wres = ri; md_settings_set_window_size(kWinRes[ri][0], kWinRes[ri][1]); }
+                    }
+                    ImGui::TextDisabled("Shadows: off (Forward tier has no shadow pass). View Distance, Texture Quality, Water Reflection, grass / foliage ranges: not implemented yet");
+                }
                 // #154: patch size of the terrain LOD (Kenshi's "Terrain Chunk Size"). Read at start.
                 ImGui::Separator();
                 ImGui::TextUnformatted("Terrain");
@@ -490,7 +531,6 @@ void EditorCore::Update(float dt) {
                         static const int   kMode[]  = { 0, 2, 3, 4 };
                         int li = 1; for (int k = 0; k < 4; ++k) if (kMode[k] == s_set_light) li = k;
                         if (ImGui::Combo("Lighting##lgt", &li, kLight, 4)) { s_set_light = kMode[li]; md_settings_set_lighting(s_set_light); }
-                        if (ImGui::Checkbox("FXAA (+1.7 ms)##fxaa", &s_set_fxaa)) md_settings_set_fxaa(s_set_fxaa);
                     }
                 }
 #endif
