@@ -69,8 +69,8 @@ static float s_set_tdetail   = 1.f;    // "td": terrain detail 0..1, Kenshi 1.0
 static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.0
 static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
 static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
-static const int kAnisoLv[6] = { 0, 1, 2, 4, 8, 16 };
-static int   s_set_ga        = 0;      // "ga": index in kAniso (ground texture filtering), 0 = distance mip (before #180)
+static const int kAnisoLv[3] = { 1, 4, 16 };
+static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
 static float s_set_vdist     = 5000.f; // "vd": View Distance, Kenshi 5000 (1500...12000)
 static int   s_set_wres      = -1;     // "wres": index in kWinRes, -1 = the window as it is
 static const int kWinRes[][2] = { {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080} };
@@ -139,7 +139,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"tdi\"")) { s_set_tdistant = f3_parse_f(buf, "\"tdi\""); if (s_set_tdistant < 0.f || s_set_tdistant > 1.f) s_set_tdistant = 0.f; }
         if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
-        if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 5) s_set_ga = 0; }
+        if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 2) s_set_ga = 0; }
         if (strstr(buf, "\"vd\"")) { s_set_vdist = f3_parse_f(buf, "\"vd\""); if (s_set_vdist < 1500.f || s_set_vdist > 12000.f) s_set_vdist = 5000.f; }
         if (strstr(buf, "\"wres\"")) { s_set_wres = (int)f3_parse_f(buf, "\"wres\""); if (s_set_wres < 0 || s_set_wres > 3) s_set_wres = -1; }
         if (strstr(buf, "\"dyn\"")) { s_set_dyn = (int)f3_parse_f(buf, "\"dyn\""); if (s_set_dyn < 0 || s_set_dyn > 2) s_set_dyn = 1; }
@@ -509,10 +509,10 @@ void EditorCore::Update(float dt) {
                     if (lod_ch) md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh);
                     if (ImGui::Checkbox("FXAA (+1.7 ms)##fxaa", &s_set_fxaa)) md_settings_set_fxaa(s_set_fxaa);
                     {
-                        static const char* kAnisoNm[] = { "Distance mip (old)", "Footprint mip (aniso 1)", "Aniso 2", "Aniso 4", "Aniso 8", "Aniso 16 (Kenshi)" };
+                        static const char* kAnisoNm[] = { "Footprint mip", "Aniso x4", "Aniso x16 (Kenshi)" };
                         int gi = s_set_ga;
                         ImGui::SetNextItemWidth(220.f);
-                        if (ImGui::Combo("Ground filtering##gaf", &gi, kAnisoNm, 6)) { s_set_ga = gi; md_settings_set_ground_aniso(kAnisoLv[gi]); }
+                        if (ImGui::Combo("Ground filtering##gaf", &gi, kAnisoNm, 3)) { s_set_ga = gi; md_settings_set_ground_aniso(kAnisoLv[gi]); }
                     }
                     ImGui::SetNextItemWidth(220.f);
                     if (ImGui::SliderFloat("View Distance##vdist", &s_set_vdist, 1500.f, 12000.f, "%.0f")) md_settings_set_view_distance(s_set_vdist);
