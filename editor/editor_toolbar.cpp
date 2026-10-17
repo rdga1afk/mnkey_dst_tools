@@ -17,7 +17,6 @@
 #include <monkey_dust/nav/nav_system.h>
 #include <monkey_dust/save/save_system.h>
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
-#include "debug_system.h"
 #endif
 #include "scene_serializer.h"
 #include "icon_definitions.h"
@@ -192,12 +191,6 @@ void EditorToolbar::DrawMenuBar() {
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
     // ── Debug ─────────────────────────────────────────────────
     if (ImGui::BeginMenu("Debug")) {
-        auto& ds = DebugSystem::Get();
-        ImGui::MenuItem("Debug Overlay (F1)", nullptr, &ds.overlay_on);
-        ImGui::MenuItem("SpatialGrid (F2)",   nullptr, &ds.grid_on);
-        ImGui::MenuItem("NavMesh Wireframe",  nullptr, &ds.navmesh_on);
-        ImGui::MenuItem("Screenshot Mode",    nullptr, &ds.clean_mode);
-        ImGui::Separator();
         ImGui::MenuItem("Physics Paused", nullptr, &EditorCore::Get().physics_paused);
         ImGui::EndMenu();
     }
