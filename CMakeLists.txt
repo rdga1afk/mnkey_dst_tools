@@ -83,7 +83,6 @@ target_compile_definitions(monkey_dust_editor PRIVATE
 target_link_libraries(monkey_dust_editor PRIVATE
     md_character
     monkey_dust::engine
-    Recast Detour DetourCrowd
     $<IF:$<BOOL:${MD_STATIC_DEPS}>,SDL3::SDL3-static,SDL3::SDL3>
     $<$<BOOL:${USE_GRANITE}>:Vulkan::Vulkan>
 )
@@ -96,9 +95,6 @@ target_include_directories(monkey_dust_editor PRIVATE
     ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes
     ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src
     ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-flame-graph
-    ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Recast/Include
-    ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Detour/Include
-    ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/DetourCrowd/Include
     ${CMAKE_SOURCE_DIR}/engine/src/vendor
     ${CMAKE_SOURCE_DIR}/engine/src/render
 )
