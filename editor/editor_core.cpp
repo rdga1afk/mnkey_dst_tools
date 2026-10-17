@@ -48,6 +48,7 @@ extern void  md_settings_set_ground_reuse(bool on);
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
 extern void  md_settings_set_fxaa(bool on);   // #180: FXAA 3.11 (Kenshi's parameters), default off (owner 16.10)
+extern void  md_settings_set_dyn_res(float scale);   // #182: resolution while the camera moves (Native upscaling only); 0 = off
 extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
 #endif
@@ -58,6 +59,8 @@ static int   s_set_res_mode  = 0;
 static float s_set_res_scale = 0.75f;
 static int   s_set_chunk     = 16;
 static bool  s_set_fxaa      = false;  // F3 Settings: FXAA (not persisted)
+static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, owner 17.10): 0 off, 1 = 0.75 (default), 2 = 0.5
+static float dyn_scale_of(int m) { return m == 1 ? 0.75f : (m == 2 ? 0.5f : 0.f); }
 static int   s_set_light     = 2;      // "lgt": lighting (#140), Kenshi L2 by default
 static bool  s_set_reuse     = true;   // "gru": ground shading reuse (#163), on by default
 static void  apply_res_mode() {
@@ -116,6 +119,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
         if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
+        if (strstr(buf, "\"dyn\"")) { s_set_dyn = (int)f3_parse_f(buf, "\"dyn\""); if (s_set_dyn < 0 || s_set_dyn > 2) s_set_dyn = 1; }
         if (strstr(buf, "\"lgt\"")) { s_set_light = (int)f3_parse_f(buf, "\"lgt\""); if (s_set_light != 0 && (s_set_light < 2 || s_set_light > 4)) s_set_light = 2; }
     }
     if (out_set) {
@@ -145,7 +149,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -155,7 +159,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[4].x,pos[4].y,siz[4].x,siz[4].y,
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
-        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif);
+        s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif, s_set_dyn);
     fclose(f);
 }
 
@@ -175,7 +179,7 @@ void EditorCore::Init() {
     {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
-        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); }
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
         else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_light = md_settings_get_lighting(); }
     }
 #endif
@@ -454,6 +458,13 @@ void EditorCore::Update(float dt) {
                         ImGui::SetNextItemWidth(220.f);
                         if (ImGui::SliderFloat("Sharpness (RCAS)##upscs", &s_set_fsr1_sharp, 0.0f, 1.0f, "%.2f")) apply_res_mode();
                     }
+                    // #182: while the camera moves the scene renders at a lower scale, native when it stands (Native upscaling only)
+                    ImGui::TextUnformatted("Resolution while moving");
+                    if (ImGui::RadioButton("Off##dyn0", s_set_dyn == 0)) { s_set_dyn = 0; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("0.75##dyn1", s_set_dyn == 1)) { s_set_dyn = 1; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("0.5##dyn2", s_set_dyn == 2)) { s_set_dyn = 2; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     int iw = 0, ih = 0, ow = 0, oh = 0;
                     md_settings_render_size(&iw, &ih, &ow, &oh);
                     ImGui::Text("internal %dx%d -> output %dx%d", iw, ih, ow, oh);
