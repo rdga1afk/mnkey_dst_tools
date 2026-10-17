@@ -3,7 +3,7 @@ id: kb-tools-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-10-13
+updated: 2026-10-18
 repo: tools
 tags: [tools, readme, editor, kenshi, measurement, public-repo]
 summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character editor), measurement/QA drivers, read-only MCP servers (Ghidra, RenderDoc), offline Kenshi-data converters; build; licence"
@@ -26,7 +26,7 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 
 | Group | Tool | Purpose |
 |---|---|---|
-| **Editor** | `monkey_dust_editor` (`editor/`) | Standalone SDL_GPU editor (Dear ImGui): 3D world viewport (view-only), hierarchy, console + Lua REPL, graphics, camera, animation, AI inspectors, GPU profiler |
+| **Editor** | `monkey_dust_editor` (`editor/`) | Standalone SDL_GPU editor (Dear ImGui): 3D world viewport (view-only), hierarchy, console + Lua REPL, graphics, camera, animation, GPU profiler |
 | | Characters tab (`editor/character_editor*.h`) | Character creator laid out like Kenshi's: race and gender, BODY / FACE / HAIR sliders, live 3D preview. Being brought to full parity with Kenshi's editor: body sliders scale skeleton bones as Kenshi does; a soft-tissue morph layer only on the bare body. Built here first, then moved into the game |
 | | `shader_watch.sh` | Recompile shaders on save; `/reload-shaders` in the editor console reloads pipelines without restart |
 | **Measurement & QA** | `qa/game_cmd_driver.py` | Drives a running game: camera pose, screenshots, Lua commands. Basis of all performance measurements |
@@ -58,10 +58,10 @@ python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png
 - Pitfall: the CLI `--camera` flag (and `Driver.screenshot(camera=..., editor_open=False)`) loses the camera: `editor_open=False` switches back to the player-orbit camera. Use `editor_open=True` or a pose command.
 
 ### Editor notes
-- Tabs (from `editor/main.cpp`, the standalone window): Items, Factions, Map, World, 3D World, NPCs, Characters, Inspector, Settings. F3 editor overlay (`editor/editor_core.cpp`): Scene, AI (Director + ViewCone), Animation, FlowGraph, Debug, Camera, Settings. Command palette: `Ctrl+P`. (Listed from the code, not by running the editor.)
+- Tabs (from `editor/main.cpp`, the standalone window): World, 3D World, Characters, Inspector, Settings. F3 editor overlay (`editor/editor_core.cpp`): Scene, Animation, FlowGraph, Debug, Camera, Settings. The old prototype-game tabs and tools (Items, Factions, NPCs, AI, Map, Flare) were removed on 2026-10-17. Command palette: `Ctrl+P`. (Listed from the code, not by running the editor.)
 - The 3D World viewport loads biomes from FCS (`BiomeRegistry::LoadPreferFcs`) and `blendmap.png` from the Kenshi install, with offline fallbacks; terrain loads on a background thread.
 - Characters: the tab is the Kenshi character editor (layout `Kenshi_CharacterEditor.layout`): races, sliders and buttons come from the install (`md::character::Session`); the preview renders the race body read from `KENSHI_DIR` (Ogre mesh + skeleton), body sliders as bone sizes, face sliders as mesh poses. Scenarios: `md.char_editor_select`, `md.char_editor_set`, `md.char_editor_view`.
-- Game-coupled panels (Inspector, Terrain sculpt) live in the game repository and are compiled into the game with `-DMONKEY_DUST_EDITOR=ON`.
+- Game-coupled panels (Inspector) live in the game repository and are compiled into the game with `-DMONKEY_DUST_EDITOR=ON`.
 - GPU debugging: `SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor`.
 
 ### Architecture
@@ -90,7 +90,7 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 
 | Група | Інструмент | Призначення |
 |---|---|---|
-| **Редактор** | `monkey_dust_editor` (`editor/`) | Окремий редактор на SDL_GPU (Dear ImGui): 3D-вікно світу (лише перегляд), ієрархія, консоль + Lua REPL, графіка, камера, анімація, інспектори AI, профайлер GPU |
+| **Редактор** | `monkey_dust_editor` (`editor/`) | Окремий редактор на SDL_GPU (Dear ImGui): 3D-вікно світу (лише перегляд), ієрархія, консоль + Lua REPL, графіка, камера, анімація, профайлер GPU |
 | | Вкладка Characters (`editor/character_editor*.h`) | Редактор персонажів з розкладкою як у Kenshi: раса й стать, слайдери BODY / FACE / HAIR, живий 3D-перегляд. Доводиться до повної відповідності редактору Kenshi: слайдери тіла масштабують кістки скелета, як у Kenshi; шар м'яких тканин (морфи) — лише на голому тілі. Спершу тут, потім переноситься в гру |
 | | `shader_watch.sh` | Перекомпіляція шейдерів при збереженні; `/reload-shaders` у консолі перезавантажує конвеєри без перезапуску |
 | **Заміри й QA** | `qa/game_cmd_driver.py` | Керує запущеною грою: камера, скриншоти, Lua-команди. Основа всіх замірів продуктивності |
@@ -113,10 +113,10 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 - Пастка: прапорець `--camera` (і `Driver.screenshot(camera=..., editor_open=False)`) губить камеру, бо `editor_open=False` повертає камеру гравця. Використовуйте `editor_open=True` або команду пози.
 
 ### Редактор
-- Вкладки (з `editor/main.cpp`, окреме вікно): Items, Factions, Map, World, 3D World, NPCs, Characters, Inspector, Settings. Оверлей F3 (`editor/editor_core.cpp`): Scene, AI (Director + ViewCone), Animation, FlowGraph, Debug, Camera, Settings. Палітра команд: `Ctrl+P`. (Перелік за кодом, редактор не запускався.)
+- Вкладки (з `editor/main.cpp`, окреме вікно): World, 3D World, Characters, Inspector, Settings. Оверлей F3 (`editor/editor_core.cpp`): Scene, Animation, FlowGraph, Debug, Camera, Settings. Вкладки й інструменти старого прототипу гри (Items, Factions, NPCs, AI, Map, Flare) видалено 17.10.2026. Палітра команд: `Ctrl+P`. (Перелік за кодом, редактор не запускався.)
 - 3D World бере біоми з FCS (`BiomeRegistry::LoadPreferFcs`) і `blendmap.png` з інсталяції Kenshi, із запасними офлайн-копіями; ландшафт вантажиться у фоновому потоці.
 - Characters: вкладка — редактор персонажів Kenshi (розкладка `Kenshi_CharacterEditor.layout`): раси, слайдери й кнопки з інсталяції (`md::character::Session`); перегляд малює тіло раси з `KENSHI_DIR` (меш і скелет Ogre), слайдери тіла — розміри кісток, обличчя — пози меша. Сценарії: `md.char_editor_select`, `md.char_editor_set`, `md.char_editor_view`.
-- Панелі, прив'язані до гри (Inspector, скульптинг ландшафту), — у репозиторії гри, вмикаються `-DMONKEY_DUST_EDITOR=ON`.
+- Панелі, прив'язані до гри (Inspector), — у репозиторії гри, вмикаються `-DMONKEY_DUST_EDITOR=ON`.
 
 ### Архітектура
 Див. дерево вище. Правило залежностей: `tools/` включає лише `engine/` і `tools/third_party/`, ніколи `game/`.
