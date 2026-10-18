@@ -59,6 +59,17 @@ def main():
             pass
     for ad in found:
         why[by_addr[ad]["name"]] = ("addr", 0)
+    # addresses that are not entries: the owner is the function with the greatest entry <= the address (Ghidra lists FUN_ entries; max distance 20000 bytes)
+    import bisect
+    entries = sorted((int(k, 16), v["name"]) for k, v in by_addr.items())
+    keys = [e[0] for e in entries]
+    owners = 0
+    for ad in missing:
+        v = int(ad, 16)
+        i = bisect.bisect_right(keys, v) - 1
+        if i >= 0 and v - keys[i] <= 20000 and entries[i][1] not in why:
+            why[entries[i][1]] = ("addr_owner", 0)
+            owners += 1
 
     # 2. string-marker seeds (one pass over the source)
     ranges = sorted((f["start"], f["end"], f["name"]) for f in fns)
@@ -114,7 +125,7 @@ def main():
             fh.write(json.dumps({"name": nm, "addr": f["addr"], "chars": f["chars"], "send_chars": sendchars, "why": w, "hop": hop, "summary_only": big and w == "callee"}) + "\n")
     toks = chars / 3.5
     usd = toks * a.in_rate / 1e6 + len(why) * a.out_tokens_per_fn * a.out_rate / 1e6
-    print(json.dumps({"addr_seeds_found": len(found), "addr_seeds_not_function_entries": len(missing), "marker_seeds": len(hits), "total_functions": len(why),
+    print(json.dumps({"addr_seeds_found": len(found), "addr_seeds_not_function_entries": len(missing), "owner_functions_added": owners, "marker_seeds": len(hits), "total_functions": len(why),
                       "whole": whole, "summary_only": summary_only, "by_kind": kinds, "input_tokens_est": int(toks),
                       "est_usd_no_cache": round(usd, 2), "rates": [a.in_rate, a.out_rate, a.out_tokens_per_fn]}, indent=1))
 
