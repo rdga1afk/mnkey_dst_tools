@@ -4,52 +4,25 @@ on:
   push:
     branches: [master]
     paths:
-      - 'flare_convert/**'
-      - 'CMakeLists.txt'
+      - '**.py'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
-      - 'flare_convert/**'
-      - 'CMakeLists.txt'
+      - '**.py'
+  workflow_dispatch: {}
 
 jobs:
-  # ── flare_convert compile check ──────────────────────────────────────────────
-  # Public repo → необмежені безкоштовні хвилини.
-  # md_flare_convert: standalone INI→JSON конвертер, без SDL/GPU/engine залежностей.
-  # Найшвидший CI в проекті — тільки cmake + ninja, ~30с.
-  build-linux:
-    name: flare_convert/${{ matrix.config }}
+  # Public repo → free minutes. The C++ editor is built from the main repository
+  # (it needs engine/ as a sibling), so here we only check that every Python tool parses.
+  python-syntax:
+    name: Python syntax
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        config: [Debug, Release]
-
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false  # flare_convert не потребує engine чи third_party
-
-      - name: Install dependencies
-        run: sudo apt-get install -y cmake ninja-build ccache
-
-      - name: ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: ccache-flare-${{ matrix.config }}-${{ github.sha }}
-          restore-keys: ccache-flare-${{ matrix.config }}-
-
-      - name: Configure
+          submodules: false
+      - name: Byte-compile all Python tools
         run: |
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DMONKEY_DUST_TOOLS_NEED_SDL3=OFF
-
-      - name: Build
-        run: ninja -C build md_flare_convert
-
-      - name: ccache stats
-        run: ccache -s
+          find . -name '*.py' -not -path './third_party/*' -print0 \
+            | xargs -0 python3 -m py_compile
