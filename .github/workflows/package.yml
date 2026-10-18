@@ -1,0 +1,102 @@
+name: Package
+
+# #189: the editor and the other C++ tools are compiled here, not on the owner's laptop. Same container as the engine repo (Arch Linux Archive snapshot = the laptop's package set),
+# the engine itself comes prebuilt from the engine repo's GitHub Release build-<sha12> for the commit pinned in ci/ENGINE_SHA (update it together with the engine pointer in main).
+# Result: GitHub Release build-<sha12> of THIS repo with tools-<sha12>.tar.zst (monkey_dust_editor, kenshi_navmesh_extract). No Kenshi files.
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - '**.py'
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH_DATE: "2026/09/30"   # keep equal to engine/.github/workflows/package.yml (bump with the laptop's pacman -Syu)
+  EXPECT: "clang 22.1.8-1|gcc-libs 16.2.1+r23+gd564253eb6c8-1|glibc 2.44+r50+g1848099f063e-1|sdl3 3.4.16-1|lua54 5.4.9-1|cmake 4.4.3-2"
+  ENGINE_REPO: rdga1afk/mnkey_dst_engine
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container: archlinux:latest
+    permissions:
+      contents: write
+    steps:
+      - name: Toolchain (Arch Linux Archive snapshot = the laptop's package set)
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_DATE}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm
+          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache zstd sdl3 lua54 github-cli
+          echo "$EXPECT" | tr '|' '\n' | while read -r n v; do
+            got=$(pacman -Q "$n" | cut -d' ' -f2)
+            echo "$n: laptop $v, container $got"
+            [ "$got" = "$v" ] || { echo "::error::$n differs from the laptop ($v)"; exit 1; }
+          done
+
+      - name: renderdoc_app.h (pinned, same file as on the laptop)
+        run: |
+          curl -sSfL -o /usr/local/include/renderdoc_app.h https://raw.githubusercontent.com/baldurk/renderdoc/v1.45/renderdoc/api/app/renderdoc_app.h
+          echo "b7005e7dc34c3635046868bbd76d81b9b055aede0f56daa0bd39fedee0639ffb  /usr/local/include/renderdoc_app.h" | sha256sum -c -
+
+      - uses: actions/checkout@v4
+        with:
+          path: ws/tools
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: git safe directory
+        run: git config --global --add safe.directory '*'
+
+      - name: Engine sources (headers, stb/cgltf implementations, fonts) and the prebuilt package for the pinned commit
+        run: |
+          E=$(cat ws/tools/ci/ENGINE_SHA); E12=${E:0:12}
+          git clone -q https://github.com/${ENGINE_REPO}.git ws/engine
+          git -C ws/engine checkout -q "$E"
+          mkdir -p pkg
+          curl -fsSL -o engine.tar.zst "https://github.com/${ENGINE_REPO}/releases/download/build-${E12}/engine-${E12}-release.tar.zst"
+          tar --zstd -xf engine.tar.zst -C pkg
+          cp ws/tools/ci/CMakeLists.txt ws/CMakeLists.txt
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-tools-${{ github.sha }}
+          restore-keys: ccache-tools-
+
+      - name: Configure and build
+        run: |
+          cmake -S ws -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DMONKEY_DUST_EDITOR=ON -DMD_ENGINE_PREBUILT=$PWD/pkg
+          ninja -C build monkey_dust_editor kenshi_navmesh_extract
+          ccache -s | head -6
+
+      - name: Archive
+        run: |
+          SHA12=$(git -C ws/tools rev-parse --short=12 HEAD)
+          mkdir out
+          cp build/tools/monkey_dust_editor build/tools/kenshi_navmesh_extract out/
+          tar --zstd -cf tools-${SHA12}.tar.zst -C out .
+          sha256sum tools-${SHA12}.tar.zst | tee tools-${SHA12}.tar.zst.sha256
+          echo "SHA12=${SHA12}" >> $GITHUB_ENV
+
+      - name: Publish build-<sha12>
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd ws/tools
+          if gh release view "build-${SHA12}" >/dev/null 2>&1; then
+            gh release upload "build-${SHA12}" ../../tools-${SHA12}.tar.zst* --clobber
+          else
+            gh release create "build-${SHA12}" ../../tools-${SHA12}.tar.zst* --target "${{ github.sha }}" --title "Tools build ${SHA12}" \
+              --notes "Prebuilt monkey_dust_editor and kenshi_navmesh_extract (tools commit ${{ github.sha }}), engine package pinned in ci/ENGINE_SHA, Arch container. No Kenshi files."
+          fi
