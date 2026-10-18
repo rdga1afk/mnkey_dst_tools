@@ -58,7 +58,6 @@ add_executable(monkey_dust_editor
     editor/character_editor.h
     ${EDITOR_PANEL_SOURCES}
     ${EDITOR_IMGUI_SRC}
-    ${CMAKE_SOURCE_DIR}/engine/src/vendor/glad_impl.cpp    # satisfies engine lib GL refs (never called in SDL_GPU mode)
     ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp
     ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp
     # Third-party panels
@@ -126,7 +125,6 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
         ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor_api.cpp
         ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_canvas.cpp
         ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/crude_json.cpp
-        ${CMAKE_SOURCE_DIR}/engine/src/vendor/glad_impl.cpp
         ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp
         ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp
     )
