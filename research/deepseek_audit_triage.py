@@ -6,7 +6,7 @@ Input  : JSON list of findings {"id", "file", "line", "check", "text"} (see audi
          third_party/vendor/external/data paths and anything outside the repo are refused. Kenshi files are never read.
 Output : docs/audit/TRIAGE_<date>.jsonl (one line per finding: verdict real_bug | false_positive | style, explanation, minimal patch, usage, cost)
          and the summary TRIAGE_<date>.md. Resumes: ids already present in the jsonl are skipped.
-Budget : hard limit in USD by the token counter (prompt + completion tokens x the rates below, rates are a conservative upper bound); a request is
+Budget : hard limit in USD from the ACTUAL usage fields of every response (prompt_cache_hit / prompt_cache_miss / completion tokens x the rates below); a request is
          started only if spent + the worst case of all requests in flight + its own worst case fits in the budget.
 The model's verdict is UNTRUSTED: apply only real_bug that is confirmed by a test, a sanitizer or file:line logic.
 
@@ -44,8 +44,8 @@ SYSTEM = (
 
 
 class Budget:
-    def __init__(self, limit_usd, in_rate, out_rate):
-        self.limit, self.in_rate, self.out_rate = limit_usd, in_rate / 1e6, out_rate / 1e6
+    def __init__(self, limit_usd, in_rate, out_rate, cache_rate):
+        self.limit, self.in_rate, self.out_rate, self.cache_rate = limit_usd, in_rate / 1e6, out_rate / 1e6, cache_rate / 1e6
         self.spent = 0.0
         self.reserved = 0.0
         self.lock = threading.Lock()
@@ -63,7 +63,9 @@ class Budget:
     def settle(self, reserved, usage):
         with self.lock:
             self.reserved -= reserved
-            cost = usage.get("prompt_tokens", 0) * self.in_rate + usage.get("completion_tokens", 0) * self.out_rate
+            hit = usage.get("prompt_cache_hit_tokens", 0)
+            miss = usage.get("prompt_cache_miss_tokens", usage.get("prompt_tokens", 0) - hit)  # actual fields of the response, not an estimate
+            cost = hit * self.cache_rate + miss * self.in_rate + usage.get("completion_tokens", 0) * self.out_rate
             self.spent += cost
             return cost
 
@@ -144,8 +146,9 @@ def main():
     ap.add_argument("--out", default=str(REPO / "docs" / "audit" / f"TRIAGE_{datetime.date.today().isoformat()}.jsonl"))
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--budget-usd", type=float, default=10.0)
-    ap.add_argument("--in-rate", type=float, default=1.0, help="USD per 1M prompt tokens (conservative upper bound)")
-    ap.add_argument("--out-rate", type=float, default=4.0, help="USD per 1M completion tokens incl. reasoning (conservative upper bound)")
+    ap.add_argument("--in-rate", type=float, default=1.74, help="USD per 1M prompt tokens, cache miss (deepseek-v4-pro standard price, 18.10.2026 per coordinator)")
+    ap.add_argument("--out-rate", type=float, default=3.48, help="USD per 1M completion tokens incl. reasoning")
+    ap.add_argument("--cache-rate", type=float, default=0.0145, help="USD per 1M prompt tokens, cache hit")
     ap.add_argument("--effort", default="medium")
     ap.add_argument("--max-tokens", type=int, default=6000)
     ap.add_argument("--limit", type=int, default=0)
@@ -159,7 +162,7 @@ def main():
     todo = [f for f in findings if f["id"] not in done]
     if a.limit:
         todo = todo[:a.limit]
-    budget = Budget(a.budget_usd, a.in_rate, a.out_rate)
+    budget = Budget(a.budget_usd, a.in_rate, a.out_rate, a.cache_rate)
     prior = sum(json.loads(l).get("cost_usd", 0) for l in out.read_text().splitlines() if l.strip()) if out.exists() else 0.0
     budget.spent = prior
     print(f"findings {len(findings)}, already done {len(done)}, to do {len(todo)}, spent so far ${prior:.3f}, budget ${a.budget_usd:.2f}")
