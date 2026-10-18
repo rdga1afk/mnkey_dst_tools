@@ -12,7 +12,7 @@ Usage:
   tools/md_ctl run <scenario.lua> [--seed N] [--max-frames N] [--max-seconds N]
   tools/md_ctl probe-height X Z
   tools/md_ctl rebuild-terrain
-  tools/md_ctl qa [--compare CAPTURE_ID | --rebase CAPTURE_ID] [--backend hw|lavapipe]
+  tools/md_ctl qa [--compare CAPTURE_ID | --rebase CAPTURE_ID] [--backend hw]
   tools/md_ctl state
   tools/md_ctl gc [--days N]
   tools/md_ctl editor-exec "<lua code>" [--timeout SECONDS]
@@ -48,8 +48,7 @@ def run_logged(cmd, cwd=None, timeout=None, tag=None, env=None):
     log, never dumped to stdout wholesale (VERIFY: each command's own
     output <= 15 lines). env=None inherits the parent process's environment
     (subprocess.run's own default); pass a dict to run with a modified
-    environment (e.g. VK_ICD_FILENAMES for the lavapipe backend, see
-    _lavapipe_env())."""
+    environment."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     tag = tag or Path(str(cmd[0])).name
     log_path = LOG_DIR / f"{_run_id()}_{tag}.log"
@@ -235,49 +234,8 @@ def cmd_rebuild_terrain(args) -> int:
 
 
 # ── qa ─────────────────────────────────────────────────────────────────────
-# Candidate paths for Mesa's software-rasterizer Vulkan ICD (lavapipe) --
-# package name/layout differs slightly by distro, so probe a short list
-# instead of hardcoding one path.
-_LAVAPIPE_ICD_CANDIDATES = [
-    "/usr/share/vulkan/icd.d/lvp_icd.json",
-    "/usr/share/vulkan/icd.d/lvp_icd.x86_64.json",
-]
-
-
-def _lavapipe_env():
-    """Returns (env_dict, None) if a lavapipe ICD is found on this system,
-    else (None, error_message). Setting VK_ICD_FILENAMES restricts the
-    Vulkan loader to ONLY enumerate that one ICD -- confirmed live
-    (2026-08-12) this is sufficient on its own to make SDL_GPU's Vulkan
-    backend pick the software device with zero engine code changes: the
-    loader only ever sees what's in this env var, same mechanism
-    `vulkaninfo --summary` uses to prove which device would be selected.
-    Previously this whole backend was a hardcoded abort here claiming
-    vulkan-swrast wasn't installed (docs/AUTONOMY_LOG.md §Recon.4,
-    2026-XX-XX) -- that claim went stale (the package IS installed on
-    this dev machine) and, more importantly, the check was never a real
-    runtime probe to begin with, just a fixed `return 2`. This replaces
-    it with an actual file-existence check."""
-    for p in _LAVAPIPE_ICD_CANDIDATES:
-        if Path(p).exists():
-            env = dict(os.environ)
-            env["VK_ICD_FILENAMES"] = p
-            return env, None
-    return None, (
-        "[md_ctl qa] backend=lavapipe requested, but no lavapipe ICD found "
-        f"(checked: {', '.join(_LAVAPIPE_ICD_CANDIDATES)}) -- install the "
-        "software Vulkan driver package (Arch: vulkan-swrast; Debian/Ubuntu: "
-        "mesa-vulkan-drivers) and retry."
-    )
-
-
 def cmd_qa(args) -> int:
     qa_env = None
-    if args.backend == "lavapipe":
-        qa_env, err = _lavapipe_env()
-        if err:
-            print(err)
-            return 2
 
     if args.editor:
         # Etap 4: editor QA-capture (audit finding — only the game was
@@ -527,7 +485,7 @@ def main() -> int:
     p = sub.add_parser("qa")
     p.add_argument("--compare", metavar="CAPTURE_ID", default=None)
     p.add_argument("--rebase", metavar="CAPTURE_ID", default=None)
-    p.add_argument("--backend", choices=["hw", "lavapipe"], default="hw")
+    p.add_argument("--backend", choices=["hw"], default="hw")
     p.add_argument("--editor", action="store_true",
                     help="Etap 4: editor QA-capture (screenshot + RMSE) instead of game")
     p.set_defaults(func=cmd_qa)

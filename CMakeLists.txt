@@ -116,6 +116,7 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
         <imgui.h>
         <SDL3/SDL_gpu.h>
     )
+    md_gaia_pch(monkey_dust_editor)
     # Third-party ImGui panels have conflicting macros — skip PCH for them.
     set(_EDITOR_THIRDPARTY_CPP
         ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes/imnodes.cpp
