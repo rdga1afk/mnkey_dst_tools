@@ -2,7 +2,6 @@
 // Character editor preview: the body of the session's current race and gender, read from the Kenshi install (md::ogre mesh + skeleton through md::character::SkinnedBody),
 // posed by the idle stance and the body-slider bone sizes (md::character::SolveSkinMatrices), face sliders as mesh poses; drawn off-screen and shown with ImGui::Image.
 // RenderFrame() runs once per frame before the ImGui render (main.cpp); DrawInImGui() inside the Characters tab. Data logic is in tools/editor/character/.
-#ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_device.h>
 #include <cstdio>
@@ -23,4 +22,3 @@ void SetCamera(float pitch, float distance, float look_at_y);   // scenarios: pi
 void DumpState(FILE* f);
 
 } // namespace CharPreviewSDLGPU
-#endif // MD_SDL_GPU

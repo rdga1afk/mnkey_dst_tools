@@ -74,8 +74,6 @@ add_executable(monkey_dust_editor
 target_compile_definitions(monkey_dust_editor PRIVATE
     MONKEY_DUST_STANDALONE_EDITOR
     MONKEY_DUST_EDITOR
-    MD_SDL_GPU
-    USE_SDL3
     IMGUI_DEFINE_MATH_OPERATORS
     $<$<BOOL:${USE_GRANITE}>:IMGUI_IMPL_VULKAN_NO_PROTOTYPES>
 )

@@ -4,7 +4,6 @@
 #include "character/race_assets.h"
 #include "character/session.h"
 #include "editor_char_preview.h"
-#ifdef MD_SDL_GPU
 #include "imgui.h"
 #include "stb_image.h"
 #include <monkey_dust/render/gpu_copy_pass.h>
@@ -526,4 +525,3 @@ void DrawInImGui(float W, float H) {
 }
 
 } // namespace CharPreviewSDLGPU
-#endif // MD_SDL_GPU

@@ -174,9 +174,7 @@ int l_md_editor_status(lua_State* L) {
 int l_md_editor_capture(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
     if (!CmdPathValidate(path)) return luaL_error(L, "capture: path rejected (must be under data/, game/data/, or automation_out/): %s", path);
-#ifdef MD_SDL_GPU
     EditorScreenshot_RequestPending(path);
-#endif
     return 0;
 }
 
@@ -203,9 +201,7 @@ int l_md_editor_dump(lua_State* L) {
 
     // Same panel-specific dump as main.cpp's F9 handler.
     fprintf(f, "  chars_detached=%d\n\n", CharacterEditor::g_detached ? 1 : 0);
-#ifdef MD_SDL_GPU
     CharPreviewSDLGPU::DumpState(f);
-#endif
 
     fclose(f);
     return 0;

@@ -1,5 +1,4 @@
 #pragma once
-#ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_device.h>
 
@@ -49,4 +48,3 @@ int GetChunksLoaded();
 int GetChunksTotal();
 
 } // namespace WorldEditor3D_SDLGPU
-#endif // MD_SDL_GPU

@@ -3,12 +3,10 @@
 #include <monkey_dust/world/terrain_gen.h>
 #include "editor_world_3d_sdlgpu.h"
 #include "editor_screenshot.h"
-#ifdef MD_SDL_GPU
 #include "editor_char_preview.h"
 #include "character_editor.h"
 #include "character/appearance_io.h"
 #include "character/session.h"
-#endif
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -30,15 +28,10 @@ static char s_forced_tab[64] = {};
 // md.char_editor_randomise("all"|"body"|"face"|"hair"[, seed])   the RANDOMISE buttons of the tabs; seed = the generator's start
 // md.char_editor_view(tab, yaw_radians[, pitch, distance, look_at_y])   tab 0 = whole body, others = head
 static int l_md_char_editor_select(lua_State* L) {
-#ifdef MD_SDL_GPU
     lua_pushboolean(L, CharacterEditor::GetSession().SelectSubraceByName(luaL_checkstring(L, 1), lua_toboolean(L, 2) != 0));
     return 1;
-#else
-    (void)L; return 0;
-#endif
 }
 static int l_md_char_editor_set(lua_State* L) {
-#ifdef MD_SDL_GPU
     const std::string key = lua_isstring(L, 1) ? lua_tostring(L, 1) : "";
     if (key.empty()) CharacterEditor::GetSession().Reset();
     else if (key == "head") CharacterEditor::GetSession().SelectHead((int)luaL_checkinteger(L, 2));
@@ -46,55 +39,35 @@ static int l_md_char_editor_set(lua_State* L) {
     else if (key == "beard") CharacterEditor::GetSession().SelectBeard((size_t)luaL_checkinteger(L, 2));
     else if (key == "idle stance") CharacterEditor::GetSession().SelectStance((int)luaL_checkinteger(L, 2));
     else CharacterEditor::GetSession().SetValue(lua_tostring(L, 1), (float)luaL_checknumber(L, 2));
-#else
-    (void)L;
-#endif
     return 0;
 }
 static int l_md_char_editor_export(lua_State* L) {
-#ifdef MD_SDL_GPU
     std::string err;
     bool ok = md::character::ExportAppearance(CharacterEditor::GetSession(), luaL_checkstring(L, 1), err);
     if (!ok) fprintf(stderr, "[CharacterEditor] export: %s\n", err.c_str());
     lua_pushboolean(L, ok);
     return 1;
-#else
-    (void)L; return 0;
-#endif
 }
 static int l_md_char_editor_confirm(lua_State* L) {
-#ifdef MD_SDL_GPU
     lua_pushboolean(L, CharacterEditor::ConfirmForScenario());
     return 1;
-#else
-    (void)L; return 0;
-#endif
 }
 static int l_md_char_editor_import(lua_State* L) {
-#ifdef MD_SDL_GPU
     std::string err;
     bool ok = md::character::ImportAppearance(CharacterEditor::GetSession(), luaL_checkstring(L, 1), err);
     if (!ok) fprintf(stderr, "[CharacterEditor] import: %s\n", err.c_str());
     lua_pushboolean(L, ok);
     return 1;
-#else
-    (void)L; return 0;
-#endif
 }
 static int l_md_char_editor_view(lua_State* L) {
-#ifdef MD_SDL_GPU
     CharacterEditor::SetTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
     if (lua_gettop(L) >= 5) CharPreviewSDLGPU::SetCamera((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));
-#else
-    (void)L;
-#endif
     return 0;
 }
 
 static int l_md_char_editor_randomise(lua_State* L) {
-#ifdef MD_SDL_GPU
     const std::string what = luaL_checkstring(L, 1);
     auto& ses = CharacterEditor::GetSession();
     if (lua_gettop(L) >= 2) ses.Seed((uint32_t)luaL_checkinteger(L, 2));
@@ -102,9 +75,6 @@ static int l_md_char_editor_randomise(lua_State* L) {
     else if (what == "hair") ses.RandomiseHair();
     else if (what == "face") ses.RandomiseCategory("Face");
     else if (what == "body") ses.RandomiseCategory("Body");
-#else
-    (void)L;
-#endif
     return 0;
 }
 
@@ -126,11 +96,7 @@ const char* EditorPanels_ConsumeForcedTab() {
 static int l_md_editor_select_zone(lua_State* L) {
     int zx = (int)luaL_checkinteger(L, 1);
     int zz = (int)luaL_checkinteger(L, 2);
-#ifdef MD_SDL_GPU
     WorldEditor3D_SDLGPU::TeleportToZone(zx, zz);
-#else
-    (void)zx; (void)zz;
-#endif
     return 0;
 }
 
@@ -145,11 +111,7 @@ static int l_md_editor_camera_pos(lua_State* L) {
     float z     = (float)luaL_checknumber(L, 3);
     float yaw   = (float)luaL_optnumber(L, 4, 0.0);
     float pitch = (float)luaL_optnumber(L, 5, 0.38);
-#ifdef MD_SDL_GPU
     WorldEditor3D_SDLGPU::SetCameraPos(x, y, z, yaw, pitch);
-#else
-    (void)x; (void)y; (void)z; (void)yaw; (void)pitch;
-#endif
     return 0;
 }
 
@@ -175,14 +137,9 @@ static int l_md_editor_terrain_op(lua_State* L) {
         // this session's environment; scenarios must wait_until this reaches
         // chunks_total before a screenshot reflects real terrain, not the
         // partial-load placeholder.
-#ifdef MD_SDL_GPU
         lua_pushinteger(L, WorldEditor3D_SDLGPU::GetChunksLoaded());
         lua_pushinteger(L, WorldEditor3D_SDLGPU::GetChunksTotal());
         return 2;
-#else
-        lua_pushinteger(L, 0); lua_pushinteger(L, 0);
-        return 2;
-#endif
     }
     return luaL_error(L, "md.editor_terrain_op: unsupported op '%s' (Etap 4 supports \"height\", \"chunks_loaded\")", op);
 }
@@ -227,11 +184,7 @@ static int l_md_assert_true(lua_State* L) {
 // swapchain texture is available), not here. This just records the request.
 static int l_md_editor_screenshot(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
-#ifdef MD_SDL_GPU
     EditorScreenshot_RequestPending(path);
-#else
-    (void)path;
-#endif
     return 0;
 }
 

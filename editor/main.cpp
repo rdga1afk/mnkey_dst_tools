@@ -352,9 +352,7 @@ int main(int argc, char** argv) {
             if (f) {
                 fprintf(f, "[Editor]\n");
                 fprintf(f, "  chars_detached=%d\n\n", CharacterEditor::g_detached ? 1 : 0);
-#ifdef MD_SDL_GPU
                 CharPreviewSDLGPU::DumpState(f);
-#endif
                 BugCapture::Close(f);
                 snprintf(status_msg, sizeof(status_msg), "[F9] %s", path + 7);
                 status_timer = 4.f;

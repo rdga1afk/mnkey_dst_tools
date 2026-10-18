@@ -1,5 +1,4 @@
 #include "editor_screenshot.h"
-#ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/render/gpu_copy_pass.h>
 #include <SDL3/SDL.h>
@@ -166,4 +165,3 @@ bool EditorScreenshot_WriteRGBA(const void* rgba, uint32_t w, uint32_t h, const 
     fprintf(stdout, "[EditorScreenshot] saved %ux%u -> %s\n", w, h, out_path);
     return true;
 }
-#endif // MD_SDL_GPU

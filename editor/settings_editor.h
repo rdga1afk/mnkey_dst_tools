@@ -54,21 +54,17 @@ inline bool Load(const char* path) {
     g_cfg.w3d_scroll_step = rfloat("\"w3d_scroll_step\"", g_cfg.w3d_scroll_step);
     g_cfg.w3d_zoom_in     = rfloat("\"w3d_zoom_in\"",     g_cfg.w3d_zoom_in);
     g_cfg.w3d_zoom_out    = rfloat("\"w3d_zoom_out\"",    g_cfg.w3d_zoom_out);
-#ifdef MD_SDL_GPU
     WorldEditor3D_SDLGPU::ApplyCameraConfig(
         g_cfg.w3d_wasd_speed, g_cfg.w3d_scroll_step,
         g_cfg.w3d_zoom_in, g_cfg.w3d_zoom_out);
-#endif
     return true;
 }
 
 inline bool Save(const char* path) {
-#ifdef MD_SDL_GPU
     g_cfg.w3d_wasd_speed  = WorldEditor3D_SDLGPU::GetWasdSpeed();
     g_cfg.w3d_scroll_step = WorldEditor3D_SDLGPU::GetScrollStep();
     g_cfg.w3d_zoom_in     = WorldEditor3D_SDLGPU::GetZoomIn();
     g_cfg.w3d_zoom_out    = WorldEditor3D_SDLGPU::GetZoomOut();
-#endif
     FILE* f = fopen(path, "w");
     if (!f) return false;
     fprintf(f,
@@ -125,11 +121,9 @@ inline void DrawContent(const char* config_path,
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MARGIN);
     ImGui::SetNextItemWidth(160.f);
     ImGui::SliderFloat("Zoom out factor##w3d",    &g_cfg.w3d_zoom_out, 1.01f, 1.25f, "%.3f");
-#ifdef MD_SDL_GPU
     WorldEditor3D_SDLGPU::ApplyCameraConfig(
         g_cfg.w3d_wasd_speed, g_cfg.w3d_scroll_step,
         g_cfg.w3d_zoom_in, g_cfg.w3d_zoom_out);
-#endif
 
     ImGui::Spacing();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MARGIN);

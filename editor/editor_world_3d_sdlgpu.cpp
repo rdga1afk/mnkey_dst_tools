@@ -1,7 +1,6 @@
 #include <monkey_dust/io/kenshi_dir.h>
 #include "editor_world_3d_sdlgpu.h"
 
-#ifdef MD_SDL_GPU
 // editor_world_3d_sdlgpu.h — 3D world viewport for standalone SDL_GPU editor.
 // Uses the same TerrainRenderer as the game; renders to an SDL_GPU RTT
 // and displays via ImGui::Image().
@@ -959,4 +958,3 @@ void SetCameraPos(float x, float y, float z, float yaw, float pitch) {
 
 } // namespace WorldEditor3D_SDLGPU
 
-#endif // MD_SDL_GPU

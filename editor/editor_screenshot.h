@@ -1,5 +1,4 @@
 #pragma once
-#ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_device.h>
 
@@ -58,4 +57,3 @@ bool EditorScreenshot_CaptureAndSubmit(md::GpuDeviceHandle dev, md::GpuCommandBu
 // reuse it instead of duplicating the stb_image_write call. Does NOT take
 // ownership of rgba -- caller frees it.
 bool EditorScreenshot_WriteRGBA(const void* rgba, uint32_t w, uint32_t h, const char* out_path);
-#endif // MD_SDL_GPU
