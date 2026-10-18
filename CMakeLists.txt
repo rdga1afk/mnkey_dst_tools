@@ -101,7 +101,9 @@ target_include_directories(monkey_dust_editor PRIVATE
 )
 # (third-party sources already added above)
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(monkey_dust_editor PRIVATE -O2 -march=native)
+    # CI builds on a runner CPU of another family (AVX-512 there): -DMD_MARCH=skylake keeps the binary runnable on the target laptop (i5-6200U, Skylake)
+    set(MD_MARCH "native" CACHE STRING "-march= for the editor")
+    target_compile_options(monkey_dust_editor PRIVATE -O2 -march=${MD_MARCH})
 endif()
 
 

@@ -75,7 +75,7 @@ jobs:
       - name: Configure and build
         run: |
           cmake -S ws -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DMONKEY_DUST_EDITOR=ON -DMD_ENGINE_PREBUILT=$PWD/pkg
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DMONKEY_DUST_EDITOR=ON -DMD_MARCH=skylake -DMD_ENGINE_PREBUILT=$PWD/pkg
           ninja -C build monkey_dust_editor kenshi_navmesh_extract
           ccache -s | head -6
 
