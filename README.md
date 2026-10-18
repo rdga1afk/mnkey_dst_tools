@@ -43,7 +43,7 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 ### Build
 `tools/` is built from the game repository root (it needs the engine as a sibling submodule):
 ```bash
-cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ninja -C build monkey_dust_editor
 ```
 Python tools need Python 3, numpy and Pillow.
