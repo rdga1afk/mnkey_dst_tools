@@ -95,9 +95,9 @@ def call(key, prompt, effort, max_tokens):
 def parse(text):
     a, b = text.find("{"), text.rfind("}")
     try:
-        return json.loads(text[a:b + 1])
+        return json.loads(text[a:b + 1], strict=False)
     except Exception:
-        return {"unparsed": text[:500]}
+        return {"unparsed": text[:4000]}
 
 
 def main():
@@ -110,8 +110,8 @@ def main():
     ap.add_argument("--in-rate", type=float, default=1.74)
     ap.add_argument("--out-rate", type=float, default=3.48)
     ap.add_argument("--cache-rate", type=float, default=0.0145)
-    ap.add_argument("--effort", default="medium")
-    ap.add_argument("--max-tokens", type=int, default=6000)
+    ap.add_argument("--effort", default="low")
+    ap.add_argument("--max-tokens", type=int, default=12000)
     ap.add_argument("--big", type=int, default=40000)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--only-why", default="", help="comma list of 'why' prefixes to run (addr, marker, callee)")
