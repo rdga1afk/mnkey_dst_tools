@@ -50,9 +50,13 @@ if(NOT MONKEY_DUST_TOOLS_NEED_SDL3)
     # Only flare_convert builds without SDL3
 else()
 
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/fonts_embed.cpp PROPERTIES
+    COMPILE_DEFINITIONS "MD_FONT_DIR=\"${MD_FONT_DIR}\""
+    OBJECT_DEPENDS "${MD_FONT_TTFS}")
+
 add_executable(monkey_dust_editor
     editor/main.cpp
-    embedded_fonts.cpp
+    fonts_embed.cpp
     # Header-only files: listed here so ninja tracks them and rebuilds on change
     editor/editor_char_preview.h
     editor/character_editor.h
