@@ -13,6 +13,8 @@ Usage: python3 tools/research/deepseek_exe_functions.py --budget-usd 15 [--worke
 """
 import argparse
 import json
+import re
+import struct
 import sys
 import threading
 import time
@@ -37,8 +39,51 @@ SYSTEM = (
     '"important_calls" (list of {"callee":"FUN_14xxxxxxx or name","why"}), "system" (one of: movement, squad, npc_behaviour, melee_combat, limb_health, animation, rendering, ui, io, memory, other), '
     '"confidence" (number 0..1). '
     "Rules: say only what the code shows. If something is not in the code write \"unknown\". Never invent field names, formulas or constants; a constant must appear in the text. "
-    "Do not write pseudocode or assembly in your answer; describe in words. The function text follows after the marker FUNCTION."
+    "Do not write pseudocode or assembly in your answer; describe in words. The function text follows after the marker FUNCTION. After the function text there may be a block CONSTANTS: the raw bytes of the read-only data that the function names as DAT_14xxxxxxx, read from the executable (u32 / f32 / u64 / f64 views of the same bytes: the type is the one the code uses it as). A constant value may be quoted only from that block."
 )
+
+EXE = Path("/home/rdga1/rdga1prj/Kenshi_test/kenshi_x64.exe")
+DAT_RE = re.compile(r"\b_?DAT_(14[0-9a-fA-F]{6,7})\b")
+
+
+class RoData:
+    """Read-only sections of the PE image: DAT_14xxxxxxx constants are read straight from the exe file (Ghidra image base 0x140000000)."""
+
+    def __init__(self, path=EXE):
+        self.blob = path.read_bytes()
+        b = self.blob
+        pe = struct.unpack_from("<I", b, 0x3C)[0]
+        nsec, optsz = struct.unpack_from("<H", b, pe + 6)[0], struct.unpack_from("<H", b, pe + 20)[0]
+        self.base = struct.unpack_from("<Q", b, pe + 24 + 24)[0]
+        self.secs = []
+        for i in range(nsec):
+            o = pe + 24 + optsz + 40 * i
+            vsz, va, rsz, raw, chars = struct.unpack_from("<IIII", b, o + 8)[0], struct.unpack_from("<I", b, o + 12)[0], struct.unpack_from("<I", b, o + 16)[0], struct.unpack_from("<I", b, o + 20)[0], struct.unpack_from("<I", b, o + 36)[0]
+            if not chars & 0x80000000:   # not writable = constant data
+                self.secs.append((self.base + va, max(vsz, rsz), raw, rsz))
+
+    def read(self, addr, n=8):
+        for va, sz, raw, rsz in self.secs:
+            if va <= addr < va + min(sz, rsz) - n:
+                return self.blob[raw + addr - va: raw + addr - va + n]
+        return None
+
+    def block(self, text, limit=40):
+        out, seen = [], set()
+        for m in DAT_RE.finditer(text):
+            a = int(m.group(1), 16)
+            if a in seen or len(seen) >= limit:
+                continue
+            seen.add(a)
+            r = self.read(a)
+            if r is None:
+                continue
+            u32, = struct.unpack("<I", r[:4])
+            f32, = struct.unpack("<f", r[:4])
+            u64, = struct.unpack("<Q", r)
+            f64, = struct.unpack("<d", r)
+            out.append(f"DAT_{a:x}: u32=0x{u32:08x} ({u32}) f32={f32:.9g} | u64=0x{u64:016x} f64={f64:.12g}")
+        return ("\nCONSTANTS (read-only data of the executable)\n" + "\n".join(out) + "\n") if out else ""
 
 
 class Budget:
@@ -115,6 +160,7 @@ def main():
     ap.add_argument("--big", type=int, default=40000)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--only-why", default="", help="comma list of 'why' prefixes to run (addr, marker, callee)")
+    ap.add_argument("--no-consts", action="store_true", help="do not append the DAT_ constants block")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
@@ -148,6 +194,7 @@ def main():
         return
 
     key = read_api_key()
+    rodata = RoData() if not a.no_consts else None
     src_lines = SRC.read_text(errors="replace").split("\n")
     src_lines = [x + "\n" for x in src_lines]
     lock = threading.Lock()
@@ -161,7 +208,7 @@ def main():
             text = load_text(f, src_lines)
             if len(text) > a.big * 2:
                 text = text[:a.big * 2] + "\n/* truncated */\n"
-        prompt = "FUNCTION\n" + text
+        prompt = "FUNCTION\n" + text + (rodata.block(text) if rodata else "")
         worst = len(prompt) / 3.0 / 1e6 * a.in_rate + a.max_tokens / 1e6 * a.out_rate
         if not budget.reserve(worst):
             return None
