@@ -33,7 +33,7 @@ SYSTEM = (
     "You analyse ONE function from a Ghidra decompilation of the game Kenshi (x64 Windows, MSVC, Ogre3D engine). Names like FUN_14xxxxxxx are addresses; param_N, local_N and DAT_14xxxxxxx are Ghidra placeholders. "
     "Answer with ONE JSON object and nothing else, with exactly these keys: "
     '"purpose" (1-3 sentences, plain words), "inputs" (list of {"name","meaning"}), "outputs" (list of {"name","meaning"}), '
-    '"formulas" (list of {"what","expression_in_words","constants":[numbers],"source_line":"the line of the function text the formula comes from, copied"}), '
+    '"formulas" (list of {"what","expression_in_words","constants":[numbers; only a constant that is written in the function text, never the value behind a DAT_14xxxxxxx name: write \"unknown\" for it],"source_line":"the line of the function text the formula comes from, copied"}), '
     '"important_calls" (list of {"callee":"FUN_14xxxxxxx or name","why"}), "system" (one of: movement, squad, npc_behaviour, melee_combat, limb_health, animation, rendering, ui, io, memory, other), '
     '"confidence" (number 0..1). '
     "Rules: say only what the code shows. If something is not in the code write \"unknown\". Never invent field names, formulas or constants; a constant must appear in the text. "
@@ -72,7 +72,7 @@ def load_text(index_row, src_lines):
 
 def call(key, prompt, effort, max_tokens):
     body = json.dumps({"model": MODEL, "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-                       "max_tokens": max_tokens, "reasoning_effort": effort}).encode()
+                       "max_tokens": max_tokens, "reasoning_effort": effort, "response_format": {"type": "json_object"}}).encode()
     req = urllib.request.Request(API_URL, data=body, method="POST", headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     last = None
     for attempt in range(4):
