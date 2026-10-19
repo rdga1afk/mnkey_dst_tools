@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 deepseek_cathode_shaders.py -- #191 stage E: what the shaders of Alien: Isolation (Cathode engine) tell us.
-Input  : ~/re_work/alien_shaders/summary.txt -- one line per shader (stage, instruction / temp / texture-instruction counts, resource names read from the DXBC headers by carve.py + summary.py, outside the repo), and our frame description (PASS_COSTS sections 1-4).
-         No shader code, no Kenshi files.
-Output : docs/research/CATHODE_SHADERS_2026-10.md -- facts (numbers) and model answers marked SOURCE-MODEL / CHECK. No shader code in the repo.
+Input  : ~/re_work/alien_shaders/summary.txt -- one line per shader (stage, instruction / temp / texture-instruction counts, resource names read from the DXBC headers by carve.py + summary.py, outside the repo),
+         ~/re_work/alien_shaders/asm/*.txt -- disassembly (vkd3d-compiler) of a sample of shaders per pack (heaviest, median, lightest, all compute), and our frame description (PASS_COSTS sections 1-4).
+         No Kenshi files. The disassembly stays outside the repo.
+Output : docs/research/CATHODE_SHADERS_2026-10.md -- facts (numbers) and model answers marked SOURCE-MODEL / CHECK. No shader code in the repo (the model is told not to quote instructions).
 Budget : hard USD limit from the actual usage fields.
 Usage  : python3 tools/research/deepseek_cathode_shaders.py [--budget-usd 6] [--dry-run]
 """
@@ -24,7 +25,7 @@ OUT = REPO / "docs" / "research" / "CATHODE_SHADERS_2026-10.md"
 SYSTEM = (
     "You are a senior real-time rendering engineer who reverse-engineers shipped games from shader statistics. Answer concisely, in English. "
     "You only see per-shader statistics and resource names (no code). Say what each group of shaders most likely does, and which techniques are visible; "
-    "mark every inference with 'INFERRED' and everything you are unsure of with 'CHECK'. Never invent numbers."
+    "mark every inference with 'INFERRED' and everything you are unsure of with 'CHECK'. Never invent numbers. Do NOT quote shader instructions in the answer: describe techniques in words and numbers."
 )
 PACKS = [
     ("DEFERREDSHADERS", "Deferred pack (G-buffer fill, lighting, shadows): which techniques are visible from the resource names (g_smp_gbuffer_rt0..3, spotlight shadow samplers, depth/normal/specular/emissive samplers); how the cost is spread (instruction and texture counts, dynamic flow); what differs between the cheap and the expensive shaders."),
@@ -44,6 +45,29 @@ def aggregate(lines):
         ins = sorted(x[0] for x in v)
         out.append((pack, st, len(v), ins[len(ins) // 2], ins[-1], sum(x[1] for x in v) / len(v)))
     return out
+
+
+ASM = Path.home() / "re_work" / "alien_shaders" / "asm"
+
+
+def sample_asm(lines, pack):
+    rows = []
+    for l in lines:
+        p = l.split()
+        if p[0] == pack:
+            rows.append((int(p[3].split('=')[1]), int(p[1][1:]), p[2]))
+    ps = sorted(r for r in rows if r[2] == 'PS')
+    vs = sorted(r for r in rows if r[2] == 'VS')
+    cs = [r for r in rows if r[2] in ('CS', 'GS')]
+    pick = ps[-4:] + ps[len(ps) // 2 - 1:len(ps) // 2 + 1] + [r for r in ps if r[0] > 8][:2] + vs[-1:] + cs[:4]
+    out, seen = [], set()
+    for ins, n, st in pick:
+        if n in seen:
+            continue
+        seen.add(n)
+        txt = (ASM / f"{pack}_{n}.txt").read_text().splitlines()[:220]
+        out.append(f"--- {pack} #{n} {st} instr={ins}\n" + "\n".join(txt))
+    return "\n\n".join(out)
 
 
 def main():
@@ -76,7 +100,7 @@ def main():
     doc.append("")
     for pack, q in PACKS:
         try:
-            text, usage = lt.call(key, SYSTEM, prefix + q, 24000, "high")
+            text, usage = lt.call(key, SYSTEM, prefix + q + "\n\nSampled disassembly of this pack:\n" + sample_asm(lines, pack), 24000, "high")
         except RuntimeError as e:
             doc += [f"## {pack}", "", f"ERROR: {e}", ""]
             continue
@@ -91,7 +115,7 @@ def main():
     q = ("Synthesis for our ground resolve pass: from all four groups, list at most 8 techniques that apply to a terrain/ground resolve and to static props on a weak iGPU, "
          "each with: what is visible in the statistics, why it would be cheaper than ours, risk for the image, hours. Mark INFERRED / CHECK.")
     if spent < a.budget_usd:
-        text, usage = lt.call(key, SYSTEM, prefix + q, 24000, "high")
+        text, usage = lt.call(key, SYSTEM, prefix + q + "\n\nSampled disassembly (deferred pack):\n" + sample_asm(lines, "DEFERREDSHADERS"), 24000, "high")
         hit = usage.get("prompt_cache_hit_tokens", 0)
         miss = usage.get("prompt_cache_miss_tokens", usage.get("prompt_tokens", 0) - hit)
         spent += hit * a.cache_rate / 1e6 + miss * a.in_rate / 1e6 + usage.get("completion_tokens", 0) * a.out_rate / 1e6
