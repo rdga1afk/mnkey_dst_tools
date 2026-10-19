@@ -4,7 +4,8 @@
 #include "editor_toolbar.h"
 #include "editor_hierarchy.h"
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
-#include "editor_inspector.h"
+// the entity inspector lives in the game (game/src/editor/editor_inspector.cpp), which defines this hook: tools/ must not include private game headers (#189 B)
+void EditorInspector_DrawContent();
 #endif
 #include "editor_camera_panel.h"
 #include "editor_console.h"
@@ -300,7 +301,7 @@ void EditorCore::Update(float dt) {
                 ImGui::SameLine(0, 4);
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
                 ImGui::BeginChild("##f3i", {0.f, av.y}, false);
-                EditorInspector::Get().DrawContent();
+                EditorInspector_DrawContent();
                 ImGui::EndChild();
 #endif
             } else {
@@ -316,7 +317,7 @@ void EditorCore::Update(float dt) {
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
                     ImGui::SameLine(0, 4);
                     ImGui::BeginChild("##fi", {0.f, av.y}, false);
-                    EditorInspector::Get().DrawContent();
+                    EditorInspector_DrawContent();
                     ImGui::EndChild();
 #endif
                 }
