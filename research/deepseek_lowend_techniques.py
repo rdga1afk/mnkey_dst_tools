@@ -52,9 +52,9 @@ def frame_description():
     return text[a:b].strip()
 
 
-def call(key, system, user, max_tokens):
+def call(key, system, user, max_tokens, effort="medium"):
     body = json.dumps({"model": MODEL, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                       "max_tokens": max_tokens, "reasoning_effort": "medium"}).encode()
+                       "max_tokens": max_tokens, "reasoning_effort": effort}).encode()
     req = urllib.request.Request(API_URL, data=body, method="POST", headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     last = None
     for attempt in range(4):
