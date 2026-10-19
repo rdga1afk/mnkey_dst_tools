@@ -42,6 +42,8 @@ extern void  md_settings_set_resolution_scale(float s);
 extern void  md_settings_render_size(int* in_w, int* in_h, int* out_w, int* out_h);
 extern bool  md_settings_get_ground_reuse();
 extern void  md_settings_set_ground_reuse(bool on);
+extern int   md_settings_get_ground_reuse_period();
+extern void  md_settings_set_ground_reuse_period(int p);   // #191: 4 / 8 / 16
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
 extern void  md_settings_set_fxaa(bool on);   // #180: FXAA 3.11 (Kenshi's parameters), default off (owner 16.10)
@@ -75,6 +77,7 @@ static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, 
 static float dyn_scale_of(int m) { return m == 1 ? 0.75f : (m == 2 ? 0.5f : 0.f); }
 static int   s_set_light     = 2;      // "lgt": lighting (#140), Kenshi L2 by default
 static bool  s_set_reuse     = true;   // "gru": ground shading reuse (#163), on by default
+static int   s_set_reuse_period = 16;  // "grp": the ground is refreshed every 4 / 8 / 16 frames (#191, owner 19.10: default 16)
 static void  apply_res_mode() {
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
     md_settings_set_fsr1(s_set_res_mode >= 3 ? s_set_res_mode - 2 : 0, s_set_fsr1_sharp);   // 3..5 = FSR 1 Quality / Balanced / Performance
@@ -130,6 +133,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (rs >= 0.5f && rs <= 1.f) s_set_res_scale = rs;
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
+        if (strstr(buf, "\"grp\"")) { s_set_reuse_period = (int)f3_parse_f(buf, "\"grp\""); if (s_set_reuse_period != 4 && s_set_reuse_period != 8) s_set_reuse_period = 16; }
         if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
         if (strstr(buf, "\"fxaa\"")) s_set_fxaa = f3_parse_f(buf, "\"fxaa\"") != 0.f;
         if (strstr(buf, "\"td\"")) { s_set_tdetail = f3_parse_f(buf, "\"td\""); if (s_set_tdetail < 0.f || s_set_tdetail > 1.f) s_set_tdetail = 1.f; }
@@ -169,7 +173,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -180,7 +184,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
         s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif, s_set_dyn,
-        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres);
+        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period);
     fclose(f);
 }
 
@@ -199,10 +203,10 @@ void EditorCore::Init() {
     {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
-        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { apply_res_mode(); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_ground_reuse_period(s_set_reuse_period); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
             md_settings_set_fxaa(s_set_fxaa); md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh); md_settings_set_vsync(s_set_vsync); md_settings_set_view_distance(s_set_vdist); md_settings_set_ground_aniso(kAnisoLv[s_set_ga]);
             if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
-        else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_light = md_settings_get_lighting(); }
+        else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_reuse_period = md_settings_get_ground_reuse_period(); s_set_light = md_settings_get_lighting(); }
     }
 #endif
     f3_det_scene = det6[0];  f3_det_ai    = det6[1]; f3_det_anim  = det6[2];
@@ -501,7 +505,12 @@ void EditorCore::Update(float dt) {
                     ImGui::SameLine();
                     ImGui::TextUnformatted("Terrain Chunk Size");
                     ImGui::TextDisabled("applies after a restart; keep it with Save config");
-                    if (ImGui::Checkbox("Ground reuse (faster, 1 frame history)##gru", &s_set_reuse)) md_settings_set_ground_reuse(s_set_reuse);
+                    if (ImGui::Checkbox("Ground reuse (faster, reuses the previous frames)##gru", &s_set_reuse)) md_settings_set_ground_reuse(s_set_reuse);
+                    {
+                        static const char* kGrp[] = { "every 4 frames (sharpest)", "every 8 frames", "every 16 frames (default, fastest)" };
+                        int gi = s_set_reuse_period == 4 ? 0 : (s_set_reuse_period == 8 ? 1 : 2);
+                        if (ImGui::Combo("Ground refresh##grp", &gi, kGrp, 3)) { s_set_reuse_period = gi == 0 ? 4 : (gi == 1 ? 8 : 16); md_settings_set_ground_reuse_period(s_set_reuse_period); }
+                    }
                     {
                         static const char* kFif[] = { "1 (lowest latency)", "2 (default)", "3" };
                         int fi = s_set_fif - 1;
