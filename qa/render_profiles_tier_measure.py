@@ -78,8 +78,7 @@ def write_render_settings(tier):
         "passes": {
             "tiles_2d": True, "npc_sprites": True, "world_3d": True,
             "overlay": True,
-            "ssao": True, "deferred_ambient": True, "motion_blur": False,
-            "cas_sharpening": True, "evsm_shadow": True,
+            "cas_sharpening": True,
         },
     }
     RENDER_SETTINGS_PATH.write_text(json.dumps(cfg, indent=2))

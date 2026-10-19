@@ -27,7 +27,6 @@ static void s_register_cvars() {
     CVarRegistry::Get().RegisterFloat("shadow_distance", &gs.shadow_distance);
     CVarRegistry::Get().RegisterFloat("resolution_scale", &gs.resolution_scale);
     CVarRegistry::Get().RegisterFloat("ibl_intensity", &gs.ibl_intensity);
-    CVarRegistry::Get().RegisterBool("ssao_enabled", &gs.ssao_enabled);
 }
 
 void EditorConsole::Init() {
