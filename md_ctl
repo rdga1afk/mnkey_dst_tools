@@ -36,6 +36,14 @@ EDITOR_CMD_DIR     = REPO_ROOT / "tmp_" / "editor_cmd"
 
 SUBMODULES = ["engine", "tools"]
 
+# Scenarios and gates run on a copy of the fixture registry (MD_WORLD_REGISTRY) and never read or write the player's game/data/world_registry.txt (#185)
+_REG_FIXTURE = REPO_ROOT / "tests" / "gates" / "data" / "world_registry_gate.txt"
+if "MD_WORLD_REGISTRY" not in os.environ and _REG_FIXTURE.is_file():
+    _reg_copy = REPO_ROOT / "temp_" / "md_world_registry.txt"
+    _reg_copy.parent.mkdir(exist_ok=True)
+    shutil.copyfile(_REG_FIXTURE, _reg_copy)
+    os.environ["MD_WORLD_REGISTRY"] = str(_reg_copy)
+
 
 def _run_id() -> str:
     return time.strftime("%Y%m%d_%H%M%S")
