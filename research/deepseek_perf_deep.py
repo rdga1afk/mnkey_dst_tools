@@ -7,6 +7,8 @@ Budget : hard USD limit from the ACTUAL usage fields; state is kept in temp_/per
 Usage  : python3 tools/research/deepseek_perf_deep.py [--stage A|B|C|D|all] [--budget-usd 28] [--dry-run]
 """
 import argparse
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import json
 import re
@@ -112,29 +114,35 @@ def stage_a(key, m, pre, a):
     if FINDINGS.exists():
         for l in FINDINGS.read_text().splitlines():
             try:
-                done.add((json.loads(l)["_file"], json.loads(l)["_part"]))
+                d = json.loads(l)
+                done.add((d["_file"], d["_part"]))
             except Exception:
                 pass
-    fl = files()
-    n = 0
-    for p in fl:
+    jobs = []
+    for p in files():
         rel = str(p.relative_to(REPO))
         for idx, (start, body) in enumerate(parts(p)):
-            if (rel, idx) in done:
-                continue
-            if not m.ok(0.6):
-                print(f"A: budget reached at {rel}", flush=True)
+            if (rel, idx) not in done:
+                jobs.append((rel, idx, start, body))
+    lock = threading.Lock()
+
+    def one(job):
+        rel, idx, start, body = job
+        with lock:
+            if not m.ok(0.6 * a.workers):
                 return
-            q = (f"Stage A. File {rel} (part {idx}, lines numbered, starting at line {start}). List findings: what costs milliseconds, memory or hitches, and why. "
-                 "Return ONLY a JSON array (maybe empty); each item: {\"line\": int, \"what\": str, \"why\": str, \"gain_ms_low\": float, \"gain_ms_high\": float, "
-                 "\"p99_effect\": str, \"look_risk\": \"none|near|far|both\", \"effort_h\": float, \"confidence\": \"low|medium|high\"}. "
-                 "Skip style issues and anything in FAILED_APPROACHES.\n\n" + body)
-            try:
-                text, c = ask(key, m, pre + q, 24000, "high")
-            except RuntimeError as e:
-                print(f"A: {rel} ERROR {e}", flush=True)
-                continue
-            items = parse_json_array(text)
+        q = (f"Stage A. File {rel} (part {idx}, lines numbered, starting at line {start}). List findings: what costs milliseconds, memory or hitches, and why. "
+             "Return ONLY a JSON array (maybe empty); each item: {\"line\": int, \"what\": str, \"why\": str, \"gain_ms_low\": float, \"gain_ms_high\": float, "
+             "\"p99_effect\": str, \"look_risk\": \"none|near|far|both\", \"effort_h\": float, \"confidence\": \"low|medium|high\"}. "
+             "Skip style issues and anything in FAILED_APPROACHES.\n\n" + body)
+        try:
+            text, usage = lt.call(key, SYSTEM, pre + q, 24000, "high")
+        except RuntimeError as e:
+            print(f"A: {rel} ERROR {e}", flush=True)
+            return
+        items = parse_json_array(text)
+        with lock:
+            c = m.add(usage)
             with FINDINGS.open("a") as f:
                 if items is None:
                     f.write(json.dumps({"_file": rel, "_part": idx, "_error": "unparsed", "raw": text[:2000]}) + "\n")
@@ -142,8 +150,10 @@ def stage_a(key, m, pre, a):
                     if isinstance(it, dict):
                         it["_file"], it["_part"] = rel, idx
                         f.write(json.dumps(it) + "\n")
-            n += 1
             print(f"A {rel}[{idx}]: ${c:.3f}, total ${m.spent:.2f}", flush=True)
+
+    with ThreadPoolExecutor(max_workers=a.workers) as ex:
+        list(ex.map(one, jobs))
 
 
 SUBSYSTEMS = [
@@ -216,6 +226,7 @@ def main():
     ap.add_argument("--in-rate", type=float, default=1.74)
     ap.add_argument("--out-rate", type=float, default=3.48)
     ap.add_argument("--cache-rate", type=float, default=0.0145)
+    ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     STATE.mkdir(parents=True, exist_ok=True)
