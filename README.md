@@ -48,6 +48,8 @@ ninja -C build monkey_dust_editor
 ```
 Python tools need Python 3, numpy and Pillow.
 
+**Prebuilt (since 2026-10-19):** CI (`.github/workflows/package.yml`) builds the editor, `kenshi_navmesh_extract` and the editor/character libraries against the engine release pinned in `ci/ENGINE_SHA`, in an Arch Linux container matched to the test laptop, and publishes them as GitHub Release `build-<sha12>`. The game repository fetches them with `scripts/fetch_prebuilt.sh tools`.
+
 ### Measuring the game
 ```bash
 export KENSHI_DIR="$HOME/.local/share/Steam/steamapps/common/Kenshi"
@@ -106,6 +108,8 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 
 ### Збірка
 Збирається з кореня репозиторію гри (потрібен рушій як сусідній підмодуль) — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
+
+**Готові збірки (з 19.10.2026):** CI (`.github/workflows/package.yml`) збирає редактор, `kenshi_navmesh_extract` і бібліотеки редактора / персонажів проти релізу рушія, закріпленого в `ci/ENGINE_SHA`, у контейнері Arch Linux з версіями тестового ноутбука, і публікує їх як GitHub Release `build-<sha12>`. Репозиторій гри завантажує їх командою `scripts/fetch_prebuilt.sh tools`.
 
 ### Заміри
 - Камера через `md.set_camera_pose_world(...)`, перевірка `md.terrain_pixel_fraction()` ≥ 0,8: продуктивність міряємо лише на кадрах, де переважає земля.
