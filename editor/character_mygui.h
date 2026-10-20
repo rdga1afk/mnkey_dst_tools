@@ -19,7 +19,9 @@ bool Visible();                            // DrawTab ran this frame
 const char* DebugCaption(const char* widget);
 bool DebugClick(const char* widget);
 bool DebugSetSlider(const char* slider_caption, int value);
-const char* DebugFirstSlider();            // name of the first slider row of the open tab (nullptr: none)
+const char* DebugFirstSlider();
+bool DebugListStep(int direction);         // the first ListScrollBar of the open tab (Face / Hair style), as its End (+1) / Start (-1) button
+const char* DebugType(const char* widget, const char* utf8);   // types into an EditBox (NameText) through the SDL text events; returns its caption            // name of the first slider row of the open tab (nullptr: none)
 void DebugDump(const char* path);
 
 } // namespace CharacterMyGui

@@ -33,6 +33,8 @@ struct State {
     float x = 0, y = 0, w = 0, h = 0;       // region on the window, pixels
     MyGUI::Widget* root = nullptr;
     MyGUI::ScrollView* content = nullptr;
+    MyGUI::TextBox *stats_l = nullptr, *stats_r = nullptr;   // RACE STATS rows: labels on the left, values on the right (the exe builds label / value rows in the empty StatsPanelText)
+    std::string stats_text;
     bool updating = false;                  // widgets are being set from the session: their events must not write back
 } g;
 
@@ -183,14 +185,15 @@ void Refresh() {
     SetText("GenderText", s.SingleGender() ? "-" : (s.gender() == Gender::Female ? "Female" : "Male"));
     SetText("CharIndexText", "1/1");
     SetText("DescriptionPanelText", s.Current().description);
-    std::string stats;
+    std::string labels, values;
+    if (!CharacterEditor::ConfirmMessage().empty()) { labels += CharacterEditor::ConfirmMessage() + "\n"; values += "\n"; }
     for (const md::character::StatRow& row : md::character::RaceStatRows(s.Current())) {
-        stats += row.label;
-        if (!row.value.empty()) stats += ": " + (row.bad ? Colour("BadBright") : std::string()) + row.value + (row.bad ? Colour("Main") : std::string());
-        stats += "\n";
+        labels += row.label + "\n";
+        values += (row.bad ? Colour("BadBright") : std::string()) + row.value + (row.bad ? Colour("Main") : std::string()) + "\n";
     }
-    if (!CharacterEditor::ConfirmMessage().empty()) stats = CharacterEditor::ConfirmMessage() + "\n" + stats;
-    SetText("StatsPanelText", stats);
+    if (g.stats_l) g.stats_l->setCaption(MyGUI::UString(labels));
+    if (g.stats_r) g.stats_r->setCaption(MyGUI::UString(values));
+    g.stats_text = labels;
     if (MyGUI::Button* c = WT<MyGUI::Button>("ClothesButton")) c->setStateSelected(CharacterEditor::Clothes());
     g.updating = false;
     ShowTabButtons();
@@ -235,6 +238,13 @@ bool Init() {
     if (MyGUI::Widget* panel = W("TabsPanelContent"))
         g.content = panel->createWidget<MyGUI::ScrollView>("Kenshi_ScrollViewEmptyLight", MyGUI::IntCoord(0, 0, panel->getWidth(), panel->getHeight()), MyGUI::Align::Stretch);
     g.root = W("Root");
+    if (MyGUI::Widget* sp = W("StatsPanelText")) {
+        g.stats_l = sp->createWidget<MyGUI::TextBox>("Kenshi_TextboxStandardText", MyGUI::IntCoord(0, 0, sp->getWidth(), sp->getHeight()), MyGUI::Align::Stretch);
+        g.stats_r = sp->createWidget<MyGUI::TextBox>("Kenshi_TextboxStandardText", MyGUI::IntCoord(0, 0, sp->getWidth(), sp->getHeight()), MyGUI::Align::Stretch);
+        g.stats_l->setTextAlign(MyGUI::Align::Left | MyGUI::Align::Top);
+        g.stats_r->setTextAlign(MyGUI::Align::Right | MyGUI::Align::Top);
+        g.stats_r->setNeedMouseFocus(false); g.stats_l->setNeedMouseFocus(false);
+    }
     if (g.content) g.content->setVisibleHScroll(false);   // rows are as wide as the view
     g.ok = g.content != nullptr;
     if (!g.ok) fprintf(stderr, "[CharacterMyGui] TabsPanelContent is not a ScrollView in the layout (type %s): the ImGui panel is used\n", W("TabsPanelContent") ? W("TabsPanelContent")->getTypeName().c_str() : "missing");
@@ -291,6 +301,7 @@ void Draw(SDL_GPUTexture* target, md::GpuCommandBufferHandle cmd) {
 
 const char* DebugCaption(const char* name) {
     static std::string s;
+    if (std::string(name) == "StatsPanelText") return g.stats_text.c_str();
     if (MyGUI::TextBox* b = WT<MyGUI::TextBox>(name)) { s = b->getCaption().asUTF8(); return s.c_str(); }
     if (MyGUI::EditBox* e = WT<MyGUI::EditBox>(name)) { s = e->getCaption().asUTF8(); return s.c_str(); }
     return nullptr;
@@ -320,6 +331,19 @@ const char* DebugFirstSlider() {
     return nullptr;
 }
 
+bool DebugListStep(int d) {
+    if (!g.content) return false;
+    for (size_t i = 0; i < g.content->getChildCount(); ++i)
+        if (auto* ls = g.content->getChildAt(i)->castType<mdui::ListScrollBar>(false)) { ls->step(d); return true; }
+    return false;
+}
+
+const char* DebugType(const char* widget, const char* utf8) {
+    static std::string s;
+    s = mdui::MyGuiTypeInto(widget, utf8, 0);
+    return s.c_str();
+}
+
 void DebugDump(const char* path) { mdui::MyGuiDumpWidgets(path); }
 
 } // namespace CharacterMyGui
@@ -336,6 +360,8 @@ const char* DebugCaption(const char*) { return nullptr; }
 bool DebugClick(const char*) { return false; }
 bool DebugSetSlider(const char*, int) { return false; }
 const char* DebugFirstSlider() { return nullptr; }
+bool DebugListStep(int) { return false; }
+const char* DebugType(const char*, const char*) { return nullptr; }
 void DebugDump(const char*) {}
 }
 #endif

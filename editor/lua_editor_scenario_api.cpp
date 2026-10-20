@@ -68,10 +68,14 @@ static int l_md_char_editor_digest(lua_State* L) {   // FNV-1a hash of all slide
         for (unsigned char c : b) { h ^= c; h *= 1099511628211ull; }
         ++n;
     }
+    const auto& se = CharacterEditor::GetSession();   // the list choices are part of the state: head, hair, beard, idle stance
+    for (size_t v : {se.head(), se.hair_index(), se.beard_index(), se.stance()}) { h ^= (uint64_t)v + 0x9e3779b97f4a7c15ull; h *= 1099511628211ull; }
     lua_pushinteger(L, (lua_Integer)(h >> 1)); lua_pushinteger(L, n);
     return 2;
 }
 static int l_md_char_ui_first_slider(lua_State* L) { const char* k = CharacterMyGui::DebugFirstSlider(); if (k) lua_pushstring(L, k); else lua_pushnil(L); return 1; }
+static int l_md_char_ui_list_step(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugListStep((int)luaL_checkinteger(L, 1))); return 1; }
+static int l_md_char_ui_type(lua_State* L) { const char* c = CharacterMyGui::DebugType(luaL_checkstring(L, 1), luaL_checkstring(L, 2)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_click(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugClick(luaL_checkstring(L, 1))); return 1; }
 static int l_md_char_ui_caption(lua_State* L) { const char* c = CharacterMyGui::DebugCaption(luaL_checkstring(L, 1)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_slider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugSetSlider(luaL_checkstring(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
@@ -225,6 +229,8 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_get", l_md_char_editor_get);
     sys.RegisterNamespaceFunction("char_editor_digest", l_md_char_editor_digest);
     sys.RegisterNamespaceFunction("char_ui_click", l_md_char_ui_click);
+    sys.RegisterNamespaceFunction("char_ui_list_step", l_md_char_ui_list_step);
+    sys.RegisterNamespaceFunction("char_ui_type", l_md_char_ui_type);
     sys.RegisterNamespaceFunction("char_ui_first_slider", l_md_char_ui_first_slider);
     sys.RegisterNamespaceFunction("char_ui_caption", l_md_char_ui_caption);
     sys.RegisterNamespaceFunction("char_ui_slider", l_md_char_ui_slider);
