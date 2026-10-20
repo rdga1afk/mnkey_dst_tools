@@ -139,8 +139,8 @@ target_link_libraries(monkey_dust_editor PRIVATE
     $<$<BOOL:${USE_GRANITE}>:Vulkan::Vulkan>
 )
 # #192: Characters tab on the original Kenshi window (MyGUI); the library is built by the engine when MD_MYGUI is ON
-if(TARGET monkey_dust_mygui)
-    target_link_libraries(monkey_dust_editor PRIVATE monkey_dust_mygui)
+if(TARGET monkey_dust_mygui OR TARGET monkey_dust::mygui)   # in-tree engine (MD_MYGUI=ON) or the prebuilt package that carries monkey_dust::mygui
+    target_link_libraries(monkey_dust_editor PRIVATE $<IF:$<TARGET_EXISTS:monkey_dust_mygui>,monkey_dust_mygui,monkey_dust::mygui>)
     target_compile_definitions(monkey_dust_editor PRIVATE MD_CHARACTER_MYGUI=1)
 endif()
 target_include_directories(monkey_dust_editor PRIVATE
