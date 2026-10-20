@@ -74,7 +74,6 @@ public:
     // Hair colour of the appearance values (Hair Colour / Hair Saturation / Hair Brightness, x 0.01 as HSB), RGB 0..1.
     std::array<float, 3> HairRgb() const;
     const md::fcs::GameDataContainer& Data() const { return data_; }
-    const std::vector<EditorLimits>& AllLimits() const { return limits_; }
     const md::KenshiResources& Resources() const { return res_; }
     const std::string& KenshiDir() const { return dir_; }
 
