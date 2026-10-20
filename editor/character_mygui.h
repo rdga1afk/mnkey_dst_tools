@@ -20,6 +20,7 @@ const char* DebugCaption(const char* widget);
 bool DebugClick(const char* widget);
 bool DebugSetSlider(const char* slider_caption, int value);
 const char* DebugFirstSlider();
+void DebugPointer(bool visible);       // shows / hides the MyGUI mouse pointer (scenarios hide it)
 bool DebugDialog(const char* file);   // is the IMPORT/EXPORT dialog open; sets its file name field when file is non-empty
 const char* DebugSliderKey(int n);
 int DebugCharIndex(int set_count);   // CHANGE CHARACTER: set_count > 0 sets the number of characters (the editor has 1); returns the current index

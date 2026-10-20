@@ -157,6 +157,7 @@ bool EditorScreenshot_CaptureAndSubmit(md::GpuDeviceHandle dev, md::GpuCommandBu
 }
 
 bool EditorScreenshot_WriteRGBA(const void* rgba, uint32_t w, uint32_t h, const char* out_path) {
+    stbi_write_png_compression_level = 1;   // lossless either way; the editor gates write hundreds of frames
     int ok = stbi_write_png(out_path, (int)w, (int)h, 4, rgba, (int)(w * 4));
     if (!ok) {
         fprintf(stderr, "[EditorScreenshot] stbi_write_png failed: %s\n", out_path);

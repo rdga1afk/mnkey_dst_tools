@@ -333,7 +333,8 @@ int main(int argc, char** argv) {
 
         // Frame cap — editor targets 60 fps; iGPU shares cooling with CPU.
         // --fast skips this entirely (scenario mode wants max throughput).
-        if (!(scenario_cfg.active && scenario_cfg.fast)) {
+        extern bool g_editor_uncapped;
+        if (!(scenario_cfg.active && scenario_cfg.fast) && !g_editor_uncapped) {
             static Uint64 s_prev_ns = 0;
             static constexpr Uint64 TARGET_NS = 1000000000ULL / 60;
             Uint64 now_ns = SDL_GetTicksNS();

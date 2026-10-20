@@ -396,6 +396,8 @@ const char* DebugSliderKey(int n) {   // key of the n-th (1-based) value slider 
 
 int DebugCharIndex(int set_count) { if (set_count > 0) { g.char_count = set_count; g.char_index = 0; } return g.char_index; }
 
+void DebugPointer(bool visible) { if (g.ok) MyGUI::PointerManager::getInstance().setVisible(visible); }   // scenarios: the real mouse must not draw an arrow into a frame
+
 bool DebugDialog(const char* file) {   // the open IMPORT/EXPORT dialog: its file name field takes `file` (nil = only report whether the dialog is open)
     if (dlg.roots.empty()) return false;
     if (file && *file) SetText("Dlg_EditFileName", file);
@@ -461,6 +463,7 @@ bool DebugClick(const char*) { return false; }
 const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
+void DebugPointer(bool) {}
 bool DebugSetSlider(const char*, int) { return false; }
 const char* DebugFirstSlider() { return nullptr; }
 bool DebugListStep(int) { return false; }
