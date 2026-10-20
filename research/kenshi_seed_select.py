@@ -30,6 +30,16 @@ MARKERS = {
 }
 
 
+# #188 (coordinator 20.10): a callee whose only calls are allocation / memory moves is a container operation (std::vector / map / string template instance), not game logic: marked `stl?`, not sent.
+ALLOC = {"operator_new", "operator_delete", "operator_new__", "operator_delete__", "memmove", "memcpy", "memset", "malloc", "free", "calloc", "realloc", "_aligned_free", "_aligned_malloc",
+         "_CxxThrowException", "std::_Xlength_error", "std::_Xout_of_range", "Ogre::NedPoolingPolicy::allocateBytes", "Ogre::NedPoolingPolicy::deallocateBytes"}
+
+
+def looks_stl(f):
+    non = [c for c in f["callees"] if c not in ALLOC and not c.startswith(("thunk_FUN_",))]
+    return f["chars"] < 2500 and not non and any(c in ALLOC for c in f["callees"])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--index", default=str(REPO / "temp_/kenshi_fn_index.jsonl"))
@@ -113,6 +123,7 @@ def main():
             return modmap.get(f["addr"].lower().rjust(9, "0")) == a.only_module
         return a.only_module == "game" and not re.match(r"(Ogre::|MyGUI::|hk|std::|boost::|NX|Px|AK)", f["name"])
 
+    stl_filtered = 0
     # 3. expansion along the call graph
     frontier = set(why)
     for hop in range(1, a.hops + 1):
@@ -121,6 +132,9 @@ def main():
             for c in by_name[nm]["callees"]:
                 cf = by_name.get(c)
                 if cf and c not in why and cf["chars"] <= a.max_chars and (not a.roots or in_module(cf)):
+                    if looks_stl(cf):
+                        stl_filtered += 1
+                        continue
                     why[c] = ("callee", hop)
                     nxt.add(c)
         frontier = nxt
@@ -144,7 +158,7 @@ def main():
             fh.write(json.dumps({"name": nm, "addr": f["addr"], "chars": f["chars"], "send_chars": sendchars, "why": w, "hop": hop, "summary_only": big and w == "callee"}) + "\n")
     toks = chars / 3.5
     usd = toks * a.in_rate / 1e6 + len(why) * a.out_tokens_per_fn * a.out_rate / 1e6
-    print(json.dumps({"addr_seeds_found": len(found), "addr_seeds_not_function_entries": len(missing), "owner_functions_added": owners, "marker_seeds": len(hits), "total_functions": len(why),
+    print(json.dumps({"addr_seeds_found": len(found), "addr_seeds_not_function_entries": len(missing), "owner_functions_added": owners, "marker_seeds": len(hits), "total_functions": len(why), "stl?_filtered": stl_filtered,
                       "whole": whole, "summary_only": summary_only, "by_kind": kinds, "input_tokens_est": int(toks),
                       "est_usd_no_cache": round(usd, 2), "rates": [a.in_rate, a.out_rate, a.out_tokens_per_fn]}, indent=1))
 
