@@ -17,6 +17,8 @@ class Session {
 public:
     // Reads the install in `kenshi_dir`: merged FCS data, editor limits, resource index. False + `error` when something is missing.
     bool Load(const std::string& kenshi_dir, std::string& error);
+    // The same from records and limits built in memory (the synthetic fixture of the CI tests: no Kenshi files); no resource index.
+    bool LoadFromData(md::fcs::GameDataContainer data, std::vector<EditorLimits> limits, std::string& error);
     bool Loaded() const { return loaded_; }
 
     // RACE list: groups that have at least one playable race.
@@ -78,6 +80,7 @@ public:
 
 private:
     static void Reset(const Config& c, Appearance& a) { md::character::Reset(c, a); }
+    bool Start(std::string& error);     // races, RACE list, first selection (shared by Load / LoadFromData)
     void Refresh();                     // subraces, limits config and default values after a selection change
 
     bool loaded_ = false;

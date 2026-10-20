@@ -13,6 +13,12 @@ add_library(md_character STATIC
 target_include_directories(md_character PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor/character)
 target_link_libraries(md_character PUBLIC monkey_dust::engine)
 
+# CI test of the editor logic on a synthetic install (no Kenshi files): ninja md_session_synthetic_test && ctest -R session_synthetic
+add_executable(md_session_synthetic_test tests/session_synthetic_test.cpp ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp)
+target_link_libraries(md_session_synthetic_test PRIVATE md_character)
+set_target_properties(md_session_synthetic_test PROPERTIES CXX_STANDARD 17)
+add_test(NAME session_synthetic COMMAND md_session_synthetic_test)
+
 # ── #189 B: libraries shared by the game and the editor ───────────────────────────────────────────────────────────────────────────────────────────
 # Built here (or prebuilt by this repo's CI as a package, MonkeyDustTools): the game (private main repo) links them instead of compiling ~30 ImGui / panel
 # translation units itself. md_ui_third_party = Dear ImGui + backends + its extensions; md_game_panels = the editor panels as the game embeds them

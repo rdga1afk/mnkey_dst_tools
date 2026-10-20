@@ -8,9 +8,18 @@ bool Session::Load(const std::string& kenshi_dir, std::string& error) {
     loaded_ = false; dir_ = kenshi_dir; data_ = md::fcs::GameDataContainer(); limits_.clear(); group_ids_.clear();
     md::fcs::Install inst(kenshi_dir); md::fcs::LoadOrder order; md::fcs::Error fe;
     if (!inst.LoadOrderFor(order, fe) || !data_.Load(order, fe)) { error = "FCS: " + fe.Message(); return false; }
-    races_ = LoadRaces(data_);
     if (!LoadEditorLimitsDir(kenshi_dir + "/data/editor", limits_, error)) return false;
     res_.Index(kenshi_dir);
+    return Start(error);
+}
+
+bool Session::LoadFromData(md::fcs::GameDataContainer data, std::vector<EditorLimits> limits, std::string& error) {
+    loaded_ = false; dir_.clear(); data_ = std::move(data); limits_ = std::move(limits); group_ids_.clear();
+    return Start(error);
+}
+
+bool Session::Start(std::string& error) {
+    races_ = LoadRaces(data_);
     for (size_t i = 0; i < races_.groups.size(); ++i) if (!races_.Subraces(races_.groups[i]).empty()) group_ids_.push_back(i);
     // RACE list order: the cycle of the ▶ button in the original editor's video frames (Skeleton, Hive, Shek, Human); other groups follow in file order.
     // НЕВІДОМО (#159): the data has no order field; the exe's list order is not found. The editor starts on Human.
