@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ARCH_DATE: "2026/09/30"   # keep equal to engine/.github/workflows/package.yml (bump with the laptop's pacman -Syu)
-  EXPECT: "clang 22.1.8-1|gcc-libs 16.2.1+r23+gd564253eb6c8-1|glibc 2.44+r50+g1848099f063e-1|sdl3 3.4.16-1|lua54 5.4.9-1|cmake 4.4.3-2"
+  ARCH_DATE: "2026/10/19"   # keep equal to engine/.github/workflows/package.yml (bump with the laptop's pacman -Syu)
+  EXPECT: "clang 23.1.3-3|gcc-libs 16.2.1+r23+gd564253eb6c8-1|glibc 2.44+r50+g1848099f063e-1|sdl3 3.4.18-1|lua54 5.4.9-1|cmake 4.4.4-1"
   ENGINE_REPO: rdga1afk/mnkey_dst_engine
 
 jobs:
@@ -76,7 +76,8 @@ jobs:
         run: |
           cmake -S ws -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DMONKEY_DUST_EDITOR=ON -DMD_MARCH=skylake -DMD_ENGINE_PREBUILT=$PWD/pkg
-          ninja -C build monkey_dust_editor kenshi_navmesh_extract md_ui_third_party md_game_panels md_character
+          ninja -C build monkey_dust_editor kenshi_navmesh_extract md_ui_third_party md_game_panels md_character md_session_synthetic_test
+          ctest --test-dir build -R session_synthetic --output-on-failure   # #185: editor logic on a synthetic install, no Kenshi files
           ccache -s | head -6
 
       - name: Archive
