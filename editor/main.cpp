@@ -28,6 +28,7 @@
 #include "editor_world_panel.h"
 #include "editor_3d_bridge.h"
 #include "editor_char_preview.h"
+#include "character_mygui.h"
 #include "character_editor.h"
 #include "editor_layout.h"
 #include "bug_capture.h"
@@ -369,6 +370,7 @@ int main(int argc, char** argv) {
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
                 ImGui_ImplSDL3_ProcessEvent(&ev);
+                CharacterMyGui::OnEvent(ev);
                 if (ev.type == SDL_EVENT_QUIT)
                     _sdl3_input::s_quit = true;
                 if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat) {
@@ -445,7 +447,12 @@ int main(int argc, char** argv) {
                 s_charpreview_active = true;
                 DrawDockableTab("Characters", CharacterEditor::g_detached, CharacterEditor::g_win_pos,
                                  CharacterEditor::g_win_size, toolbar_h, 8.f,
-                                 [&]() { CharacterEditor::Draw(false); });
+                                 [&]() {
+                                     // the original Kenshi window (MyGUI) is the default; the ImGui panel stays as the fallback (no MyGUI in the build, MD_CHAR_UI=imgui, or the install unusable)
+                                     static const bool s_imgui_only = getenv("MD_CHAR_UI") && strcmp(getenv("MD_CHAR_UI"), "imgui") == 0;
+                                     const ImVec2 a = ImGui::GetContentRegionAvail();
+                                     if (s_imgui_only || !CharacterMyGui::DrawTab(a.x, a.y)) CharacterEditor::Draw(false);
+                                 });
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Inspector")) { s_active_tab = 7;
@@ -486,6 +493,7 @@ int main(int argc, char** argv) {
             // by the ImGui::Image calls already recorded above via DrawImGui).
             if (s_world3d_was_active) WorldEditor3D_SDLGPU::RenderFrame(cmd, dt, true);
             if (s_charpreview_active) CharPreviewSDLGPU::RenderFrame(cmd);
+            if (s_charpreview_active) CharacterMyGui::Prepare(cmd);
 
             // 2. Acquire swapchain + clear + ImGui
             uint32_t sw=0, sh=0;
@@ -507,6 +515,7 @@ int main(int argc, char** argv) {
                     SDL_GPURenderPass* irp=SDL_BeginGPURenderPass(cmd,&ict,1,nullptr);
                     if (irp) { ImGui_ImplSDLGPU3_RenderDrawData(dd,cmd,irp); SDL_EndGPURenderPass(irp); }
                 }
+                if (s_charpreview_active) CharacterMyGui::Draw(sc, cmd);   // the Kenshi window over the ImGui frame, clipped to its tab region
                 char shot_path[256];
                 if (EditorScreenshot_ConsumePending(shot_path, sizeof(shot_path))) {
                     // Captures the fully-composited frame (3D viewport + ImGui

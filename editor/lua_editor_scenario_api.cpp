@@ -5,6 +5,7 @@
 #include "editor_screenshot.h"
 #include "editor_char_preview.h"
 #include "character_editor.h"
+#include "character_mygui.h"
 #include "character/appearance_io.h"
 #include "character/session.h"
 #include <cstring>
@@ -52,6 +53,30 @@ static int l_md_char_editor_confirm(lua_State* L) {
     lua_pushboolean(L, CharacterEditor::ConfirmForScenario());
     return 1;
 }
+// The Kenshi window (MyGUI) of the Characters tab, as a user sees it: md.char_ui_click(widget) -> bool, md.char_ui_caption(widget) -> string|nil,
+// md.char_ui_slider(slider_name, value) -> bool (moves the slider of the open tab), md.char_ui_dump(path) (widget rectangles), md.char_ui_visible()
+static int l_md_char_editor_get(lua_State* L) {   // current value of a slider by name (nil when never set), "tab" is the UI tab 0..2 handled elsewhere
+    const auto& v = CharacterEditor::GetSession().Values().values; auto it = v.find(luaL_checkstring(L, 1));
+    if (it == v.end()) lua_pushnil(L); else lua_pushnumber(L, it->second);
+    return 1;
+}
+static int l_md_char_editor_digest(lua_State* L) {   // FNV-1a hash of all slider values (names and values) and how many values are set
+    uint64_t h = 1469598103934665603ull; int n = 0;
+    for (const auto& kv : CharacterEditor::GetSession().Values().values) {
+        for (char c : kv.first) { h ^= (unsigned char)c; h *= 1099511628211ull; }
+        const float v = kv.second; unsigned char b[4]; memcpy(b, &v, 4);
+        for (unsigned char c : b) { h ^= c; h *= 1099511628211ull; }
+        ++n;
+    }
+    lua_pushinteger(L, (lua_Integer)(h >> 1)); lua_pushinteger(L, n);
+    return 2;
+}
+static int l_md_char_ui_first_slider(lua_State* L) { const char* k = CharacterMyGui::DebugFirstSlider(); if (k) lua_pushstring(L, k); else lua_pushnil(L); return 1; }
+static int l_md_char_ui_click(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugClick(luaL_checkstring(L, 1))); return 1; }
+static int l_md_char_ui_caption(lua_State* L) { const char* c = CharacterMyGui::DebugCaption(luaL_checkstring(L, 1)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
+static int l_md_char_ui_slider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugSetSlider(luaL_checkstring(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
+static int l_md_char_ui_dump(lua_State* L) { CharacterMyGui::DebugDump(luaL_checkstring(L, 1)); return 0; }
+static int l_md_char_ui_visible(lua_State* L) { lua_pushboolean(L, CharacterMyGui::Visible()); return 1; }
 static int l_md_char_editor_import(lua_State* L) {
     std::string err;
     bool ok = md::character::ImportAppearance(CharacterEditor::GetSession(), luaL_checkstring(L, 1), err);
@@ -197,6 +222,14 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_export", l_md_char_editor_export);
     sys.RegisterNamespaceFunction("char_editor_import", l_md_char_editor_import);
     sys.RegisterNamespaceFunction("char_editor_confirm", l_md_char_editor_confirm);
+    sys.RegisterNamespaceFunction("char_editor_get", l_md_char_editor_get);
+    sys.RegisterNamespaceFunction("char_editor_digest", l_md_char_editor_digest);
+    sys.RegisterNamespaceFunction("char_ui_click", l_md_char_ui_click);
+    sys.RegisterNamespaceFunction("char_ui_first_slider", l_md_char_ui_first_slider);
+    sys.RegisterNamespaceFunction("char_ui_caption", l_md_char_ui_caption);
+    sys.RegisterNamespaceFunction("char_ui_slider", l_md_char_ui_slider);
+    sys.RegisterNamespaceFunction("char_ui_dump", l_md_char_ui_dump);
+    sys.RegisterNamespaceFunction("char_ui_visible", l_md_char_ui_visible);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
     sys.RegisterNamespaceFunction("editor_camera_pos",  l_md_editor_camera_pos);
     sys.RegisterNamespaceFunction("editor_terrain_op",  l_md_editor_terrain_op);

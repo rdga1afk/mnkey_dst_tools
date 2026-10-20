@@ -118,6 +118,33 @@ void SetTab(int tab) { g_tab = tab < 0 ? 0 : tab > 2 ? 2 : tab; }
 
 md::character::Session& GetSession() { return g_session; }
 
+// IMPORT / EXPORT path dialog (ImGui modal); opened by the buttons of either front end (this panel or the MyGUI window)
+void DrawIoPopup() {
+    if (g_io_open) {
+        if (!g_io_path[0] && g_io_mode == 2) snprintf(g_io_path, sizeof g_io_path, "character.bod2");
+        ImGui::OpenPopup("##io");
+        g_io_open = false; g_io_msg.clear();
+    }
+    if (ImGui::BeginPopupModal("##io", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+        ImGui::TextUnformatted(g_io_mode == 1 ? "IMPORT: path of a .bod2" : "EXPORT: path of the .bod2 to write");
+        ImGui::SetNextItemWidth(420.f);
+        ImGui::InputText("##path", g_io_path, sizeof g_io_path);
+        if (ImGui::Button("OK", {100.f, 0.f})) {
+            std::string err;
+            bool ok = g_io_mode == 1 ? md::character::ImportAppearance(g_session, g_io_path, err) : md::character::ExportAppearance(g_session, g_io_path, err);
+            if (ok) ImGui::CloseCurrentPopup(); else g_io_msg = err;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("CANCEL", {100.f, 0.f})) ImGui::CloseCurrentPopup();
+        if (!g_io_msg.empty()) ImGui::TextColored({0.85f, 0.42f, 0.36f, 1.f}, "%s", g_io_msg.c_str());
+        ImGui::EndPopup();
+    }
+}
+
+void OpenIoDialog(int mode) { g_io_mode = mode; g_io_open = true; }
+bool& Clothes() { return g_clothes; }
+std::string& ConfirmMessage() { return g_confirm_msg; }
+
 void Draw(bool) {
     if (!EnsureLoaded()) { ImGui::TextWrapped("%s", g_load_error.c_str()); return; }
     const ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -173,25 +200,7 @@ void Draw(bool) {
     ImGui::EndChild();
     ImGui::EndGroup();
 
-    if (g_io_open) {
-        if (!g_io_path[0] && g_io_mode == 2) snprintf(g_io_path, sizeof g_io_path, "character.bod2");
-        ImGui::OpenPopup("##io");
-        g_io_open = false; g_io_msg.clear();
-    }
-    if (ImGui::BeginPopupModal("##io", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
-        ImGui::TextUnformatted(g_io_mode == 1 ? "IMPORT: path of a .bod2" : "EXPORT: path of the .bod2 to write");
-        ImGui::SetNextItemWidth(420.f);
-        ImGui::InputText("##path", g_io_path, sizeof g_io_path);
-        if (ImGui::Button("OK", {100.f, 0.f})) {
-            std::string err;
-            bool ok = g_io_mode == 1 ? md::character::ImportAppearance(g_session, g_io_path, err) : md::character::ExportAppearance(g_session, g_io_path, err);
-            if (ok) ImGui::CloseCurrentPopup(); else g_io_msg = err;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("CANCEL", {100.f, 0.f})) ImGui::CloseCurrentPopup();
-        if (!g_io_msg.empty()) ImGui::TextColored({0.85f, 0.42f, 0.36f, 1.f}, "%s", g_io_msg.c_str());
-        ImGui::EndPopup();
-    }
+    DrawIoPopup();
 
     // ── centre: the 3D preview (it moves the cursor itself, so every column is placed by screen position) ──
     ImGui::SetCursorScreenPos({origin.x + left_w + sp, origin.y});

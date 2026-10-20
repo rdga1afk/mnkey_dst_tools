@@ -138,6 +138,11 @@ target_link_libraries(monkey_dust_editor PRIVATE
     $<IF:$<BOOL:${MD_STATIC_DEPS}>,SDL3::SDL3-static,SDL3::SDL3>
     $<$<BOOL:${USE_GRANITE}>:Vulkan::Vulkan>
 )
+# #192: Characters tab on the original Kenshi window (MyGUI); the library is built by the engine when MD_MYGUI is ON
+if(TARGET monkey_dust_mygui)
+    target_link_libraries(monkey_dust_editor PRIVATE monkey_dust_mygui)
+    target_compile_definitions(monkey_dust_editor PRIVATE MD_CHARACTER_MYGUI=1)
+endif()
 target_include_directories(monkey_dust_editor PRIVATE
     editor/
     ${CMAKE_SOURCE_DIR}/tools/third_party/imgui
