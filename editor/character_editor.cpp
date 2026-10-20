@@ -118,6 +118,10 @@ void SetTab(int tab) { g_tab = tab < 0 ? 0 : tab > 2 ? 2 : tab; }
 
 md::character::Session& GetSession() { return g_session; }
 
+bool ApplyIo(int mode, const char* path, std::string& err) {
+    return mode == 1 ? md::character::ImportAppearance(g_session, path, err) : md::character::ExportAppearance(g_session, path, err);
+}
+
 // IMPORT / EXPORT path dialog (ImGui modal); opened by the buttons of either front end (this panel or the MyGUI window)
 void DrawIoPopup() {
     if (g_io_open) {
@@ -131,7 +135,7 @@ void DrawIoPopup() {
         ImGui::InputText("##path", g_io_path, sizeof g_io_path);
         if (ImGui::Button("OK", {100.f, 0.f})) {
             std::string err;
-            bool ok = g_io_mode == 1 ? md::character::ImportAppearance(g_session, g_io_path, err) : md::character::ExportAppearance(g_session, g_io_path, err);
+            bool ok = ApplyIo(g_io_mode, g_io_path, err);
             if (ok) ImGui::CloseCurrentPopup(); else g_io_msg = err;
         }
         ImGui::SameLine();

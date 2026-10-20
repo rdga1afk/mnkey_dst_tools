@@ -14,6 +14,7 @@ md::character::Session& GetSession();
 bool EnsureLoaded();                       // loads the install (KENSHI_DIR) on the first call; false when it is missing
 void OpenIoDialog(int mode);               // 1 IMPORT, 2 EXPORT: opens the path dialog; DrawIoPopup() must run every frame inside an ImGui window
 void DrawIoPopup();
+bool ApplyIo(int mode, const char* path, std::string& err);   // what OK of the dialog does: 1 IMPORT, 2 EXPORT (also for the behaviour tests)
 bool& Clothes();                           // CLOTHES state
 std::string& ConfirmMessage();             // result of the last CONFIRM     // scenarios (Lua) set slider values through it
 }

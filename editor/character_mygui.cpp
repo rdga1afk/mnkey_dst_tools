@@ -97,9 +97,9 @@ void BuildContent() {
     const Category* cat = cfg ? cfg->Find(kCategory[g.tab]) : nullptr;
     g.updating = true;
     if (g.tab == 0 && s.StanceCount()) {
-        auto* sl = AddSlider("Idle stance", "", 1, int(s.StanceCount()), int(s.stance()) + 1, y);
+        auto* sl = AddSlider("Idle stance", "Idle stance", 1, int(s.StanceCount()), int(s.stance()) + 1, y);
         sl->eventScrollChangePosition.clear();
-        sl->eventScrollChangePosition += MyGUI::newDelegate(+[](mdui::Slider*, int pos) { if (!g.updating) g.s->SelectStance(pos - 1 - int(g.s->stance())); });
+        sl->eventScrollChangePosition += MyGUI::newDelegate(+[](mdui::Slider*, int pos) { if (!g.updating) g.s->SelectStance(pos - 1); });
     }
     if (g.tab == 1 && s.HeadCount()) {
         auto* ls = static_cast<mdui::ListScrollBar*>(AddRow("ListScrollBar", "Kenshi_ListSlider", 55, y));
@@ -318,7 +318,7 @@ bool DebugSetSlider(const char* caption, int value) {
     if (!g.content) return false;
     for (size_t i = 0; i < g.content->getChildCount(); ++i)
         if (auto* sl = g.content->getChildAt(i)->castType<mdui::Slider>(false))
-            if (sl->getUserString("slider") == caption) { sl->setScrollPosition(value); g.s->SetValue(caption, float(value)); return true; }
+            if (sl->getUserString("slider") == caption) { sl->setScrollPosition(value); sl->eventScrollChangePosition(sl, value); return true; }   // the slider's own handler runs (generic or Idle stance)
     return false;
 }
 
@@ -335,6 +335,18 @@ bool DebugListStep(int d) {
     if (!g.content) return false;
     for (size_t i = 0; i < g.content->getChildCount(); ++i)
         if (auto* ls = g.content->getChildAt(i)->castType<mdui::ListScrollBar>(false)) { ls->step(d); return true; }
+    return false;
+}
+
+bool DebugMultiSlider(int index, int value) {   // the hair colour MultiSlider: sub-slider `index`, as moved by the user
+    if (!g.content) return false;
+    for (size_t i = 0; i < g.content->getChildCount(); ++i)
+        if (auto* ms = g.content->getChildAt(i)->castType<mdui::MultiSlider>(false)) {
+            if (index < 0 || size_t(index) >= ms->getSlidersCount()) return false;
+            mdui::Slider* sl = ms->getSlider(size_t(index));
+            sl->setScrollPosition(value); ms->eventScrollChangePosition(ms, sl, value, index);
+            return true;
+        }
     return false;
 }
 
@@ -361,6 +373,7 @@ bool DebugClick(const char*) { return false; }
 bool DebugSetSlider(const char*, int) { return false; }
 const char* DebugFirstSlider() { return nullptr; }
 bool DebugListStep(int) { return false; }
+bool DebugMultiSlider(int, int) { return false; }
 const char* DebugType(const char*, const char*) { return nullptr; }
 void DebugDump(const char*) {}
 }

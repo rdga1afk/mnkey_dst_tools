@@ -73,6 +73,12 @@ static int l_md_char_editor_digest(lua_State* L) {   // FNV-1a hash of all slide
     lua_pushinteger(L, (lua_Integer)(h >> 1)); lua_pushinteger(L, n);
     return 2;
 }
+// md.char_io(mode, path) -> ok, err: what OK of the IMPORT (1) / EXPORT (2) dialog does
+static int l_md_char_ui_multislider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugMultiSlider((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
+static int l_md_char_io(lua_State* L) {
+    std::string err; bool ok = CharacterEditor::ApplyIo((int)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), err);
+    lua_pushboolean(L, ok); lua_pushstring(L, err.c_str()); return 2;
+}
 static int l_md_char_ui_first_slider(lua_State* L) { const char* k = CharacterMyGui::DebugFirstSlider(); if (k) lua_pushstring(L, k); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_list_step(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugListStep((int)luaL_checkinteger(L, 1))); return 1; }
 static int l_md_char_ui_type(lua_State* L) { const char* c = CharacterMyGui::DebugType(luaL_checkstring(L, 1), luaL_checkstring(L, 2)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
@@ -234,6 +240,8 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_ui_first_slider", l_md_char_ui_first_slider);
     sys.RegisterNamespaceFunction("char_ui_caption", l_md_char_ui_caption);
     sys.RegisterNamespaceFunction("char_ui_slider", l_md_char_ui_slider);
+    sys.RegisterNamespaceFunction("char_io", l_md_char_io);
+    sys.RegisterNamespaceFunction("char_ui_multislider", l_md_char_ui_multislider);
     sys.RegisterNamespaceFunction("char_ui_dump", l_md_char_ui_dump);
     sys.RegisterNamespaceFunction("char_ui_visible", l_md_char_ui_visible);
     sys.RegisterNamespaceFunction("editor_select_zone", l_md_editor_select_zone);
