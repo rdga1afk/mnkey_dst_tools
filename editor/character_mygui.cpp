@@ -353,20 +353,17 @@ bool DrawTab(float w, float h) {
 
 void OnEvent(const SDL_Event& e) { if (g.visible && g.ok) mdui::MyGuiEvent(e); }
 
-void Prepare(md::GpuCommandBufferHandle cmd) { if (g.visible && g.ok) mdui::MyGuiPrepare(cmd); }
+bool g_draw_enabled = true;   // measurement only (ABBA of the UI cost): off = the window is not drawn, its logic still runs
 
-void Draw(SDL_GPUTexture* target, md::GpuCommandBufferHandle cmd) {
-    if (!(g.visible && g.ok) || !target) return;
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture = target; ct.load_op = SDL_GPU_LOADOP_LOAD; ct.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    if (!rp) return;
+void Prepare(md::GpuCommandBufferHandle cmd) { if (g.visible && g.ok && g_draw_enabled) mdui::MyGuiPrepare(cmd); }
+
+void Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd) {   // inside the ImGui pass (no pass of its own: a separate LOAD / STORE of the swapchain cost 0.4 ms on HD 520)
+    if (!(g.visible && g.ok && g_draw_enabled) || !rp) return;
     SDL_GPUViewport vp = {g.x, g.y, g.w, g.h, 0.f, 1.f};
     SDL_SetGPUViewport(rp, &vp);
     SDL_Rect sc = {int(g.x), int(g.y), int(g.w), int(g.h)};
     SDL_SetGPUScissor(rp, &sc);
     mdui::MyGuiDraw(rp, cmd);
-    SDL_EndGPURenderPass(rp);
 }
 
 const char* DebugCaption(const char* name) {
@@ -396,6 +393,7 @@ const char* DebugSliderKey(int n) {   // key of the n-th (1-based) value slider 
 
 int DebugCharIndex(int set_count) { if (set_count > 0) { g.char_count = set_count; g.char_index = 0; } return g.char_index; }
 
+void DebugDraw(bool on) { g_draw_enabled = on; }
 void DebugPointer(bool visible) { if (g.ok) MyGUI::PointerManager::getInstance().setVisible(visible); }   // scenarios: the real mouse must not draw an arrow into a frame
 
 bool DebugDialog(const char* file) {   // the open IMPORT/EXPORT dialog: its file name field takes `file` (nil = only report whether the dialog is open)
@@ -456,7 +454,7 @@ bool Available() { return false; }
 bool DrawTab(float, float) { return false; }
 void OnEvent(const SDL_Event&) {}
 void Prepare(md::GpuCommandBufferHandle) {}
-void Draw(SDL_GPUTexture*, md::GpuCommandBufferHandle) {}
+void Draw(SDL_GPURenderPass*, md::GpuCommandBufferHandle) {}
 bool Visible() { return false; }
 const char* DebugCaption(const char*) { return nullptr; }
 bool DebugClick(const char*) { return false; }
@@ -464,6 +462,7 @@ const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
 void DebugPointer(bool) {}
+void DebugDraw(bool) {}
 bool DebugSetSlider(const char*, int) { return false; }
 const char* DebugFirstSlider() { return nullptr; }
 bool DebugListStep(int) { return false; }

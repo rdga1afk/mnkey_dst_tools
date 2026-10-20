@@ -13,13 +13,14 @@ bool Available();                          // compiled in
 bool DrawTab(float w, float h);
 void OnEvent(const SDL_Event& e);          // keyboard / text events of the SDL pump
 void Prepare(md::GpuCommandBufferHandle cmd);                                   // before the render passes
-void Draw(SDL_GPUTexture* target, md::GpuCommandBufferHandle cmd);              // own LOAD pass over the swapchain, clipped to the tab region
+void Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd);               // inside the ImGui pass of the frame, viewport and scissor of the tab region
 bool Visible();                            // DrawTab ran this frame
 // scenarios / tests (no ImGui): widget caption by name, click a button by name, slider position
 const char* DebugCaption(const char* widget);
 bool DebugClick(const char* widget);
 bool DebugSetSlider(const char* slider_caption, int value);
 const char* DebugFirstSlider();
+void DebugDraw(bool on);               // measurement: the window is (not) drawn
 void DebugPointer(bool visible);       // shows / hides the MyGUI mouse pointer (scenarios hide it)
 bool DebugDialog(const char* file);   // is the IMPORT/EXPORT dialog open; sets its file name field when file is non-empty
 const char* DebugSliderKey(int n);

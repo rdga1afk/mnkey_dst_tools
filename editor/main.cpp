@@ -512,9 +512,8 @@ int main(int argc, char** argv) {
                     ict.texture=sc; ict.load_op=SDL_GPU_LOADOP_LOAD;
                     ict.store_op=SDL_GPU_STOREOP_STORE;
                     SDL_GPURenderPass* irp=SDL_BeginGPURenderPass(cmd,&ict,1,nullptr);
-                    if (irp) { ImGui_ImplSDLGPU3_RenderDrawData(dd,cmd,irp); SDL_EndGPURenderPass(irp); }
+                    if (irp) { ImGui_ImplSDLGPU3_RenderDrawData(dd,cmd,irp); if (s_charpreview_active) CharacterMyGui::Draw(irp, cmd); SDL_EndGPURenderPass(irp); }   // the Kenshi window over the ImGui frame, in the same pass, clipped to its tab region
                 }
-                if (s_charpreview_active) CharacterMyGui::Draw(sc, cmd);   // the Kenshi window over the ImGui frame, clipped to its tab region
                 char shot_path[256];
                 if (EditorScreenshot_ConsumePending(shot_path, sizeof(shot_path))) {
                     // Captures the fully-composited frame (3D viewport + ImGui

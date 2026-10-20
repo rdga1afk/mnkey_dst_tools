@@ -90,6 +90,7 @@ static int l_md_char_camera(lua_State* L) { float p, d, y; CharPreviewSDLGPU::Ge
 static int l_md_char_ui_pointer(lua_State* L) { CharacterMyGui::DebugPointer(lua_toboolean(L, 1)); return 0; }
 bool g_editor_uncapped = false;   // read by the frame cap in main.cpp
 static int l_md_editor_vsync(lua_State* L) { const bool on = lua_toboolean(L, 1); window_set_vsync(on ? 60 : 0); g_editor_uncapped = !on; return 0; }   // md.editor_vsync(on): off = no V-Sync and no 60 fps cap (the gates run the slider frames uncapped; a frame is waited for in ticks)
+static int l_md_char_ui_draw(lua_State* L) { CharacterMyGui::DebugDraw(lua_toboolean(L, 1)); return 0; }
 static int l_md_char_io(lua_State* L) {
     std::string err; bool ok = CharacterEditor::ApplyIo((int)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), err);
     lua_pushboolean(L, ok); lua_pushstring(L, err.c_str()); return 2;
@@ -256,6 +257,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_ui_caption", l_md_char_ui_caption);
     sys.RegisterNamespaceFunction("char_ui_slider", l_md_char_ui_slider);
     sys.RegisterNamespaceFunction("char_io", l_md_char_io);
+    sys.RegisterNamespaceFunction("char_ui_draw", l_md_char_ui_draw);
     sys.RegisterNamespaceFunction("editor_vsync", l_md_editor_vsync);
     sys.RegisterNamespaceFunction("char_ui_pointer", l_md_char_ui_pointer);
     sys.RegisterNamespaceFunction("char_camera", l_md_char_camera);
