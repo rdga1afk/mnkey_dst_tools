@@ -20,7 +20,7 @@ extern "C" {
 
 // ── md.editor_open_panel(name) ────────────────────────────────────────────────
 // Etap 4 scope: "3D World" and "Characters" force-select their tab (the
-// latter needs CharacterEditor::Draw to run once so the install is loaded). Other tab names
+// latter needs the tab to be drawn once so the install is loaded). Other tab names
 // are accepted (stored, no error) but do nothing yet; wire them the same
 // way if a future scenario needs them — don't pre-wrap every panel.
 static char s_forced_tab[64] = {};

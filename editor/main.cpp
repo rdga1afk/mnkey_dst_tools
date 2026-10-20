@@ -448,10 +448,8 @@ int main(int argc, char** argv) {
                 DrawDockableTab("Characters", CharacterEditor::g_detached, CharacterEditor::g_win_pos,
                                  CharacterEditor::g_win_size, toolbar_h, 8.f,
                                  [&]() {
-                                     // the original Kenshi window (MyGUI) is the default; the ImGui panel stays as the fallback (no MyGUI in the build, MD_CHAR_UI=imgui, or the install unusable)
-                                     static const bool s_imgui_only = getenv("MD_CHAR_UI") && strcmp(getenv("MD_CHAR_UI"), "imgui") == 0;
                                      const ImVec2 a = ImGui::GetContentRegionAvail();
-                                     if (s_imgui_only || !CharacterMyGui::DrawTab(a.x, a.y)) CharacterEditor::Draw(false);
+                                     if (!CharacterMyGui::DrawTab(a.x, a.y)) ImGui::TextWrapped("The character editor is the original Kenshi window (MyGUI): it needs a build with MD_MYGUI and a usable KENSHI_DIR.");
                                  });
                 ImGui::EndTabItem();
             }
