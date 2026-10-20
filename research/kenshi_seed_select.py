@@ -40,6 +40,10 @@ def main():
     ap.add_argument("--in-rate", type=float, default=1.74)
     ap.add_argument("--out-rate", type=float, default=3.48)
     ap.add_argument("--out-tokens-per-fn", type=int, default=450)
+    # #188 step 2 (per system, on demand): only the call tree of the given roots, restricted to one module of the exe map (scripts/exe_module_map.py)
+    ap.add_argument("--roots", default="", help="comma-separated function entries (14xxxxxxx): ONLY their call tree, no doc / marker seeds")
+    ap.add_argument("--module-map", default=str(REPO / "re/re_/kenshi_exe_modules.tsv"))
+    ap.add_argument("--only-module", default="game", help="with --roots: follow only callees of this module")
     a = ap.parse_args()
 
     fns = [json.loads(l) for l in open(a.index)]
@@ -47,8 +51,18 @@ def main():
     by_addr = {f["addr"].lower(): f for f in fns if f["addr"]}
     why = {}
 
+    modmap = {}
+    if a.roots:
+        for l in open(a.module_map):
+            t = l.rstrip("\n").split("\t")
+            if len(t) >= 2: modmap[t[0].lower().rjust(9, "0")] = t[1]
+        for r in a.roots.split(","):
+            f = by_addr.get(r.strip().lower().replace("0x", "").rjust(9, "0"))
+            if f: why[f["name"]] = ("root", 0)
+            else: print("root %s is not a function entry in the index" % r)
+
     # 1. address seeds from the docs
-    files = [REPO / "docs/research/EXE_PARITY_MAP.tsv"] + list((REPO / "re/re_docs/kenshi").glob("*.md")) + list((REPO / "docs/research").glob("*.md"))
+    files = [] if a.roots else [REPO / "docs/research/EXE_PARITY_MAP.tsv"] + list((REPO / "re/re_docs/kenshi").glob("*.md")) + list((REPO / "docs/research").glob("*.md"))
     found, missing = set(), set()
     for p in files:
         try:
@@ -72,11 +86,11 @@ def main():
             owners += 1
 
     # 2. string-marker seeds (one pass over the source)
-    ranges = sorted((f["start"], f["end"], f["name"]) for f in fns)
+    ranges = sorted((f["start"], f["end"], f["name"]) for f in fns) if not a.roots else []
     ri = 0
     hits = {}
     cur = None
-    with SRC.open(errors="replace") as fh:
+    with (open("/dev/null") if a.roots else SRC.open(errors="replace")) as fh:
         for n, line in enumerate(fh, 1):
             while ri < len(ranges) and ranges[ri][1] < n:
                 ri += 1
@@ -94,6 +108,11 @@ def main():
         if name not in why:
             why[name] = ("marker:" + "+".join(sorted(systems)), 0)
 
+    def in_module(f):   # named functions have no FUN_ address in the index: followed unless the name is plainly a library's
+        if f["addr"]:
+            return modmap.get(f["addr"].lower().rjust(9, "0")) == a.only_module
+        return a.only_module == "game" and not re.match(r"(Ogre::|MyGUI::|hk|std::|boost::|NX|Px|AK)", f["name"])
+
     # 3. expansion along the call graph
     frontier = set(why)
     for hop in range(1, a.hops + 1):
@@ -101,7 +120,7 @@ def main():
         for nm in frontier:
             for c in by_name[nm]["callees"]:
                 cf = by_name.get(c)
-                if cf and c not in why and cf["chars"] <= a.max_chars:
+                if cf and c not in why and cf["chars"] <= a.max_chars and (not a.roots or in_module(cf)):
                     why[c] = ("callee", hop)
                     nxt.add(c)
         frontier = nxt
