@@ -111,7 +111,6 @@ static int l_md_char_editor_import(lua_State* L) {
     return 1;
 }
 static int l_md_char_editor_view(lua_State* L) {
-    CharacterEditor::SetTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
     if (lua_gettop(L) >= 5) CharPreviewSDLGPU::SetCamera((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));

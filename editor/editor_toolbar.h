@@ -15,8 +15,5 @@ private:
 
     void DrawMenuBar();
     void DrawButtonBar();
-
-    char scene_path_[256] = "saves/scene.json";
-    bool show_path_popup_ = false;
 };
 #endif

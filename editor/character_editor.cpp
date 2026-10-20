@@ -19,8 +19,6 @@ ImVec2 g_win_size = {900.f, 640.f};
 using namespace md::character;
 namespace {
 Session g_session;
-int g_tab = 0;                    // 0 BODY, 1 FACE, 2 HAIR
-char g_name[48] = "";
 bool g_clothes = true;
 char g_io_path[512] = "";
 std::string g_confirm_msg;        // result of the last CONFIRM, shown in the RACE STATS panel header
@@ -34,7 +32,6 @@ bool Confirm() {
     return ok;
 }
 
-const char* kTabCategory[3] = {"Body", "Face", "Hair"};
 }
 
 // Loads the install (KENSHI_DIR) on the first call. False when it is missing: the tab then says so.
@@ -52,7 +49,6 @@ bool EnsureLoaded() {
 }
 
 bool ConfirmForScenario() { return Confirm(); }
-void SetTab(int tab) { g_tab = tab < 0 ? 0 : tab > 2 ? 2 : tab; }
 
 md::character::Session& GetSession() { return g_session; }
 

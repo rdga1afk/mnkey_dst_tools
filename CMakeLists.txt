@@ -46,7 +46,7 @@ add_library(md_game_panels STATIC
     fonts_embed.cpp
     editor/editor_core.cpp editor/editor_screenshot.cpp editor/editor_animation_panel.cpp editor/editor_camera_panel.cpp editor/editor_command_palette.cpp
     editor/editor_console.cpp editor/editor_flowgraph_panel.cpp editor/editor_gpu_profiler_panel.cpp editor/editor_hierarchy.cpp editor/editor_sequencer_panel.cpp
-    editor/editor_std_commands.cpp editor/editor_toolbar.cpp editor/editor_translator.cpp editor/editor_world_3d_sdlgpu.cpp)
+    editor/editor_std_commands.cpp editor/editor_toolbar.cpp editor/editor_world_3d_sdlgpu.cpp)
 target_compile_definitions(md_game_panels PUBLIC MONKEY_DUST_EDITOR DEBUG)
 target_include_directories(md_game_panels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor ${CMAKE_SOURCE_DIR}/engine/src/render ${CMAKE_SOURCE_DIR}/engine/src/vendor)
 target_link_libraries(md_game_panels PUBLIC md_ui_third_party monkey_dust::engine)

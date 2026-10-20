@@ -77,7 +77,6 @@ static PropRenderer       s_props;
 // translation is needed here at all.
 // Patch-grid unit, metres -- matched the deleted TerrainPatchGrid's patch
 // size; kept as the world-heightmap's chunking constant.
-static constexpr float kGranitePatchSize = 300.f;
 static TerrainWorldHeightmap s_granite_hmap;
 static bool  s_granite_ready = false;
 
@@ -247,11 +246,6 @@ static int             s_last_w = 1280, s_last_h = 720;  // use prev frame size
 // Camera (free-fly world-space)
 // Default at grid(23,28) = world(11750,14250) — vivid orange Great Desert area
 // (avoid Vain/Ashlands center at 16000,14000 which is sat=0 gray in Kenshi colour map)
-static float s_cam_x    = 11750.f;
-static float s_cam_z    = 14250.f;
-static float s_cam_az   = 0.f;
-static float s_cam_el   = 0.70f;
-static float s_cam_dist = 22.f;
 // Free-fly state
 static float s_cx = 11750.f, s_cy = 1500.f, s_cz = 14250.f;
 static float s_yaw = 0.f, s_pitch = 0.38f;

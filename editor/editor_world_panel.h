@@ -70,12 +70,6 @@ static bool wp_str(const char* src, const char* key, char* out, int outlen) {
     int i = 0; while (*q && *q != '"' && i < outlen-1) out[i++] = *q++;
     out[i] = '\0'; return true;
 }
-static float wp_float(const char* src, const char* key, float def) {
-    const char* p = strstr(src, key); if (!p) return def;
-    p += strlen(key);
-    while (*p && (*p==':'||*p==' ')) p++;
-    return (float)atof(p);
-}
 static int wp_int(const char* src, const char* key, int def) {
     const char* p = strstr(src, key); if (!p) return def;
     p += strlen(key);
