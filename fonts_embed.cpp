@@ -1,7 +1,7 @@
 // Embedded UI/console fonts: the raw .ttf files are pulled in by the assembler (.incbin), no C arrays.
 // Symbols keep the names declared in embedded_fonts.h (md_font::<Name>, md_font::<Name>_size), hence the hand-mangled labels.
 // MD_FONT_DIR: absolute path of engine/src/vendor/fonts (set in CMake).
-#include "embedded_fonts.h"
+#include <monkey_dust/platform/embedded_fonts.h>
 
 #define MD_EMBED_FONT(MANGLED, MANGLED_SIZE, FILE) \
     __asm__(".section .rodata\n" \
