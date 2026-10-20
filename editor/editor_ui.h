@@ -8,8 +8,6 @@
 //   font_regular — Arimo Regular  (body text, labels)
 //   font_bold    — Arimo Bold     (panel headers, titles)
 //   font_mono    — Ubuntu Mono    (InputText, IDs, values)
-//
-// Кирилиця підтримується через кастомний glyph range.
 // ─────────────────────────────────────────────────────────
 
 namespace EditorUI {
@@ -18,16 +16,6 @@ static ImFont* font_regular = nullptr;
 static ImFont* font_bold    = nullptr;
 static ImFont* font_mono    = nullptr;
 static float   ui_scale     = 1.0f;
-
-// Basic Latin + Latin Supplement + Cyrillic
-inline const ImWchar* GlyphRanges() {
-    static const ImWchar r[] = {
-        0x0020, 0x00FF,
-        0x0400, 0x04FF,
-        0,
-    };
-    return r;
-}
 
 inline void SetupTheme() {
     ImGui::StyleColorsDark();
