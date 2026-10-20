@@ -1,3 +1,4 @@
+#include <filesystem>
 #include "lua_editor_scenario_api.h"
 #include <monkey_dust/scripting/lua_system.h>
 #include <monkey_dust/world/terrain_gen.h>
@@ -75,6 +76,16 @@ static int l_md_char_editor_digest(lua_State* L) {   // FNV-1a hash of all slide
 }
 // md.char_io(mode, path) -> ok, err: what OK of the IMPORT (1) / EXPORT (2) dialog does
 static int l_md_char_ui_multislider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugMultiSlider((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
+static int l_md_char_ui_char_index(lua_State* L) { lua_pushinteger(L, CharacterMyGui::DebugCharIndex((int)luaL_optinteger(L, 1, 0))); return 1; }
+static int l_md_char_ui_slider_key(lua_State* L) { const char* k = CharacterMyGui::DebugSliderKey((int)luaL_checkinteger(L, 1)); if (k) lua_pushstring(L, k); else lua_pushnil(L); return 1; }
+static int l_md_char_ui_dialog(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugDialog(luaL_optstring(L, 1, ""))); return 1; }
+// md.char_file(path, remove) -> exists: scenario Lua has no io / os
+static int l_md_char_file(lua_State* L) {
+    std::error_code ec; const std::filesystem::path p(luaL_checkstring(L, 1));
+    if (lua_toboolean(L, 2)) std::filesystem::remove(p, ec);
+    lua_pushboolean(L, std::filesystem::exists(p, ec)); return 1;
+}
+static int l_md_char_camera(lua_State* L) { float p, d, y; CharPreviewSDLGPU::GetCamera(p, d, y); lua_pushnumber(L, d); lua_pushnumber(L, y); lua_pushnumber(L, p); return 3; }   // md.char_camera() -> distance, look-at height, pitch
 static int l_md_char_io(lua_State* L) {
     std::string err; bool ok = CharacterEditor::ApplyIo((int)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), err);
     lua_pushboolean(L, ok); lua_pushstring(L, err.c_str()); return 2;
@@ -241,6 +252,11 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_ui_caption", l_md_char_ui_caption);
     sys.RegisterNamespaceFunction("char_ui_slider", l_md_char_ui_slider);
     sys.RegisterNamespaceFunction("char_io", l_md_char_io);
+    sys.RegisterNamespaceFunction("char_camera", l_md_char_camera);
+    sys.RegisterNamespaceFunction("char_file", l_md_char_file);
+    sys.RegisterNamespaceFunction("char_ui_dialog", l_md_char_ui_dialog);
+    sys.RegisterNamespaceFunction("char_ui_slider_key", l_md_char_ui_slider_key);
+    sys.RegisterNamespaceFunction("char_ui_char_index", l_md_char_ui_char_index);
     sys.RegisterNamespaceFunction("char_ui_multislider", l_md_char_ui_multislider);
     sys.RegisterNamespaceFunction("char_ui_dump", l_md_char_ui_dump);
     sys.RegisterNamespaceFunction("char_ui_visible", l_md_char_ui_visible);

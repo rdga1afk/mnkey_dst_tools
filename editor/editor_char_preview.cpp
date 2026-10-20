@@ -485,6 +485,7 @@ void SetCameraForTab(int tab) {
     if (tab == 0) { g_dist = 3.8f; g_pit = -0.35f; g_lookat_y = 0.85f; }
     else { g_dist = 0.55f; g_pit = 0.f; g_lookat_y = 1.62f; }
 }
+void GetCamera(float& pitch, float& distance, float& look_at_y) { pitch = g_pit; distance = g_dist; look_at_y = g_lookat_y; }
 void SetYaw(float radians) { g_yaw = radians; }
 void SetCamera(float pitch, float distance, float look_at_y) { g_pit = pitch; g_dist = distance; g_lookat_y = look_at_y; }
 

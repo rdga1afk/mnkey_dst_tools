@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 using md::character::Gender;
@@ -35,6 +36,7 @@ struct State {
     MyGUI::ScrollView* content = nullptr;
     MyGUI::TextBox *stats_l = nullptr, *stats_r = nullptr;   // RACE STATS rows: labels on the left, values on the right (the exe builds label / value rows in the empty StatsPanelText)
     std::string stats_text;
+    int char_count = 1, char_index = 0;     // squad characters the editor cycles through (exe +0x268 / +0x280); the editor has one
     bool updating = false;                  // widgets are being set from the session: their events must not write back
 } g;
 
@@ -183,7 +185,7 @@ void Refresh() {
     SetText("RaceText", s.Race(s.race_index()).name);
     SetText("SubRaceText", s.Current().name);
     SetText("GenderText", s.SingleGender() ? "-" : (s.gender() == Gender::Female ? "Female" : "Male"));
-    SetText("CharIndexText", "1/1");
+    SetText("CharIndexText", std::to_string(g.char_index + 1) + "/" + std::to_string(g.char_count));
     SetText("DescriptionPanelText", s.Current().description);
     std::string labels, values;
     if (!CharacterEditor::ConfirmMessage().empty()) { labels += CharacterEditor::ConfirmMessage() + "\n"; values += "\n"; }
@@ -202,6 +204,71 @@ void Refresh() {
     g.seen_revision = s.revision();
 }
 
+
+// ── IMPORT / EXPORT dialog: the original Kenshi_OpenSaveFileDialog.layout (prefix "Dlg_"), listing the .bod2 files and folders of the current folder ──
+struct Dialog {
+    std::vector<MyGUI::Widget*> roots;
+    int mode = 0;                            // 1 IMPORT, 2 EXPORT
+    std::filesystem::path dir;
+} dlg;
+
+void DialogFill() {
+    namespace fs = std::filesystem;
+    auto* list = WT<MyGUI::ListBox>("Dlg_ListFiles");
+    if (!list) return;
+    list->removeAllItems();
+    std::error_code ec;
+    std::vector<std::string> dirs, files;
+    for (const auto& e : fs::directory_iterator(dlg.dir, ec)) {
+        if (e.is_directory(ec)) dirs.push_back(e.path().filename().string());
+        else if (e.path().extension() == ".bod2") files.push_back(e.path().filename().string());
+    }
+    std::sort(dirs.begin(), dirs.end()); std::sort(files.begin(), files.end());
+    for (const auto& d : dirs) list->addItem(MyGUI::UString("[" + d + "]"));
+    for (const auto& f : files) list->addItem(MyGUI::UString(f));
+    SetText("Dlg_CurrentFolder", dlg.dir.string());
+}
+
+void DialogClose() {
+    for (MyGUI::Widget* r : dlg.roots) MyGUI::Gui::getInstance().destroyWidget(r);
+    dlg.roots.clear();
+}
+
+void DialogOpen(int mode) {
+    if (!dlg.roots.empty()) DialogClose();
+    dlg.mode = mode;
+    dlg.dir = std::filesystem::current_path();
+    dlg.roots = MyGUI::LayoutManager::getInstance().loadLayout("Kenshi_OpenSaveFileDialog.layout", "Dlg_");
+    if (MyGUI::Window* w = WT<MyGUI::Window>("Dlg_Root")) { w->setCaption(mode == 1 ? "IMPORT" : "EXPORT"); w->setRealCoord(0.18f, 0.15f, 0.64f, 0.7f); }
+    // the layout puts the file name field at y = 1 (the exe moves it into the bottom row, level with OPEN / CANCEL)
+    // the window is larger than the layout's own size, so every child is put back to its layout coordinates (relative to the client area)
+    struct Pos { const char* n; float x, y, w, h; };
+    for (const Pos& p : {Pos{"Dlg_EditFileName", 0.0268f, 0.9133f, 0.644f, 0.0723f}, Pos{"Dlg_ListFiles", 0.0179f, 0.1157f, 0.975f, 0.7711f}, Pos{"Dlg_CurrentFolder", 0.0268f, 0.0265f, 0.83f, 0.0795f},
+                         Pos{"Dlg_ButtonUp", 0.8676f, 0.0265f, 0.093f, 0.0795f}, Pos{"Dlg_ButtonOpenSave", 0.6798f, 0.9133f, 0.1431f, 0.0723f}, Pos{"Dlg_ButtonCancel", 0.8318f, 0.9133f, 0.1431f, 0.0723f}})
+        if (MyGUI::Widget* c = W(p.n)) c->setRealCoord(p.x, p.y, p.w, p.h);
+    if (auto* b = WT<MyGUI::Button>("Dlg_ButtonOpenSave")) { b->setCaption(mode == 1 ? "OPEN" : "SAVE"); b->eventMouseButtonClick += MyGUI::newDelegate(+[](MyGUI::Widget*) {
+        auto* ed = WT<MyGUI::EditBox>("Dlg_EditFileName");
+        std::filesystem::path p(ed ? ed->getCaption().asUTF8() : std::string());
+        if (p.empty()) return;
+        if (p.is_relative()) p = dlg.dir / p;
+        std::string err;
+        if (CharacterEditor::ApplyIo(dlg.mode, p.string().c_str(), err)) { DialogClose(); g.seen_revision = ~0ull; }
+        else if (ed) ed->setCaption(MyGUI::UString("! " + err));
+    }); }
+    if (auto* b = WT<MyGUI::Button>("Dlg_ButtonCancel")) b->eventMouseButtonClick += MyGUI::newDelegate(+[](MyGUI::Widget*) { DialogClose(); });
+    if (auto* b = WT<MyGUI::Button>("Dlg_ButtonUp")) b->eventMouseButtonClick += MyGUI::newDelegate(+[](MyGUI::Widget*) {
+        if (dlg.dir.has_parent_path()) { dlg.dir = dlg.dir.parent_path(); DialogFill(); }
+    });
+    if (auto* l = WT<MyGUI::ListBox>("Dlg_ListFiles")) l->eventListSelectAccept += MyGUI::newDelegate(+[](MyGUI::ListBox* lb, size_t i) {
+        if (i == MyGUI::ITEM_NONE) return;
+        std::string n = lb->getItemNameAt(i).asUTF8();
+        if (!n.empty() && n[0] == '[') { dlg.dir /= n.substr(1, n.size() - 2); DialogFill(); }
+        else SetText("Dlg_EditFileName", n);
+    });
+    SetText("Dlg_EditFileName", dlg.mode == 2 ? "character.bod2" : "");
+    DialogFill();
+}
+
 // ── button handlers (the exe's handlers of docs/spec/ui/character_editor.md §2) ──
 void Click(MyGUI::Widget* w) {
     Session& s = *g.s;
@@ -211,14 +278,18 @@ void Click(MyGUI::Widget* w) {
     if (n == "RaceLeftButton" || n == "RaceRightButton") { const int d = n == "RaceLeftButton" ? -1 : 1; if (s.RaceCount() > 1) s.SelectRace((s.race_index() + s.RaceCount() + size_t(d + 0)) % s.RaceCount()); }
     else if (n == "SubRaceLeftButton" || n == "SubRaceRightButton") { const int d = n == "SubRaceLeftButton" ? -1 : 1; if (s.SubraceCount() > 1) s.SelectSubrace((s.subrace_index() + s.SubraceCount() + size_t(d + 0)) % s.SubraceCount()); }
     else if (n == "GenderLeftButton" || n == "GenderRightButton") { if (!s.SingleGender()) s.SetGender(s.gender() == Gender::Female ? Gender::Male : Gender::Female); }
+    else if (n == "CharLeftArrow" || n == "CharRightArrow") {   // 1405f1600 / 1405f1650: index = (index +- 1 + count) mod count
+        const int d = n == "CharLeftArrow" ? -1 : 1;
+        g.char_index = ((g.char_index + d) % g.char_count + g.char_count) % g.char_count;
+    }
     else if (n == "BodyTabButton") g.tab = 0;
     else if (n == "FaceTabButton") g.tab = 1;
     else if (n == "HairTabButton") g.tab = 2;
     else if (n == "RandomiseAllButton") s.RandomiseAll();
     else if (n == "RandomiseButton") { if (g.tab == 2) s.RandomiseHair(); else s.RandomiseCategory(kCategory[g.tab]); }
     else if (n == "ResetButton") s.Reset();
-    else if (n == "ImportButton") CharacterEditor::OpenIoDialog(1);
-    else if (n == "ExportButton") CharacterEditor::OpenIoDialog(2);
+    else if (n == "ImportButton") DialogOpen(1);
+    else if (n == "ExportButton") DialogOpen(2);
     else if (n == "ClothesButton") CharacterEditor::Clothes() = !CharacterEditor::Clothes();
     else if (n == "ConfirmButton") CharacterEditor::ConfirmForScenario();
     if (n == "BodyTabButton" || n == "FaceTabButton" || n == "HairTabButton") CharPreviewSDLGPU::SetCameraForTab(g.tab);
@@ -232,7 +303,7 @@ bool Init() {
     g.s = &CharacterEditor::GetSession();
     if (!mdui::MyGuiInit(1920, 1080, "Kenshi_CharacterEditor.layout")) return false;
     const char* buttons[] = {"RaceLeftButton", "RaceRightButton", "SubRaceLeftButton", "SubRaceRightButton", "GenderLeftButton", "GenderRightButton", "BodyTabButton", "FaceTabButton", "HairTabButton",
-                             "RandomiseAllButton", "RandomiseButton", "ResetButton", "ImportButton", "ExportButton", "ClothesButton", "ConfirmButton"};
+                             "RandomiseAllButton", "RandomiseButton", "ResetButton", "ImportButton", "ExportButton", "ClothesButton", "ConfirmButton", "CharLeftArrow", "CharRightArrow"};
     for (const char* b : buttons) if (MyGUI::Widget* w = W(b)) w->eventMouseButtonClick += MyGUI::newDelegate(Click);
     // TabsPanelContent is an empty panel in the layout; the exe puts a ScrollView ("Kenshi_ScrollViewEmptyLight") into it and the slider rows into that (spec §2)
     if (MyGUI::Widget* panel = W("TabsPanelContent"))
@@ -271,7 +342,6 @@ bool DrawTab(float w, float h) {
     ImGui::EndGroup();
     ImGui::SetCursorScreenPos(origin);
     ImGui::Dummy({W_, H_});
-    CharacterEditor::DrawIoPopup();
     g.x = origin.x; g.y = origin.y; g.w = W_; g.h = H_;
     if (int(W_) != int(MyGUI::RenderManager::getInstance().getViewSize().width) || int(H_) != int(MyGUI::RenderManager::getInstance().getViewSize().height)) mdui::MyGuiResize(int(W_), int(H_));
     if (g.s->revision() != g.seen_revision) Refresh();
@@ -310,7 +380,25 @@ const char* DebugCaption(const char* name) {
 bool DebugClick(const char* name) {
     MyGUI::Widget* w = W(name);
     if (!w) return false;
+    if (w->getName().compare(0, 4, "Dlg_") == 0) { w->eventMouseButtonClick(w); return true; }   // the dialog buttons carry their own delegates
     Click(w);
+    return true;
+}
+
+const char* DebugSliderKey(int n) {   // key of the n-th (1-based) value slider of the open tab, nil past the end
+    static std::string key;
+    if (!g.content) return nullptr;
+    for (size_t i = 0; i < g.content->getChildCount(); ++i)
+        if (auto* sl = g.content->getChildAt(i)->castType<mdui::Slider>(false))
+            if (!sl->getUserString("slider").empty() && --n == 0) { key = sl->getUserString("slider"); return key.c_str(); }
+    return nullptr;
+}
+
+int DebugCharIndex(int set_count) { if (set_count > 0) { g.char_count = set_count; g.char_index = 0; } return g.char_index; }
+
+bool DebugDialog(const char* file) {   // the open IMPORT/EXPORT dialog: its file name field takes `file` (nil = only report whether the dialog is open)
+    if (dlg.roots.empty()) return false;
+    if (file && *file) SetText("Dlg_EditFileName", file);
     return true;
 }
 
@@ -370,6 +458,9 @@ void Draw(SDL_GPUTexture*, md::GpuCommandBufferHandle) {}
 bool Visible() { return false; }
 const char* DebugCaption(const char*) { return nullptr; }
 bool DebugClick(const char*) { return false; }
+const char* DebugSliderKey(int) { return nullptr; }
+int DebugCharIndex(int) { return 0; }
+bool DebugDialog(const char*) { return false; }
 bool DebugSetSlider(const char*, int) { return false; }
 const char* DebugFirstSlider() { return nullptr; }
 bool DebugListStep(int) { return false; }
