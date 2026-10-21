@@ -49,6 +49,7 @@ extern void  md_settings_set_lighting(int mode);
 extern void  md_settings_set_fxaa(bool on);   // #180: FXAA 3.11 (Kenshi's parameters), default off (owner 16.10)
 extern void  md_settings_set_terrain_lod(float detail, float distant, float threshold);   // #175
 extern void  md_settings_set_vsync(bool on);   // #175
+extern void  md_settings_set_fps_cap(int fps); // #191
 extern void  md_settings_set_view_distance(float v);   // #175
 extern void  md_settings_set_ground_aniso(int level);   // #180
 extern void  md_settings_set_window_size(int w, int h);   // #175
@@ -67,6 +68,7 @@ static bool  s_set_fxaa      = false;  // "fxaa": FXAA (#180), off by default (o
 static float s_set_tdetail   = 1.f;    // "td": terrain detail 0..1, Kenshi 1.0
 static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.0
 static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
+static int   s_set_fcap      = 60;     // "fcap": frame cap 60 / 30 / 0 = unlimited (#191)
 static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
 static const int kAnisoLv[3] = { 1, 4, 16 };
 static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
@@ -139,6 +141,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"td\"")) { s_set_tdetail = f3_parse_f(buf, "\"td\""); if (s_set_tdetail < 0.f || s_set_tdetail > 1.f) s_set_tdetail = 1.f; }
         if (strstr(buf, "\"tdi\"")) { s_set_tdistant = f3_parse_f(buf, "\"tdi\""); if (s_set_tdistant < 0.f || s_set_tdistant > 1.f) s_set_tdistant = 0.f; }
         if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
+        if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0) s_set_fcap = 60; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
         if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 2) s_set_ga = 0; }
         if (strstr(buf, "\"vd\"")) { s_set_vdist = f3_parse_f(buf, "\"vd\""); if (s_set_vdist < 1500.f || s_set_vdist > 12000.f) s_set_vdist = 5000.f; }
@@ -173,7 +176,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -184,7 +187,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
         s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif, s_set_dyn,
-        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period);
+        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap);
     fclose(f);
 }
 
@@ -487,6 +490,12 @@ void EditorCore::Update(float dt) {
                     ImGui::SetNextItemWidth(220.f);
                     if (ImGui::SliderFloat("View Distance##vdist", &s_set_vdist, 1500.f, 12000.f, "%.0f")) md_settings_set_view_distance(s_set_vdist);
                     if (ImGui::Checkbox("VSync##vsy", &s_set_vsync)) md_settings_set_vsync(s_set_vsync);
+                    {
+                        static const char* kCapNm[] = { "60", "30", "Unlimited" }; static const int kCapV[] = { 60, 30, 0 };
+                        int ci = s_set_fcap == 30 ? 1 : (s_set_fcap == 0 ? 2 : 0);
+                        ImGui::SetNextItemWidth(220.f);
+                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 3)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
+                    }
                     {
                         static const char* kRes[] = { "1280x720", "1366x768", "1600x900", "1920x1080" };
                         int ri = s_set_wres;

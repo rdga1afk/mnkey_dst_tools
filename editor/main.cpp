@@ -336,7 +336,8 @@ int main(int argc, char** argv) {
         extern bool g_editor_uncapped;
         if (!(scenario_cfg.active && scenario_cfg.fast) && !g_editor_uncapped) {
             static Uint64 s_prev_ns = 0;
-            static constexpr Uint64 TARGET_NS = 1000000000ULL / 60;
+            const int cap_fps = window_fps_cap();
+            const Uint64 TARGET_NS = cap_fps > 0 ? 1000000000ULL / (Uint64)cap_fps : 0;
             Uint64 now_ns = SDL_GetTicksNS();
             if (s_prev_ns && now_ns - s_prev_ns < TARGET_NS)
                 SDL_DelayNS(TARGET_NS - (now_ns - s_prev_ns));
