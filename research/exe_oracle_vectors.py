@@ -152,3 +152,30 @@ def run2(o: Oracle):
         emit("setMaxSpeed_1401440b0", f"p={p}", F(struct.unpack("<f", o.read(obj + 0x7c, 4))[0]), F(np.float64(F(p)) * np.float64(K2)))
     o.unstub(h)
     return rows, dict(K14_file_value=file_consts, K14_test=K14, K18=K18, K1c=K1c, T=T, D1=D1, D2=D2, C=C, c1=c1, c2=c2, c3=c3, K=K, Kr=Kr, H=H, K2=K2, pairs=pairs)
+
+
+# ---- batch 3 (#190): the last two leaf functions of the combat spec ----
+def run3(o: Oracle):
+    rows = []
+    def emit(fn, inp, exe, ref): rows.append((fn, inp, str(exe), str(ref), "1" if exe == ref else "0"))
+    obj = HEAP + 0x30000
+    # 1400cd450 limbSlotState(this, i) = u32 [this + 0x10 + 4*i]   (i is a signed 32-bit int)
+    o.write(obj + 0x10, b"".join(struct.pack("<I", 0x1000 + k * 0x111) for k in range(16)))
+    for i in [0, 1, 2, 5, 15, 3, 7, 11]:
+        o.run(0x1400cd450, ints=[obj, i]); emit("limbSlotState_1400cd450", f"i={i}", o.rax() & 0xffffffff, 0x1000 + i * 0x111)
+    # 140657590 partForSlot(this, slot): parts = ptr array [this+0x1a0], count [this+0x198]; kind(part): [p+8]==1 -> 2+([p+0x20]!=1), ==2 -> ([p+0x20]!=1), else 4; first part with kind == slot, else 0
+    arr, parts = HEAP + 0x31000, HEAP + 0x32000
+    layouts = [[(1, 1), (2, 1), (2, 0), (3, 0)], [(2, 0)], [(1, 0), (1, 1)], [(5, 0), (9, 1), (1, 1)], []]
+    def kind(a, b): return (2 + (b != 1)) if a == 1 else ((b != 1) if a == 2 else 4)
+    for li, lay in enumerate(layouts):
+        o.write(obj + 0x198, struct.pack("<I", len(lay))); o.write(obj + 0x1a0, struct.pack("<Q", arr))
+        for k, (a, b) in enumerate(lay):
+            p = parts + k * 0x100
+            o.write(arr + 8 * k, struct.pack("<Q", p)); o.write(p + 8, struct.pack("<i", a)); o.write(p + 0x20, struct.pack("<i", b))
+        for slot in range(0, 6):
+            o.run(0x140657590, ints=[obj, slot])
+            ref = 0
+            for k, (a, b) in enumerate(lay):
+                if kind(a, b) == slot: ref = parts + k * 0x100; break
+            emit("partForSlot_140657590", f"layout={li};slot={slot}", o.rax(), ref)
+    return rows

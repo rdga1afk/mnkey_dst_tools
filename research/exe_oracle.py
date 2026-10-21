@@ -90,7 +90,7 @@ class Oracle:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["call", "vectors", "vectors2"])
+    ap.add_argument("cmd", choices=["call", "vectors", "vectors2", "vectors3"])
     ap.add_argument("addr", nargs="?")
     ap.add_argument("--i", default=""); ap.add_argument("--f", default=""); ap.add_argument("--ret", default="f32")
     a = ap.parse_args()
@@ -108,6 +108,12 @@ def main():
         for r in rows: print("\t".join(r))
         ok = sum(1 for r in rows if r[4] == "1")
         print(f"# bit-equal {ok}/{len(rows)}; constants read from the exe: {consts}", file=sys.stderr)
+    elif a.cmd == "vectors3":
+        import exe_oracle_vectors
+        rows = exe_oracle_vectors.run3(o)
+        print("function\tinputs\texe\treference\tequal")
+        for r in rows: print("\t".join(r))
+        print(f"# equal {sum(1 for r in rows if r[4] == '1')}/{len(rows)}", file=sys.stderr)
     else:
         import exe_oracle_vectors
         exe_oracle_vectors.run(o)
