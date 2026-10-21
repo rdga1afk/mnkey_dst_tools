@@ -70,7 +70,18 @@ class Oracle:
         u.emu_start(addr, SENTINEL, count=max_insn)
         return u
 
+    def stub(self, addr, f32_ret=None, rax=None):
+        """Replace the function at addr (a callee we do not want to run) by "return f32_ret in xmm0 / rax": hook on its first instruction, pop the return address."""
+        def hook(uc, address, size, ud):
+            if f32_ret is not None: uc.reg_write(UC_X86_REG_XMM0, f32(f32_ret))
+            if rax is not None: uc.reg_write(UC_X86_REG_RAX, rax)
+            sp = uc.reg_read(UC_X86_REG_RSP)
+            uc.reg_write(UC_X86_REG_RIP, struct.unpack("<Q", bytes(uc.mem_read(sp, 8)))[0]); uc.reg_write(UC_X86_REG_RSP, sp + 8)
+        return self.uc.hook_add(UC_HOOK_CODE, hook, begin=addr, end=addr)
+    def unstub(self, h): self.uc.hook_del(h)
+
     def xmm0_f32(self): return r32(self.uc.reg_read(UC_X86_REG_XMM0) & 0xffffffff)
+    def xmm0_bits64(self): return self.uc.reg_read(UC_X86_REG_XMM0) & 0xffffffffffffffff
     def xmm0_f64(self): return r64(self.uc.reg_read(UC_X86_REG_XMM0) & 0xffffffffffffffff)
     def rax(self): return self.uc.reg_read(UC_X86_REG_RAX)
     def write(self, addr, data): self.uc.mem_write(addr, data)
@@ -79,7 +90,7 @@ class Oracle:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["call", "vectors"])
+    ap.add_argument("cmd", choices=["call", "vectors", "vectors2"])
     ap.add_argument("addr", nargs="?")
     ap.add_argument("--i", default=""); ap.add_argument("--f", default=""); ap.add_argument("--ret", default="f32")
     a = ap.parse_args()
@@ -90,6 +101,13 @@ def main():
         o.run(int(a.addr, 16), ints, flt)
         print({"f32": o.xmm0_f32, "f64": o.xmm0_f64, "i64": o.rax}[a.ret]())
         if o.zero_reads: print("zero-read:", [hex(x) for x in o.zero_reads[:8]], file=sys.stderr)
+    elif a.cmd == "vectors2":
+        import exe_oracle_vectors
+        rows, consts = exe_oracle_vectors.run2(o)
+        print("function\tinputs\texe\treference(exe consts)\tbit_equal")
+        for r in rows: print("\t".join(r))
+        ok = sum(1 for r in rows if r[4] == "1")
+        print(f"# bit-equal {ok}/{len(rows)}; constants read from the exe: {consts}", file=sys.stderr)
     else:
         import exe_oracle_vectors
         exe_oracle_vectors.run(o)

@@ -58,3 +58,97 @@ def run(o: Oracle, out=None):
     ok = sum(1 for r in rows if r[4] == "1"); tot = sum(1 for r in rows if r[4] in "01" and r[4])
     lit_diff = sum(1 for r in rows if r[4] == "1" and r[2] != r[5])
     print(f"# K(14168a318)={K!r} S(141682ad8)={S!r} H(141684440)={H!r}; bit-equal {ok}/{tot}; spec-literal constants differ from exe on {lit_diff} points", file=__import__("sys").stderr)
+
+
+# ---- batch 2 (#190): the 6 numeric "leaf" functions of combat/movement specs; callees that read game state are replaced by stubs with a known return value ----
+def rd(o, a, kind): return {"f": const_f32, "d": const_f64}[kind](o, a)
+def u32(o, a): return struct.unpack("<I", o.read(a, 4))[0]
+def sweep(lst, n): return [lst[i % len(lst)] for i in range(n)]
+
+def run2(o: Oracle):
+    rows = []
+    def emit(fn, inp, exe, ref):
+        fmt = lambda v: ",".join("%.9g" % float(x) for x in np.atleast_1d(v))
+        rows.append((fn, inp, fmt(exe), fmt(ref), "1" if np.array(exe, dtype=F).tobytes() == np.array(ref, dtype=F).tobytes() else "0"))
+    obj = HEAP + 0x20000
+    VALS = [0.0, 1.0, -1.0, 0.5, 10.0, 45.0, 90.0, 91.0, 100.0, 250.0, -50.0, 1e6, -1e6, 0.001]
+
+    # 140885d80 blockChance(this, p): base = callee 140885190(this,1) [STUB]; piecewise: d = base - p; d<=0: K14 + K18*d, else K1c*d + K14; above T: soft cap; clamp [0, C]
+    # K14/K18/K1c live in .data and are 0.0 in the file (filled by the game at run time): the emulator is given explicit test values
+    file_consts = (rd(o, 0x142133e14, "f"), rd(o, 0x142133e18, "f"), rd(o, 0x142133e1c, "f"))
+    K14, K18, K1c = 30.0, 0.5, 0.8
+    o.write(0x142133e14, struct.pack("<fff", K14, K18, K1c))
+    T, D1, D2, C = rd(o, 0x141689850, "f"), rd(o, 0x14168a4a8, "d"), rd(o, 0x141723a08, "d"), rd(o, 0x141685034, "f")
+    h = o.stub(0x140885190, f32_ret=0.0)
+    for base in [0.0, 20.0, 50.0, 100.0, -10.0]:
+        o.unstub(h); h = o.stub(0x140885190, f32_ret=base)
+        for p in VALS:
+            o.run(0x140885d80, ints=[obj], floats=[None, p]); rax = o.xmm0_bits64()   # returned in xmm0 (low = chance, high = excess above T); the decompiler's ulonglong/rax is misleading
+            d = F(F(base) - F(p))
+            f = F(F(K14) + F(F(K18) * d)) if d <= 0 else F(F(F(K1c) * d) + F(K14))
+            f3 = F(0.0)
+            if F(T) < f:
+                f3 = F(f - F(T)); f = F(np.float64(f3) * np.float64(D1) + np.float64(D2))
+            if f <= F(C):
+                lo, hi = (0, 0) if f < 0 else (struct.unpack("<I", struct.pack("<f", f))[0], struct.unpack("<I", struct.pack("<f", f3))[0])
+            else: lo, hi = struct.unpack("<I", struct.pack("<f", F(C)))[0], 0
+            emit("blockChance_140885d80", f"base={base};p={p}", np.array([rax & 0xffffffff, rax >> 32], dtype=np.uint32).view(F), np.array([lo, hi], dtype=np.uint32).view(F))
+    o.unstub(h)
+
+    # 140883a80 combatSpeed(this, a, b, flag): t = (S*f88*f34*K1 + b*K2)*K3; lerp(t, lo, hi); r = lerp*a; r > hi -> hi   (S = callee 1406457e0 [STUB])
+    c1, c2, c3 = rd(o, 0x141696c8c, "f"), rd(o, 0x141696c90, "f"), rd(o, 0x141682ad8, "f")
+    pairs = {0: (rd(o, 0x1416852f0, "f"), rd(o, 0x14168a178, "f")), 1: (rd(o, 0x14168bf24, "f"), rd(o, 0x141696c8c, "f"))}   # flag -> (hi=fVar6, lo=fVar7)
+    for S in [0.0, 1.0, 50.0, 100.0]:
+        h = o.stub(0x1406457e0, f32_ret=S)
+        for f88, f34 in [(1.0, 1.0), (0.5, 2.0), (0.0, 1.0), (3.0, 0.25)]:
+            for flag in (0, 1):
+                for a, b in [(1.0, 0.0), (1.0, 50.0), (0.5, 100.0), (2.0, 10.0), (10.0, 200.0), (-1.0, 5.0)]:
+                    o.write(obj + 0x88, struct.pack("<f", f88)); o.write(obj + 0x34, struct.pack("<f", f34))
+                    o.run(0x140883a80, ints=[obj, None, None, flag], floats=[None, a, b]); xr = o.xmm0_f32()
+                    hi_, lo_ = pairs[flag]
+                    t = F(F(F(F(F(S) * F(f88)) * F(f34)) * F(c1)) + F(F(b) * F(c2))); t = F(t * F(c3))
+                    lr = F(F(F(hi_) - F(lo_)) * t) + F(lo_)
+                    r = F(lr * F(a))
+                    if F(hi_) < r: r = F(hi_)
+                    emit("combatSpeed_140883a80", f"S={S};f88={f88};f34={f34};flag={flag};a={a};b={b}", F(xr), r)
+        o.unstub(h)
+
+    # 140644b00 bleedAmount(this): flags -> kind; if kind != 4 and [[this+0x10]+200] != 0 and limbSlotState(...)==1 [STUB] : s = f48 + f40; s < 0 ? s * K : 0
+    K = rd(o, 0x1416fb710, "f"); ptrA, ptrB = HEAP + 0x21000, HEAP + 0x22000
+    for st in (1, 2):
+        h = o.stub(0x1400cd450, rax=st)
+        for b32 in (0, 1):
+            for i8 in (1, 2, 3):
+                for i20 in (0, 1):
+                    for f48, f40 in [(-1.0, 0.0), (-0.5, -0.5), (1.0, -3.0), (2.0, 1.0), (0.0, 0.0), (-100.0, 50.0)]:
+                        for pnull in (0, 1):
+                            o.write(obj + 0x32, bytes([b32])); o.write(obj + 8, struct.pack("<i", i8)); o.write(obj + 0x20, struct.pack("<i", i20))
+                            o.write(obj + 0x10, struct.pack("<Q", ptrA)); o.write(ptrA + 200, struct.pack("<Q", 0 if pnull else ptrB))
+                            o.write(obj + 0x48, struct.pack("<f", f48)); o.write(obj + 0x40, struct.pack("<f", f40))
+                            o.run(0x140644b00, ints=[obj]); x = F(o.xmm0_f32())
+                            kind = (2 + (i20 != 1)) if i8 == 1 else ((i20 != 1) if i8 == 2 else 4)
+                            sm = F(F(f48) + F(f40))
+                            ref = F(sm * F(K)) if (b32 == 0 and kind != 4 and not pnull and st == 1 and sm < 0) else F(0.0)
+                            emit("bleedAmount_140644b00", f"slotState={st};b32={b32};kind_i8={i8};i20={i20};f48={f48};f40={f40};ptr0={pnull}", x, ref)
+        o.unstub(h)
+
+    # 140608320 extraReach(this) = float([[this+400]+0x200]) * K ; 14060cd20 circleDistance(this) = double(f150 + f278) - double(extraReach) * 0.5
+    Kr, H = rd(o, 0x14167e8d8, "f"), rd(o, 0x141684440, "d"); st_ = HEAP + 0x23000
+    for v200 in sweep(VALS, 24):
+        o.write(obj + 400, struct.pack("<Q", st_)); o.write(st_ + 0x200, struct.pack("<f", v200))
+        o.run(0x140608320, ints=[obj]); emit("extraReach_140608320", f"f200={v200}", F(o.xmm0_f32()), F(F(v200) * F(Kr)))
+    for f150 in [0.0, 1.0, 2.5, -1.0, 100.0]:
+        for f278 in [0.0, 0.5, 3.0, -2.0]:
+            for v200 in [0.0, 1.0, 4.0, 10.0, -6.0]:
+                o.write(obj + 400, struct.pack("<Q", st_)); o.write(st_ + 0x150, struct.pack("<f", f150)); o.write(st_ + 0x200, struct.pack("<f", v200)); o.write(obj + 0x278, struct.pack("<f", f278))
+                o.run(0x14060cd20, ints=[obj]); ex = F(F(v200) * F(Kr))
+                ref = F(np.float64(F(F(f150) + F(f278))) - np.float64(ex) * np.float64(H))
+                emit("circleDistance_14060cd20", f"f150={f150};f278={f278};f200={v200}", F(o.xmm0_f32()), ref)
+
+    # 1401440b0 setMaxSpeed(this, p): [this+0x7c] = float(double(p) * 0.1)   (callee 1409b19a0 [STUB], argument check)
+    K2 = rd(o, 0x14168a318, "d"); h = o.stub(0x1409b19a0, f32_ret=0.0)
+    for p in sweep(VALS + [3.4e38, -3.4e38, 1e-30, 80.0, 123.456], 40):
+        o.write(obj + 0x7c, b"\xaa" * 4); o.run(0x1401440b0, ints=[obj], floats=[None, p])
+        emit("setMaxSpeed_1401440b0", f"p={p}", F(struct.unpack("<f", o.read(obj + 0x7c, 4))[0]), F(np.float64(F(p)) * np.float64(K2)))
+    o.unstub(h)
+    return rows, dict(K14_file_value=file_consts, K14_test=K14, K18=K18, K1c=K1c, T=T, D1=D1, D2=D2, C=C, c1=c1, c2=c2, c3=c3, K=K, Kr=Kr, H=H, K2=K2, pairs=pairs)
