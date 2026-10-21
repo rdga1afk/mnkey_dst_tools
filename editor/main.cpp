@@ -336,12 +336,7 @@ int main(int argc, char** argv) {
         extern bool g_editor_uncapped;
         if (!(scenario_cfg.active && scenario_cfg.fast) && !g_editor_uncapped) {
             static Uint64 s_prev_ns = 0;
-            const int cap_fps = window_fps_cap();
-            const Uint64 TARGET_NS = cap_fps > 0 ? 1000000000ULL / (Uint64)cap_fps : 0;
-            Uint64 now_ns = SDL_GetTicksNS();
-            if (s_prev_ns && now_ns - s_prev_ns < TARGET_NS)
-                SDL_DelayNS(TARGET_NS - (now_ns - s_prev_ns));
-            s_prev_ns = SDL_GetTicksNS();
+            window_frame_cap_wait(s_prev_ns);
         }
         uint64_t now = SDL_GetTicks();
         float dt = (float)(now-last_ticks)/1000.f;
@@ -382,6 +377,7 @@ int main(int argc, char** argv) {
                 }
                 if (ev.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED)
                     SDL_MaximizeWindow(_wnd::ptr());
+                if ((ev.type >= SDL_EVENT_KEY_DOWN && ev.type <= SDL_EVENT_MOUSE_WHEEL) || ev.type == SDL_EVENT_TEXT_INPUT) window_note_activity();   // #191 auto cap
             }
             input_begin_frame();
         }

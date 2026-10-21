@@ -71,7 +71,7 @@ static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.
 static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
 static bool  s_set_tbld      = false;  // "tbld": buildings of the zones around the camera (#119), off by default
 static float s_set_ovr       = 300.f;  // "ovr": Kenshi `objects view range`, metres (default 300 = 3000 units)
-static int   s_set_fcap      = 60;     // "fcap": frame cap 60 / 30 / 0 = unlimited (#191)
+static int   s_set_fcap      = -1;     // "fcap": frame cap -1 = auto (30 idle / 60 moving, default), 60, 30, 0 = unlimited (#191)
 static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
 static const int kAnisoLv[3] = { 1, 4, 16 };
 static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
@@ -146,7 +146,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
         if (strstr(buf, "\"tbld\"")) s_set_tbld = f3_parse_f(buf, "\"tbld\"") != 0.f;
         if (strstr(buf, "\"ovr\"")) { s_set_ovr = f3_parse_f(buf, "\"ovr\""); if (s_set_ovr < 100.f || s_set_ovr > 800.f) s_set_ovr = 300.f; }
-        if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0) s_set_fcap = 60; }
+        if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0 && s_set_fcap != 60) s_set_fcap = -1; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
         if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 2) s_set_ga = 0; }
         if (strstr(buf, "\"vd\"")) { s_set_vdist = f3_parse_f(buf, "\"vd\""); if (s_set_vdist < 1500.f || s_set_vdist > 12000.f) s_set_vdist = 5000.f; }
@@ -501,10 +501,10 @@ void EditorCore::Update(float dt) {
                         if (ImGui::SliderFloat("Objects view range (m)##ovr", &s_set_ovr, 100.f, 800.f, "%.0f")) md_settings_set_town_buildings(true, s_set_ovr);
                     }
                     {
-                        static const char* kCapNm[] = { "60", "30", "Unlimited" }; static const int kCapV[] = { 60, 30, 0 };
-                        int ci = s_set_fcap == 30 ? 1 : (s_set_fcap == 0 ? 2 : 0);
+                        static const char* kCapNm[] = { "Auto (30 idle / 60 moving)", "60", "30", "Unlimited" }; static const int kCapV[] = { -1, 60, 30, 0 };
+                        int ci = s_set_fcap == 60 ? 1 : (s_set_fcap == 30 ? 2 : (s_set_fcap == 0 ? 3 : 0));
                         ImGui::SetNextItemWidth(220.f);
-                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 3)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
+                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 4)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
                     }
                     {
                         static const char* kRes[] = { "1280x720", "1366x768", "1600x900", "1920x1080" };
