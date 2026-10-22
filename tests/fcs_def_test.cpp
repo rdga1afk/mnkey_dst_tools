@@ -109,6 +109,8 @@ static void RealCardTest(const std::string& kd, const Schema& schema) {
     CHECK(checked > 100);
 }
 
+static std::string cf2(const DataBrowser& br, const std::string& sid, const char* name) { for (const CardField& c : br.Card(sid)) if (c.name == name) return c.value; return "<none>"; }
+
 static void BrowserTest() {
     W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
     Rec(f, 1, "Zeta", "1-z", 1, 2.5f); Rec(f, 2, "Alpha", "2-a", 0, 1.0f); Rec(f, 3, "Mid", "3-m", 1, 4.0f);
@@ -135,6 +137,38 @@ static void BrowserTest() {
     CHECK(cf("parts") && cf("parts")->value == "p-1" && cf("parts")->type == "refs");
     CHECK(cf("unset") && cf("unset")->value == "7" && !cf("unset")->changed);
     CHECK(br.Card("nope").empty());
+
+    // F3: the edit layer
+    EditSession ed(s, data); br.SetEdits(&ed);
+    CHECK(ed.StateOf("1-z", "weight") == FieldState::Original && !ed.CanUndo());
+    CHECK(ed.Set("1-z", "weight", "7.25", err) && ed.StateOf("1-z", "weight") == FieldState::Modified);
+    CHECK(cf2(br, "1-z", "weight") == "7.25");
+    CHECK(ed.Set("1-z", "kind", "Kind.A", err) && cf2(br, "1-z", "kind") == "Kind.A");
+    CHECK(ed.Set("1-z", "label", "New name", err) && cf2(br, "1-z", "label") == "New name");
+    CHECK(ed.ModifiedCount() == 3);
+    CHECK(!ed.Set("1-z", "weight", "abc", err) && !err.empty());           // bad text is refused, nothing changes
+    CHECK(!ed.Set("1-z", "nosuch", "1", err));
+    CHECK(!ed.Set("zzz", "weight", "1", err));
+    CHECK(ed.ModifiedCount() == 3);
+    CHECK(ed.Undo() && ed.StateOf("1-z", "label") == FieldState::Original && cf2(br, "1-z", "label") == "Zeta!");
+    CHECK(ed.Redo() && cf2(br, "1-z", "label") == "New name");
+    CHECK(ed.Set("1-z", "weight", "2.5", err));                            // the base value: back to ORIGINAL
+    CHECK(ed.StateOf("1-z", "weight") == FieldState::Original && ed.ModifiedCount() == 2);
+    CHECK(ed.Undo() && ed.StateOf("1-z", "weight") == FieldState::Modified && cf2(br, "1-z", "weight") == "7.25");
+    CHECK(ed.Revert("1-z", "kind") && ed.StateOf("1-z", "kind") == FieldState::Original && !ed.Revert("1-z", "kind"));
+    CHECK(ed.Undo() && ed.StateOf("1-z", "kind") == FieldState::Modified);   // undo of a revert
+    while (ed.Undo()) {}
+    CHECK(ed.ModifiedCount() == 0 && !ed.CanUndo() && ed.CanRedo());
+    CHECK(ed.Set("1-z", "weight", "1", err) && !ed.CanRedo());              // a new edit clears redo
+    // a bitset enum and a colour, from their own schema
+    Schema s2; CHECK(ParseText("enum Bits { B0, B1, B2 }\n[WEAPON]\nmask: Bits.B0 bitset\ntint: #102030\nflag: false\nn: 3\n", s2, err));
+    EditSession e2(s2, data);
+    CHECK(e2.Set("1-z", "mask", "B1|B2", err) && std::get<int32_t>(*e2.Edited("1-z", "mask")) == ((1 << 1) | (1 << 2)));   // bit number = the enum value
+    CHECK(e2.Set("1-z", "tint", "#ff8000", err) && std::get<int32_t>(*e2.Edited("1-z", "tint")) == 0xFF8000);
+    CHECK(e2.Set("1-z", "flag", "True", err) && std::get<bool>(*e2.Edited("1-z", "flag")));
+    CHECK(!e2.Set("1-z", "n", "1.5", err));
+    CHECK(e2.Set("1-z", "n", "-12", err) && std::get<int32_t>(*e2.Edited("1-z", "n")) == -12);
+    br.SetEdits(nullptr);
 }
 
 int main() {

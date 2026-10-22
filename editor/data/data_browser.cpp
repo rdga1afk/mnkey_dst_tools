@@ -44,6 +44,7 @@ bool DataBrowser::FieldText(const md::fcs::GameData& rec, const std::string& fie
     const Field* f = FindField(schema_, md::fcs::ItemTypeName(rec.kind), field);
     if (!f) return false;
     out = f->default_text;
+    if (edits_ && edits_->EditedText(rec.string_id, field, out)) return true;
     switch (f->kind) {
         case FieldKind::Bool: { auto it = rec.bools.find(field); if (it != rec.bools.end()) out = it->second ? "true" : "false"; break; }
         case FieldKind::Float: { auto it = rec.floats.find(field); if (it != rec.floats.end()) out = Num(it->second); break; }
@@ -113,6 +114,7 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
         CardField c;
         c.category = f->category; c.name = f->name; c.type = TypeName(f->kind); c.def = f->default_text; c.description = f->description;
         FieldText(*rec, f->name, c.value);
+        c.edited = edits_ && edits_->StateOf(string_id, f->name) == FieldState::Modified;
         switch (f->kind) {
             case FieldKind::Bool: c.changed = rec->bools.count(f->name) != 0; break;
             case FieldKind::Float: c.changed = rec->floats.count(f->name) != 0; break;
