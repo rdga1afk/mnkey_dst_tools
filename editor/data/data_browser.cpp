@@ -126,4 +126,19 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
     return card;
 }
 
+std::vector<CardInstance> DataBrowser::Instances(const std::string& string_id) const {
+    std::vector<CardInstance> out;
+    const md::fcs::GameData* rec = data_.Get(string_id);
+    if (!rec) return out;
+    for (const md::fcs::Instance& in : rec->instances) {
+        if (in.target.empty()) continue;
+        CardInstance c; c.id = in.id; c.target_id = in.target; c.states = in.states;
+        for (int k = 0; k < 3; ++k) c.pos[k] = in.position[k];
+        const md::fcs::GameData* t = data_.Get(in.target);
+        c.target_name = t ? t->name : in.target;
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
 }  // namespace md::fcsdef

@@ -19,6 +19,7 @@ struct State {
     std::vector<md::fcsdef::ItemRow> rows;
     std::string selected;                           // string_id
     std::vector<md::fcsdef::CardField> card;
+    std::vector<md::fcsdef::CardInstance> insts;
     char filter[64] = "";
     bool only_changed = false;
 } g;
@@ -33,11 +34,11 @@ void Load() {
     if (!inst.LoadOrderFor(order, err) || !g.data.Load(order, err)) { g.error = err.Message(); return; }
     g.browser = std::make_unique<md::fcsdef::DataBrowser>(g.schema, g.data);
     g.ok = true;
-    if (!g.schema.layout.empty()) { Select(g.schema.layout[0]); if (!g.rows.empty()) { g.selected = g.rows[0].string_id; g.card = g.browser->Card(g.selected); } }   // the first category and its first item are open on start
+    if (!g.schema.layout.empty()) { Select(g.schema.layout[0]); if (!g.rows.empty()) { g.selected = g.rows[0].string_id; g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }   // the first category and its first item are open on start
 }
 
 void Select(const md::fcsdef::LayoutNode& n) {
-    g.node = &n; g.rows = g.browser->Items(n); g.selected.clear(); g.card.clear();
+    g.node = &n; g.rows = g.browser->Items(n); g.selected.clear(); g.card.clear(); g.insts.clear();
 }
 
 void DrawTree(const std::vector<md::fcsdef::LayoutNode>& nodes) {
@@ -62,7 +63,7 @@ void Draw() {
     ImGui::Text("%zu items", g.rows.size());
     for (const md::fcsdef::ItemRow& r : g.rows) {
         if (g.filter[0] && r.name.find(g.filter) == std::string::npos) continue;
-        if (ImGui::Selectable((r.name + "##" + r.string_id).c_str(), g.selected == r.string_id)) { g.selected = r.string_id; g.card = g.browser->Card(r.string_id); }
+        if (ImGui::Selectable((r.name + "##" + r.string_id).c_str(), g.selected == r.string_id)) { g.selected = r.string_id; g.card = g.browser->Card(r.string_id); g.insts = g.browser->Instances(r.string_id); }
     }
     ImGui::EndChild();
     ImGui::SameLine();
@@ -77,6 +78,10 @@ void Draw() {
         { const std::string v = c.value.size() > 60 ? c.value.substr(0, 57) + "..." : c.value; ImGui::TextUnformatted(v.c_str()); if (c.value.size() > 60 && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", c.value.c_str()); }
         ImGui::SameLine(560); ImGui::TextDisabled("%s  (default %s)", c.type.c_str(), c.def.c_str());
         if (ImGui::IsItemHovered() && !c.description.empty()) ImGui::SetTooltip("%s", c.description.c_str());
+    }
+    if (!g.insts.empty()) {
+        ImGui::SeparatorText("Instances");
+        for (const md::fcsdef::CardInstance& c : g.insts) ImGui::Text("%s  ->  %s   (%.1f, %.1f, %.1f)%s", c.id.c_str(), c.target_name.c_str(), c.pos[0], c.pos[1], c.pos[2], c.states.empty() ? "" : "  [states]");
     }
     ImGui::EndChild();
 }

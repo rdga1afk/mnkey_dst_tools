@@ -3,6 +3,7 @@
 #include <monkey_dust/io/fcs.h>
 #include <cstdint>
 #include <cstring>
+#include <random>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -75,6 +76,39 @@ void Rec(W& w, int id, const std::string& name, const std::string& sid, int kind
 }
 }  // namespace
 
+// F2 oracle: 20 random records of the installed gamedata.base (fixed seed): every raw field of the record that the schema describes must show the same value on the card
+static void RealCardTest(const std::string& kd, const Schema& schema) {
+    md::fcs::File file; md::fcs::Error e;
+    if (!md::fcs::ReadFile(kd + "/data/gamedata.base", file, e)) { std::printf("FAIL cannot read gamedata.base: %s\n", e.Message().c_str()); ++fails; return; }
+    md::fcs::GameDataContainer data; data.ApplyFile("gamedata.base", file);
+    DataBrowser br(schema, data);
+    std::mt19937 rng(20261022);
+    size_t checked = 0, undescribed = 0, mism = 0;
+    for (int n = 0; n < 20; ++n) {
+        const md::fcs::Record& r = file.records[rng() % file.records.size()];
+        const auto card = br.Card(r.string_id);
+        auto cf = [&](const std::string& name) -> const CardField* { for (const CardField& c : card) if (c.name == name) return &c; return nullptr; };
+        auto fl = [](float f) { char b[32]; std::snprintf(b, sizeof b, "%g", f); return std::string(b); };
+        auto enum_ok = [&](const CardField& c, int v) {
+            if (c.value == std::to_string(v)) return true;
+            const size_t dot = c.value.find('.'); if (dot == std::string::npos) return false;
+            const EnumDef* ed = schema.FindEnum(c.value.substr(0, dot)); if (!ed) return false;
+            for (const EnumValue& x : ed->values) if (x.name == c.value.substr(dot + 1)) return x.value == v;
+            return false;
+        };
+        for (const auto& kv : r.bools) { const CardField* c = cf(kv.first); if (!c) { ++undescribed; continue; } ++checked; if (c->value != (kv.second ? "true" : "false")) { ++mism; std::printf("  bool %s %s: card '%s' raw %d\n", r.string_id.c_str(), kv.first.c_str(), c->value.c_str(), kv.second); } }
+        for (const auto& kv : r.floats) { const CardField* c = cf(kv.first); if (!c) { ++undescribed; continue; } ++checked; if (c->value != fl(kv.second)) { ++mism; std::printf("  float %s %s: card '%s' raw %g\n", r.string_id.c_str(), kv.first.c_str(), c->value.c_str(), kv.second); } }
+        for (const auto& kv : r.ints) { const CardField* c = cf(kv.first); if (!c) { ++undescribed; continue; } ++checked; const bool ok = c->type == "enum" ? enum_ok(*c, kv.second) : c->value == std::to_string(kv.second); if (!ok) { ++mism; std::printf("  int %s %s: card '%s' raw %d\n", r.string_id.c_str(), kv.first.c_str(), c->value.c_str(), kv.second); } }
+        for (const auto& kv : r.strings) { const CardField* c = cf(kv.first); if (!c) { ++undescribed; continue; } ++checked; if (c->value != kv.second) { ++mism; std::printf("  string %s %s\n", r.string_id.c_str(), kv.first.c_str()); } }
+        for (const auto& kv : r.files) { const CardField* c = cf(kv.first); if (!c) { ++undescribed; continue; } ++checked; if (c->value != kv.second) { ++mism; std::printf("  file %s %s\n", r.string_id.c_str(), kv.first.c_str()); } }
+        for (const auto& kv : r.references) { const CardField* c = cf(kv.first); if (!c) { ++undescribed; continue; } ++checked; if (c->type != "refs" || (kv.second.empty() != c->value.empty())) { ++mism; std::printf("  refs %s %s\n", r.string_id.c_str(), kv.first.c_str()); } }
+        CHECK(br.Instances(r.string_id).size() <= r.instances.size());
+    }
+    std::printf("card vs gamedata.base, 20 random records: %zu values compared, %zu mismatches, %zu raw fields not described by the schema\n", checked, mism, undescribed);
+    CHECK(mism == 0);
+    CHECK(checked > 100);
+}
+
 static void BrowserTest() {
     W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
     Rec(f, 1, "Zeta", "1-z", 1, 2.5f); Rec(f, 2, "Alpha", "2-a", 0, 1.0f); Rec(f, 3, "Mid", "3-m", 1, 4.0f);
@@ -144,6 +178,7 @@ int main() {
         if (LoadDir(kd, real, err)) {
             size_t nf = 0, kinds[10] = {};
             for (const Section& sec : real.sections) { nf += sec.fields.size(); for (const Field& fl : sec.fields) ++kinds[(int)fl.kind]; }
+            RealCardTest(kd, real);
             std::printf("real files: %zu sections, %zu fields (bool %zu float %zu int %zu string %zu colour %zu enum %zu null %zu file %zu reflist %zu refstring %zu), %zu enums, %zu top layout nodes\n",
                         real.sections.size(), nf, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], kinds[6], kinds[7], kinds[8], kinds[9], real.enums.size(), real.layout.size());
         }

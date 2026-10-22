@@ -14,6 +14,8 @@ struct CardField {
     bool changed = false;                                        // the record sets it (differs from the schema default)
 };
 
+struct CardInstance { std::string id, target_id, target_name; float pos[3] = {0, 0, 0}; std::vector<std::string> states; };
+
 struct ItemRow { std::string string_id, name; };
 
 class DataBrowser {
@@ -24,6 +26,8 @@ public:
     std::vector<ItemRow> Items(const LayoutNode& node) const;
     // The card of a record: every schema field of its item type, in file order; reference lists show their targets.
     std::vector<CardField> Card(const std::string& string_id) const;
+    // The placed instances of a record (positions in the data's own units); an instance with an empty target is skipped (removed by a mod).
+    std::vector<CardInstance> Instances(const std::string& string_id) const;
     // `field` of `rec` as text (value of the record when set, else the schema default); false when the type has no such field.
     bool FieldText(const md::fcs::GameData& rec, const std::string& field, std::string& out) const;
 
