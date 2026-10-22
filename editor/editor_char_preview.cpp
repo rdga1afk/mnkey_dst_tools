@@ -36,6 +36,7 @@ struct Vtx { float px, py, pz, nx, ny, nz, u, v; uint8_t ji[4]; float wt[4]; };
 struct VU { float mvp[16]; };
 struct VU2 { float mv[16]; };
 bool g_kenshi_light = false;
+GpuTexture g_bg_sandy;   // gui/gfx/SandyGround.dds
 GpuTexture g_mask_body, g_mask_head, g_nrm_body, g_nrm_head, g_tex_white;   // skin-tone masks and tangent-space normal maps next to the diffuse textures (Character_FP maskMap / normalMap / headMaskMap / headNormalMap)
 bool g_have_nrm_body = false, g_have_nrm_head = false;   // view * model of the body: view-space lighting
 
@@ -113,7 +114,8 @@ bool CreatePipelines() {
     pd.vert_uniform_bufs = 3; pd.vert_samplers = 0; pd.frag_samplers = 10; pd.frag_uniform_bufs = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
     if (!g_body_pipe.Create(pd)) { fprintf(stderr, "[CharPreview] body pipeline create failed\n"); return false; }
-    { const std::string kd = md::KenshiDir(); if (!g_irr_cube.InitFromDDSCube((kd + "/data/materials/mp_irradiance.dds").c_str()) || !g_spec_cube.InitFromDDSCube((kd + "/data/materials/mp_specularity.dds").c_str())) fprintf(stderr, "[CharPreview] environment cubes missing under %s/data/materials\n", kd.c_str()); }
+    { const std::string kd = md::KenshiDir(); if (!g_irr_cube.InitFromDDSCube((kd + "/data/materials/mp_irradiance.dds").c_str()) || !g_spec_cube.InitFromDDSCube((kd + "/data/materials/mp_specularity.dds").c_str())) fprintf(stderr, "[CharPreview] environment cubes missing under %s/data/materials\n", kd.c_str());
+      GpuSamplerDesc bs; bs.min_filter = bs.mag_filter = GpuSamplerDesc::Filter::LINEAR; const std::string sg = kd + "/data/gui/gfx/SandyGround.dds"; const char* sgp = sg.c_str(); if (!g_bg_sandy.InitFromDDSArray(&sgp, 1, bs)) fprintf(stderr, "[CharPreview] SandyGround.dds missing: %s\n", sg.c_str()); }
     GpuPipeline::Desc hd = pd;
     hd.frag_path = "shaders/char_hair.frag"; hd.frag_samplers = 1; hd.raster.cull_back = false;
     if (!g_hair_pipe.Create(hd)) fprintf(stderr, "[CharPreview] hair pipeline create failed\n");
@@ -122,7 +124,7 @@ bool CreatePipelines() {
     bg.vert_path = "shaders/char_bg.vert"; bg.frag_path = "shaders/char_bg.frag";
     bg.layout.count = 0; bg.layout.stride = 0;
     bg.raster.depth_test = false; bg.raster.depth_write = false; bg.raster.cull_back = false;
-    bg.frag_samplers = 2; bg.frag_uniform_bufs = 1;
+    bg.frag_samplers = 3; bg.frag_uniform_bufs = 1;
     bg.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; bg.has_depth_target = true;
     if (!g_bg_pipe.Create(bg)) fprintf(stderr, "[CharPreview] background pipeline create failed\n");
     GpuSamplerDesc rep; rep.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; rep.mag_filter = GpuSamplerDesc::Filter::LINEAR;
@@ -400,10 +402,11 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         u.right[0] = iv[0]; u.right[1] = iv[1]; u.right[2] = iv[2]; u.right[3] = th * asp;
         u.up[0] = iv[4]; u.up[1] = iv[5]; u.up[2] = iv[6]; u.up[3] = th;
         u.fwd[0] = -iv[8]; u.fwd[1] = -iv[9]; u.fwd[2] = -iv[10]; u.fwd[3] = 0.f;   // ground at world y = 0
-        u.eye[0] = iv[12]; u.eye[1] = iv[13]; u.eye[2] = iv[14]; u.eye[3] = 0.f;
+        u.eye[0] = iv[12]; u.eye[1] = iv[13]; u.eye[2] = iv[14]; u.eye[3] = (g_kenshi_light && g_bg_sandy.SDLTexture()) ? 1.f : 0.f;
         GpuPushFragmentUniforms(cmd, 0, &u, sizeof(u));
-        SDL_GPUTextureSamplerBinding t[2] = {{g_bg_sand.SDLTexture(), g_bg_sand.SDLSampler()}, {g_bg_dune.SDLTexture(), g_bg_dune.SDLSampler()}};
-        pv.BindFragmentSamplers(0, t, 2);
+        GpuTexture& sandy = g_bg_sandy.SDLTexture() ? g_bg_sandy : g_bg_sand;
+        SDL_GPUTextureSamplerBinding t[3] = {{g_bg_sand.SDLTexture(), g_bg_sand.SDLSampler()}, {g_bg_dune.SDLTexture(), g_bg_dune.SDLSampler()}, {sandy.SDLTexture(), sandy.SDLSampler()}};
+        pv.BindFragmentSamplers(0, t, 3);
         pv.Draw(3, 1, 0, 0);
     }
     const bool plat = g_plat_pipe.SDLPipeline() && g_plat_vbo.SDLBuffer() && g_plat_tex.SDLTexture() && g_plat_tex2.SDLTexture() && g_plat_ni > 0;
