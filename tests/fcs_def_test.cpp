@@ -1,7 +1,11 @@
 // Synthetic mini .def files (not Kenshi data) through the schema reader. With KENSHI_DIR set, also loads the real files and checks only that they parse.
 #include "../editor/data/data_browser.h"
+#include "../editor/data/dialog_model.h"
 #include "../editor/data/mod_write.h"
+#include <algorithm>
 #include <filesystem>
+#include <functional>
+#include <set>
 #include <monkey_dust/io/fcs.h>
 #include <cstdint>
 #include <cstring>
@@ -153,6 +157,56 @@ static void RealWriteTest(const std::string& kd, const Schema& schema) {
     std::filesystem::remove(path);
 }
 
+// F6 on the install: every package / dialogue of gamedata.base + Dialogue.mod builds a tree; an edited dialogue survives WriteMod
+static void RealDialogTest(const std::string& kd, Schema& schema) {
+    md::fcs::GameDataContainer data; md::fcs::Error e;
+    for (const char* n : {"gamedata.base", "Dialogue.mod"}) {
+        md::fcs::File f; if (!md::fcs::ReadFile(kd + "/data/" + n, f, e)) { std::printf("skip F6 real: %s\n", n); return; }
+        data.ApplyFile(n, f);
+    }
+    const int code_enums = AddCodeEnums(schema, "docs/research/kenshi_specs/fcs_code_enums.json");   // from the main repo's cwd; skipped elsewhere
+    AddDialogActionFields(schema);
+    EditSession ed(schema, data, "md_test.mod"); DialogModel dm(ed, schema, data);
+    const auto dialogues = dm.AllDialogues();
+    size_t nodes = 0, with_cond = 0, with_eff = 0, cycles = 0, texts = 0, deepest = 0;
+    std::function<size_t(const DialogNode&)> depth = [&](const DialogNode& n) { size_t d = 0; for (auto& c : n.children) d = std::max(d, depth(c)); return d + 1; };
+    std::function<void(const DialogNode&)> walk = [&](const DialogNode& n) {
+        ++nodes; with_cond += !n.conditions.empty(); with_eff += !n.effects.empty(); cycles += n.cycle; texts += n.texts.size();
+        for (auto& c : n.children) walk(c);
+    };
+    std::set<std::string> uniq; std::function<void(const std::string&)> reach = [&](const std::string& id) { if (!uniq.insert(id).second) return; for (const std::string& c : dm.ChildLines(id)) reach(c); };
+    for (const std::string& d : dialogues) reach(d);
+    for (const std::string& d : dialogues) { DialogNode t = dm.Tree(d, 12); walk(t); deepest = std::max(deepest, depth(t)); }
+    CHECK(!dialogues.empty() && uniq.size() > dialogues.size() && !dm.Packages().empty());
+    std::printf("F6 real: %zu packages, %zu dialogues, %zu distinct lines+dialogues; trees cut at depth 12: %zu nodes (%zu with conditions, %zu with effects, %zu cycles, %zu texts), deepest tree %zu, %d code enums\n",
+                dm.Packages().size(), dialogues.size(), uniq.size(), nodes, with_cond, with_eff, cycles, texts, deepest, code_enums);
+    if (code_enums == 0) return;
+    // edit one real dialogue: a new reply, a condition, a new dialogue in a package
+    std::string pick; for (const std::string& d : dialogues) if (dm.CountNodes(dm.Tree(d)) >= 2) { pick = d; break; }
+    CHECK(!pick.empty());
+    const size_t before = dm.CountNodes(dm.Tree(pick));
+    const std::string line = dm.AddLine(pick, "MD test reply", "T_ME");
+    CHECK(!line.empty() && !dm.AddCondition(line, "DC_RELATIONS", "T_TARGET", "CE_MORE_THAN", 10).empty());
+    const std::string pkg = dm.Packages()[0];
+    const size_t pkg_before = dm.DialoguesOf(pkg).size();
+    const std::string nd = dm.NewDialogue("MD test dialogue", pkg, "EV_ANNOUNCEMENT");
+    CHECK(!nd.empty() && !dm.AddLine(nd, "Hello", "T_ME").empty());
+    std::string err; ModInfo info;
+    const std::string path = (std::filesystem::temp_directory_path() / "md_f6_real.mod").string();
+    CHECK(WriteMod(path, ed, schema, info, err, kd + "/data"));
+    md::fcs::File back; CHECK(md::fcs::ReadFile(path, back, e));
+    md::fcs::GameDataContainer after;
+    for (const char* n : {"gamedata.base", "Dialogue.mod"}) { md::fcs::File f; md::fcs::ReadFile(kd + "/data/" + n, f, e); after.ApplyFile(n, f); }
+    after.ApplyFile("md_test.mod", back);
+    EditSession ed2(schema, after, "md_test.mod"); DialogModel dm2(ed2, schema, after);
+    CHECK(dm2.CountNodes(dm2.Tree(pick)) == before + 1 && dm2.DialoguesOf(pkg).size() == pkg_before + 1 && dm2.AllDialogues().size() == dialogues.size() + 1);
+    DialogNode t2 = dm2.Tree(pick); bool found = false;
+    for (auto& c : t2.children) if (c.sid == line && c.texts.size() == 1 && c.texts[0] == "MD test reply" && c.conditions.size() == 1 && c.conditions[0].what == "DC_RELATIONS") found = true;
+    CHECK(found);
+    std::printf("F6 real: edited dialogue round-trips through the mod (%lld bytes, %zu records)\n", (long long)std::filesystem::file_size(path), back.records.size());
+    std::filesystem::remove(path);
+}
+
 static void BrowserTest() {
     W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
     Rec(f, 1, "Zeta", "1-z", 1, 2.5f); Rec(f, 2, "Alpha", "2-a", 0, 1.0f); Rec(f, 3, "Mid", "3-m", 1, 4.0f);
@@ -266,8 +320,83 @@ static void RefTest() {
     CHECK(ed.ModifiedCount() == 0 && ed.Exists("1-w") && ed.NameOf("1-w") == "Sword" && ed.TouchedRecords().empty() && ed.LastId() == 100);
 }
 
+// F6: dialogues on synthetic records (kinds: 73 package, 18 dialogue, 19 line, 31 action) with a synthetic code-enum file
+static std::string DialogRec(W& f, int kind, int id, const std::string& name, const std::string& sid, std::vector<std::pair<std::string, int>> ints,
+                             std::vector<std::pair<std::string, std::string>> strs, std::vector<std::pair<std::string, std::vector<std::pair<std::string, int>>>> refs) {
+    f.i32(0).i32(kind).i32(id).str(name).str(sid).i32(0).i32(0).i32(0);
+    f.i32((int)ints.size()); for (auto& i : ints) f.str(i.first).i32(i.second);
+    f.i32(0).i32(0);
+    f.i32((int)strs.size()); for (auto& x : strs) f.str(x.first).str(x.second);
+    f.i32(0);
+    f.i32((int)refs.size());
+    for (auto& r : refs) { f.str(r.first).i32((int)r.second.size()); for (auto& t : r.second) f.str(t.first).i32(t.second).i32(0).i32(0); }
+    f.i32(0);
+    return sid;
+}
+static void DialogTest() {
+    const std::string js = (std::filesystem::temp_directory_path() / "md_f6_enums.json").string();
+    { FILE* o = std::fopen(js.c_str(), "w"); std::fputs(R"({"TalkerEnum":[["T_ME",0],["T_TARGET",1]],"ComparisonEnum":[["CE_EQUALS",0],["CE_LESS_THAN",1]],
+        "DialogConditionEnum":[["DC_NONE",0],["DC_RELATIONS",1],["DC_PLAYERMONEY",2]],"DialogActionEnum":[["DA_NONE",0],["DA_TRADE",1]],
+        "EventTriggerEnum":[["EV_NONE",0],["EV_PLAYER_TALK_TO_ME",1],["EV_ANNOUNCEMENT",2]]})", o); std::fclose(o); }
+    W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(6);
+    DialogRec(f, 73, 1, "Pack", "1-p", {}, {}, {{"dialogs", {{"2-d", 1}}}});
+    DialogRec(f, 18, 2, "Hello", "2-d", {}, {}, {{"lines", {{"3-l", 100}}}, {"conditions", {{"5-c", 0}}}});
+    DialogRec(f, 19, 3, "L1", "3-l", {{"speaker", 1}}, {{"text0", "Hi"}, {"text1", "Hey"}}, {{"lines", {{"4-l", 100}}}, {"effects", {{"6-e", 0}}}});
+    DialogRec(f, 19, 4, "L2", "4-l", {{"speaker", 0}}, {{"text0", "Bye"}}, {});
+    DialogRec(f, 31, 5, "c", "5-c", {{"condition name", 1}, {"who", 1}, {"compare by", 1}, {"tag", 20}}, {}, {});
+    DialogRec(f, 31, 6, "e", "6-e", {{"action name", 1}, {"action value", 7}}, {}, {});
+    md::fcs::File file; md::fcs::Error e;
+    CHECK(md::fcs::Parse(f.b.data(), f.b.size(), file, e));
+    md::fcs::GameDataContainer data; data.ApplyFile("t.mod", file); data.id_counter = 100;
+    Schema s; std::string err;
+    CHECK(ParseText("[DIALOGUE]\nOWNED: lines\n[DIALOGUE_LINE]\nOWNED: effects\ntext0: \"\" multiline looped\nspeaker: 0\n[DIALOGUE,DIALOGUE_LINE]\nOWNED: conditions\n", s, err));
+    CHECK(AddCodeEnums(s, js) == 5 && s.FindEnum("TalkerEnum")->values.size() == 2);
+    AddDialogActionFields(s); AddDialogActionFields(s);   // second call adds nothing
+    CHECK(s.FieldsOf("DIALOG_ACTION").size() == 7 && s.FieldsOf("DIALOGUE_LINE").size() == 2 + 15);
+    EditSession ed(s, data, "md_test.mod");
+    DialogModel dm(ed, s, data);
+    CHECK(dm.Packages().size() == 1 && dm.AllDialogues().size() == 1);
+    const auto ds = dm.DialoguesOf("1-p");
+    CHECK(ds.size() == 1 && ds[0].sid == "2-d" && ds[0].trigger_name == "EV_PLAYER_TALK_TO_ME");
+    DialogNode t = dm.Tree("2-d");
+    CHECK(dm.CountNodes(t) == 3 && t.conditions.size() == 1 && t.conditions[0].what == "DC_RELATIONS" && t.conditions[0].detail == "T_TARGET CE_LESS_THAN 20");
+    CHECK(t.children.size() == 1 && t.children[0].speaker == "T_TARGET" && t.children[0].texts.size() == 2 && t.children[0].texts[1] == "Hey");
+    CHECK(t.children[0].effects.size() == 1 && t.children[0].effects[0].what == "DA_TRADE" && t.children[0].effects[0].detail == "7");
+    CHECK(t.children[0].children.size() == 1 && t.children[0].children[0].texts[0] == "Bye");
+    // edits
+    const std::string nl = dm.AddLine("4-l", "Wait!", "T_TARGET");
+    CHECK(!nl.empty() && dm.AddLine("4-l", "x", "NOPE").empty());
+    CHECK(dm.SetText("3-l", 0, "Hello there") && dm.SetText("3-l", 2, "Yo"));
+    const std::string nc = dm.AddCondition("3-l", "DC_PLAYERMONEY", "T_ME", "CE_EQUALS", 500);
+    const std::string ne = dm.AddEffect("4-l", "DA_TRADE", 3);
+    CHECK(!nc.empty() && !ne.empty() && dm.AddCondition("3-l", "DC_NOPE", "T_ME", "CE_EQUALS", 1).empty());
+    const std::string nd = dm.NewDialogue("Fresh", "1-p", "EV_ANNOUNCEMENT");
+    CHECK(!nd.empty() && dm.DialoguesOf("1-p").size() == 2 && dm.AddLine(nd, "First", "T_ME") != "");
+    CHECK(dm.AllDialogues().size() == 2);
+    t = dm.Tree("2-d");
+    CHECK(dm.CountNodes(t) == 4 && t.children[0].texts[0] == "Hello there" && t.children[0].texts.size() == 3 && t.children[0].conditions.size() == 1);
+    CHECK(t.children[0].children[0].children.size() == 1 && t.children[0].children[0].children[0].texts[0] == "Wait!" && t.children[0].children[0].effects.size() == 1);
+    // the mod
+    const std::string path = (std::filesystem::temp_directory_path() / "md_f6_test.mod").string();
+    ModInfo info; CHECK(WriteMod(path, ed, s, info, err));
+    md::fcs::File back; CHECK(md::fcs::ReadFile(path, back, e));
+    md::fcs::GameDataContainer after; after.ApplyFile("t.mod", file); after.ApplyFile("md_test.mod", back);
+    EditSession ed2(s, after, "md_test.mod"); DialogModel dm2(ed2, s, after);
+    DialogNode t2 = dm2.Tree("2-d");
+    CHECK(dm2.CountNodes(t2) == 4 && t2.children[0].texts[2] == "Yo" && t2.children[0].children[0].children[0].texts[0] == "Wait!" && dm2.DialoguesOf("1-p").size() == 2);
+    // remove a line: unlinked, and its effect owned by it goes with it
+    CHECK(dm.RemoveLine("2-d", "3-l"));
+    CHECK(dm.CountNodes(dm.Tree("2-d")) == 1 && !ed.Exists("3-l") && !ed.Exists("6-e"));
+    CHECK(dm.RemoveAction("2-d", "conditions", "5-c") && dm.Tree("2-d").conditions.empty());
+    while (ed.Undo()) {}
+    CHECK(dm.CountNodes(dm.Tree("2-d")) == 3);
+    std::filesystem::remove(path); std::filesystem::remove(js);
+    CHECK(AddCodeEnums(s, "/nonexistent.json") == 0);
+}
+
 int main() {
     RefTest();
+    DialogTest();
     BrowserTest();
     Schema s; std::string err;
     CHECK(ParseText(kEnums, s, err));
@@ -308,7 +437,7 @@ int main() {
         if (LoadDir(kd, real, err)) {
             size_t nf = 0, kinds[10] = {};
             for (const Section& sec : real.sections) { nf += sec.fields.size(); for (const Field& fl : sec.fields) ++kinds[(int)fl.kind]; }
-            RealCardTest(kd, real); RealWriteTest(kd, real);
+            RealCardTest(kd, real); RealWriteTest(kd, real); RealDialogTest(kd, real);
             std::printf("real files: %zu sections, %zu fields (bool %zu float %zu int %zu string %zu colour %zu enum %zu null %zu file %zu reflist %zu refstring %zu), %zu enums, %zu top layout nodes\n",
                         real.sections.size(), nf, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], kinds[6], kinds[7], kinds[8], kinds[9], real.enums.size(), real.layout.size());
         }

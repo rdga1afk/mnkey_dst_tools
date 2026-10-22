@@ -1,6 +1,8 @@
 #include "data_panel.h"
 #include "data_browser.h"
+#include "dialog_model.h"
 #include "mod_write.h"
+#include <algorithm>
 #include <filesystem>
 #include <imgui.h>
 #include <monkey_dust/io/kenshi_dir.h>
@@ -19,6 +21,7 @@ struct State {
     md::fcs::GameDataContainer data;
     std::unique_ptr<md::fcsdef::DataBrowser> browser;
     std::unique_ptr<md::fcsdef::EditSession> edits;
+    std::unique_ptr<md::fcsdef::DialogModel> dialogs;
     std::string status;                             // last edit error
     const md::fcsdef::LayoutNode* node = nullptr;   // selected category
     std::vector<md::fcsdef::ItemRow> rows;
@@ -27,6 +30,8 @@ struct State {
     std::vector<md::fcsdef::CardInstance> insts;
     char filter[64] = "";
     bool only_changed = false;
+    std::string line, line_parent;                  // selected dialogue line (the one being edited) and the dialogue it was opened from
+    char new_text[256] = "";
 } g;
 
 void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
@@ -35,12 +40,15 @@ void Load() {
     g.tried = true;
     const std::string dir = md::KenshiDir();
     if (!md::fcsdef::LoadDir(dir, g.schema, g.error)) return;
+    md::fcsdef::AddCodeEnums(g.schema);   // the code enums (talker, conditions, actions, triggers) when the file is found (MD_FCS_CODE_ENUMS)
+    md::fcsdef::AddDialogActionFields(g.schema);
     md::fcs::Install inst(dir);
     md::fcs::LoadOrder order; md::fcs::Error err;
     if (!inst.LoadOrderFor(order, err) || !g.data.Load(order, err)) { g.error = err.Message(); return; }
     g.browser = std::make_unique<md::fcsdef::DataBrowser>(g.schema, g.data);
     g.edits = std::make_unique<md::fcsdef::EditSession>(g.schema, g.data);
     g.browser->SetEdits(g.edits.get());
+    g.dialogs = std::make_unique<md::fcsdef::DialogModel>(*g.edits, g.schema, g.data);
     g.ok = true;
     if (!g.schema.layout.empty()) { Select(g.schema.layout[0]); if (!g.rows.empty()) { g.selected = g.rows[0].string_id; g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }   // the first category and its first item are open on start
 }
@@ -55,6 +63,67 @@ void DrawTree(const std::vector<md::fcsdef::LayoutNode>& nodes) {
         const bool open = ImGui::TreeNodeEx((void*)&n, f, "%s", n.name.c_str());
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) Select(n);
         if (open) { DrawTree(n.children); ImGui::TreePop(); }
+    }
+}
+
+// One line of a dialogue and, when opened, the lines below it (read per frame only for open nodes). `path` guards against the loops the data has.
+void DrawLine(const std::string& parent, const std::string& sid, std::vector<std::string>& path) {
+    using namespace md::fcsdef;
+    const DialogNode n = g.dialogs->Shallow(sid);
+    const std::string title = (n.texts.empty() ? g.edits->NameOf(sid) : n.texts[0]);
+    const bool looped = std::find(path.begin(), path.end(), sid) != path.end();
+    const auto kids = looped ? std::vector<std::string>() : g.dialogs->ChildLines(sid);
+    ImGui::PushID(sid.c_str());
+    ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_SpanAvailWidth | (kids.empty() ? ImGuiTreeNodeFlags_Leaf : 0);
+    const bool open = ImGui::TreeNodeEx("##n", f, "[%s] %s%s", n.speaker.c_str(), title.substr(0, 90).c_str(), looped ? "  (loops back)" : "");
+    if (ImGui::IsItemClicked()) { g.line = sid; g.line_parent = parent; }
+    if (open) {
+        path.push_back(sid);
+        for (const std::string& k : kids) DrawLine(sid, k, path);
+        path.pop_back();
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
+
+void DrawDialogue(int kind) {
+    using namespace md::fcsdef;
+    ImGui::SeparatorText("Dialogue");
+    if (kind == kItemDialoguePackage) {
+        for (const DialogRef& d : g.dialogs->DialoguesOf(g.selected)) ImGui::BulletText("%s  <-  %s", d.name.c_str(), d.trigger_name.c_str());
+        static char nm[64] = "New dialogue"; static int trig = 1;
+        ImGui::SetNextItemWidth(200); ImGui::InputText("name##nd", nm, sizeof nm);
+        ImGui::SameLine(); ImGui::SetNextItemWidth(120); ImGui::InputInt("EventTriggerEnum##nd", &trig);
+        ImGui::SameLine();
+        if (ImGui::Button("New dialogue")) { const std::string s = g.dialogs->NewDialogue(nm, g.selected, std::to_string(trig)); if (s.empty()) g.status = "new dialogue failed"; else Refresh(); }
+        return;
+    }
+    std::vector<std::string> path;
+    if (kind == kItemDialogue) {
+        for (const DialogAction& c : g.dialogs->Shallow(g.selected).conditions) ImGui::BulletText("condition  %s  %s", c.what.c_str(), c.detail.c_str());
+        for (const std::string& k : g.dialogs->ChildLines(g.selected)) DrawLine(g.selected, k, path);
+        if (g.dialogs->ChildLines(g.selected).empty()) ImGui::TextDisabled("no lines");
+        ImGui::SetNextItemWidth(400); ImGui::InputText("##nl", g.new_text, sizeof g.new_text);
+        ImGui::SameLine();
+        if (ImGui::Button("Add line")) { if (g.dialogs->AddLine(g.selected, g.new_text, "T_ME").empty()) g.status = "add line failed"; else Refresh(); }
+    }
+    if (kind == kItemDialogueLine) g.line = g.selected;
+    if (!g.line.empty() && g.edits->Exists(g.line)) {
+        const DialogNode n = g.dialogs->Shallow(g.line);
+        ImGui::Separator(); ImGui::Text("selected line: %s", n.speaker.c_str());
+        for (size_t i = 0; i < n.texts.size(); ++i) {
+            ImGui::PushID((int)i);
+            static char buf[512]; std::snprintf(buf, sizeof buf, "%s", n.texts[i].c_str());
+            ImGui::SetNextItemWidth(500);
+            if (ImGui::InputText("##t", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue)) { g.dialogs->SetText(g.line, (int)i, buf); Refresh(); }
+            ImGui::PopID();
+        }
+        for (const DialogAction& c : n.conditions) ImGui::BulletText("condition  %s  %s", c.what.c_str(), c.detail.c_str());
+        for (const DialogAction& c : n.effects) ImGui::BulletText("effect  %s  %s", c.what.c_str(), c.detail.c_str());
+        ImGui::SetNextItemWidth(400); ImGui::InputText("##rl", g.new_text, sizeof g.new_text);
+        ImGui::SameLine();
+        if (ImGui::Button("Add reply")) { if (g.dialogs->AddLine(g.line, g.new_text, "T_TARGET").empty()) g.status = "add reply failed"; else Refresh(); }
+        if (!g.line_parent.empty() && g.line_parent != g.line) { ImGui::SameLine(); if (ImGui::Button("Remove line") && g.dialogs->RemoveLine(g.line_parent, g.line)) { g.line.clear(); Refresh(); } }
     }
 }
 
@@ -165,6 +234,7 @@ void Draw() {
             ImGui::PopID();
         }
     }
+    if (!g.selected.empty()) { const int k = g.edits->KindOf(g.selected); if (k == md::fcsdef::kItemDialogue || k == md::fcsdef::kItemDialogueLine || k == md::fcsdef::kItemDialoguePackage) DrawDialogue(k); }
     ImGui::EndChild();
 }
 
