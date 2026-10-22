@@ -1,5 +1,8 @@
 // Synthetic mini .def files (not Kenshi data) through the schema reader. With KENSHI_DIR set, also loads the real files and checks only that they parse.
-#include "../editor/data/fcs_def.h"
+#include "../editor/data/data_browser.h"
+#include <monkey_dust/io/fcs.h>
+#include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -48,7 +51,60 @@ Other:  WIDGET
 data folder: data/
 )";
 
+
+// ---- the browser on synthetic records (v16 file written here) ----
+namespace {
+struct W {
+    std::vector<uint8_t> b;
+    W& i32(int32_t v) { for (int k = 0; k < 4; ++k) b.push_back((uint8_t)((uint32_t)v >> (8 * k))); return *this; }
+    W& f32(float v) { uint8_t t[4]; std::memcpy(t, &v, 4); b.insert(b.end(), t, t + 4); return *this; }
+    W& str(const std::string& x) { i32((int32_t)x.size()); b.insert(b.end(), x.begin(), x.end()); return *this; }
+    W& u8(uint8_t v) { b.push_back(v); return *this; }
+};
+// kind 2 = WEAPON: "kind" enum int, "weight" float, "label" string, one reference list "parts"
+void Rec(W& w, int id, const std::string& name, const std::string& sid, int kind_val, float weight) {
+    w.i32(0).i32(2).i32(id).str(name).str(sid).i32(0);
+    w.i32(0);                                                          // bools
+    w.i32(1).str("weight").f32(weight);                                // floats
+    w.i32(1).str("kind").i32(kind_val);                                // ints
+    w.i32(0).i32(0);                                                   // vec3, vec4
+    w.i32(1).str("label").str(name + "!");                             // strings
+    w.i32(0);                                                          // files
+    w.i32(1).str("parts").i32(1).str("p-1").i32(0).i32(0).i32(0);      // references
+    w.i32(0);                                                          // instances
+}
+}  // namespace
+
+static void BrowserTest() {
+    W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
+    Rec(f, 1, "Zeta", "1-z", 1, 2.5f); Rec(f, 2, "Alpha", "2-a", 0, 1.0f); Rec(f, 3, "Mid", "3-m", 1, 4.0f);
+    md::fcs::File file; md::fcs::Error e;
+    CHECK(md::fcs::Parse(f.b.data(), f.b.size(), file, e));
+    md::fcs::GameDataContainer data; data.ApplyFile("t.mod", file);
+
+    Schema s; std::string err;
+    CHECK(ParseText("enum Kind { A, B }\n[WEAPON]\nStats:\nweight: 9.0 \"mass\"\nkind: Kind.A \"which\"\nlabel: \"\" \"text\"\nparts: BUILDING_PART \"the parts\"\nunset: 7\n"
+                    "[FCS_LAYOUT]\nAll: WEAPON\n\tOnlyB: WEAPON \"kind==B\"\n\tNotB: WEAPON \"kind!=B;weight=1\"\n", s, err));
+    DataBrowser br(s, data);
+    const auto all = br.Items(s.layout[0]);
+    CHECK(all.size() == 3 && all[0].name == "Alpha" && all[1].name == "Mid" && all[2].name == "Zeta");
+    const auto onlyb = br.Items(s.layout[0].children[0]);
+    CHECK(onlyb.size() == 2 && onlyb[0].name == "Mid" && onlyb[1].name == "Zeta");
+    const auto notb = br.Items(s.layout[0].children[1]);
+    CHECK(notb.size() == 1 && notb[0].string_id == "2-a");
+    const auto card = br.Card("1-z");
+    CHECK(card.size() == 5);
+    auto cf = [&](const char* n) -> const CardField* { for (const CardField& c : card) if (c.name == n) return &c; return nullptr; };
+    CHECK(cf("weight") && cf("weight")->value == "2.5" && cf("weight")->def == "9.0" && cf("weight")->changed && cf("weight")->category == "Stats");
+    CHECK(cf("kind") && cf("kind")->value == "Kind.B" && cf("kind")->type == "enum");
+    CHECK(cf("label") && cf("label")->value == "Zeta!");
+    CHECK(cf("parts") && cf("parts")->value == "p-1" && cf("parts")->type == "refs");
+    CHECK(cf("unset") && cf("unset")->value == "7" && !cf("unset")->changed);
+    CHECK(br.Card("nope").empty());
+}
+
 int main() {
+    BrowserTest();
     Schema s; std::string err;
     CHECK(ParseText(kEnums, s, err));
     CHECK(ParseText(kDef, s, err));
