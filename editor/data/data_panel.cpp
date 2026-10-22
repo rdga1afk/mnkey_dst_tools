@@ -1,5 +1,7 @@
 #include "data_panel.h"
 #include "data_browser.h"
+#include "mod_write.h"
+#include <filesystem>
 #include <imgui.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <cstdio>
@@ -78,6 +80,12 @@ void Draw() {
     ImGui::SameLine(); if (ImGui::Button("Undo") && g.edits->Undo()) Refresh();
     ImGui::SameLine(); if (ImGui::Button("Redo") && g.edits->Redo()) Refresh();
     ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
+    ImGui::SameLine();
+    if (ImGui::Button("Save mod") && g.edits->ModifiedCount()) {   // for now only into temp_/md_mods/ (never into the install)
+        std::filesystem::create_directories("temp_/md_mods");
+        std::string err; md::fcsdef::ModInfo info; info.description = "made with the md editor";
+        if (md::fcsdef::WriteMod("temp_/md_mods/md_test.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved temp_/md_mods/md_test.mod"; else g.status = "save failed: " + err;
+    }
     if (g.node && !g.node->type.empty()) {
         int kind = -1; for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (g.node->type == md::fcs::ItemTypeName(k)) { kind = k; break; }
         ImGui::SameLine(); if (kind >= 0 && ImGui::Button("New")) { g.selected = g.edits->NewRecord(kind, "New item"); g.rows = g.browser->Items(*g.node); Refresh(); }

@@ -1,5 +1,7 @@
 // Synthetic mini .def files (not Kenshi data) through the schema reader. With KENSHI_DIR set, also loads the real files and checks only that they parse.
 #include "../editor/data/data_browser.h"
+#include "../editor/data/mod_write.h"
+#include <filesystem>
 #include <monkey_dust/io/fcs.h>
 #include <cstdint>
 #include <cstring>
@@ -110,6 +112,46 @@ static void RealCardTest(const std::string& kd, const Schema& schema) {
 }
 
 static std::string cf2(const DataBrowser& br, const std::string& sid, const char* name) { for (const CardField& c : br.Card(sid)) if (c.name == name) return c.value; return "<none>"; }
+
+// F5 on the real install: change a weapon, add and copy an item, write a mod of our own to a temp file, read it back, apply it on top of the base and compare with the layer
+static void RealWriteTest(const std::string& kd, const Schema& schema) {
+    md::fcs::File base; md::fcs::Error e;
+    if (!md::fcs::ReadFile(kd + "/data/gamedata.base", base, e)) { std::printf("FAIL base: %s\n", e.Message().c_str()); ++fails; return; }
+    md::fcs::GameDataContainer data; data.ApplyFile("gamedata.base", base);
+    EditSession ed(schema, data, "md_test.mod");
+    std::string sword_id, field; float old_v = 0;
+    for (const md::fcs::GameData* w : data.OfType(2)) {   // the first weapon with a float field the schema describes
+        for (const auto& kv : w->floats) { bool known = false; for (const Field* f : schema.FieldsOf("WEAPON")) if (f->name == kv.first) known = true; if (known) { sword_id = w->string_id; field = kv.first; old_v = kv.second; break; } }
+        if (!sword_id.empty()) break;
+    }
+    CHECK(!sword_id.empty());
+    std::string err;
+    CHECK(ed.Set(sword_id, field, std::to_string(old_v + 1.5f), err));
+    const std::string item = ed.NewRecord(4, "MD test item");
+    CHECK(ed.Duplicate(sword_id, "MD sword copy") != "");
+    CHECK(ed.SetName(sword_id, "MD renamed weapon"));
+    const std::string path = (std::filesystem::temp_directory_path() / "md_f5_test.mod").string();
+    ModInfo info; info.description = "F5 test";
+    CHECK(WriteMod(path, ed, schema, info, err, kd + "/data"));
+    md::fcs::File back;
+    CHECK(md::fcs::ReadFile(path, back, e));
+    CHECK(back.header.filetype == 17 && back.header.id_counter == ed.LastId() && back.header.dependencies == "gamedata.base");
+    md::fcs::GameDataContainer after; after.ApplyFile("gamedata.base", base); after.ApplyFile("md_test.mod", back);
+    const md::fcs::GameData* w = after.Get(sword_id);
+    CHECK(w && w->name == "MD renamed weapon");
+    CHECK(w && w->floats.count(field) && std::abs(w->floats.at(field) - (old_v + 1.5f)) < 1e-4f);
+    const md::fcs::GameData* ni = after.Get(item);
+    CHECK(ni && ni->name == "MD test item" && ni->kind == 4);
+    CHECK(after.OfType(2).size() == data.OfType(2).size() + 1);   // the copy
+    size_t unchanged_diff = 0;                                      // every other record is as in the base
+    for (const std::string& id : data.order) { if (id == sword_id) continue; const md::fcs::GameData* a = data.Get(id); const md::fcs::GameData* b = after.Get(id); if (a && b && (a->floats != b->floats || a->ints != b->ints || a->name != b->name)) ++unchanged_diff; }
+    CHECK(unchanged_diff == 0);
+    // the file is small: only the changes
+    std::printf("F5: mod of %zu records, %lld bytes, applied on gamedata.base: sword '%s' %s %g -> %g\n", back.records.size(), (long long)std::filesystem::file_size(path), w ? w->name.c_str() : "?", field.c_str(), old_v, w && w->floats.count(field) ? w->floats.at(field) : 0.f);
+    std::string err2;
+    CHECK(!WriteMod(kd + "/data/gamedata.base", ed, schema, info, err2, kd + "/data"));   // never over a game file
+    std::filesystem::remove(path);
+}
 
 static void BrowserTest() {
     W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
@@ -266,7 +308,7 @@ int main() {
         if (LoadDir(kd, real, err)) {
             size_t nf = 0, kinds[10] = {};
             for (const Section& sec : real.sections) { nf += sec.fields.size(); for (const Field& fl : sec.fields) ++kinds[(int)fl.kind]; }
-            RealCardTest(kd, real);
+            RealCardTest(kd, real); RealWriteTest(kd, real);
             std::printf("real files: %zu sections, %zu fields (bool %zu float %zu int %zu string %zu colour %zu enum %zu null %zu file %zu reflist %zu refstring %zu), %zu enums, %zu top layout nodes\n",
                         real.sections.size(), nf, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], kinds[6], kinds[7], kinds[8], kinds[9], real.enums.size(), real.layout.size());
         }

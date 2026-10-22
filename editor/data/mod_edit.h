@@ -68,6 +68,8 @@ public:
     // Raw layer content for the writer (F5).
     const std::map<std::string, std::map<std::string, std::map<std::string, Triple>>>& RefLayer() const { return layer_.refs; }
     const std::map<std::string, std::map<std::string, md::fcs::Instance>>& InstanceLayer() const { return layer_.insts; }
+    const std::map<std::string, EditValue>& FieldLayer(const std::string& string_id) const { static const std::map<std::string, EditValue> none; auto it = layer_.fields.find(string_id); return it == layer_.fields.end() ? none : it->second; }
+    bool IsRenamed(const std::string& string_id) const { return layer_.names.count(string_id) != 0; }
     int32_t LastId() const { return layer_.last_id; }
 
 private:
