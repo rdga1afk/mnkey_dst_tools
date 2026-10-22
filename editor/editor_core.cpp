@@ -79,7 +79,7 @@ static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
 static const int kAnisoLv[3] = { 1, 4, 16 };
 static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
 static float s_set_vdist     = 5000.f; // "vd": View Distance, Kenshi 5000 (1500...12000)
-static int   s_set_gp        = 0;      // "gp": Ground quality preset (#193, owner 22.10): 0 aniso1 (default), 1 dyn075, 2 reuse05, 3 Custom
+static int   s_set_gp        = 1;      // "gp": Ground quality preset (#193, owner 22.10): 0 aniso1, 1 dyn075 (default, owner 22.10 #194), 2 reuse05, 3 Custom
 static int   s_set_wres      = -1;     // "wres": index in kWinRes, -1 = the window as it is
 static const int kWinRes[][2] = { {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080} };
 static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, owner 17.10): 0 off, 1 = 0.75 (default), 2 = 0.5
@@ -162,7 +162,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
         if (strstr(buf, "\"tbld\"")) s_set_tbld = f3_parse_f(buf, "\"tbld\"") != 0.f;
         if (strstr(buf, "\"ovr\"")) { s_set_ovr = f3_parse_f(buf, "\"ovr\""); if (s_set_ovr < 100.f || s_set_ovr > 800.f) s_set_ovr = 300.f; }
-        if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); if (s_set_gp < 0 || s_set_gp > 3) s_set_gp = 0; }
+        if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); if (s_set_gp < 0 || s_set_gp > 3) s_set_gp = 1; }
         if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0 && s_set_fcap != 60) s_set_fcap = -1; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
         if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 2) s_set_ga = 0; }
@@ -232,7 +232,7 @@ void EditorCore::Init() {
             md_settings_set_fxaa(s_set_fxaa); md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh); md_settings_set_vsync(s_set_vsync); md_settings_set_view_distance(s_set_vdist); md_settings_set_ground_aniso(kAnisoLv[s_set_ga]);
             if (s_set_gp >= 0 && s_set_gp <= 2) ground_preset_apply(s_set_gp);
             if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
-        else { s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_reuse_period = md_settings_get_ground_reuse_period(); s_set_light = md_settings_get_lighting(); }
+        else { ground_preset_apply(s_set_gp); s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_reuse_period = md_settings_get_ground_reuse_period(); s_set_light = md_settings_get_lighting(); }
         if (const char* ge = getenv("MD_GROUND_PRESET")) if (*ge) { const int n = atoi(ge); if (n >= 0 && n <= 2) { ground_preset_apply(n); s_set_gp = n; } }   // #193: a run can pick the preset without the saved layout
     }
 #endif
@@ -482,7 +482,7 @@ void EditorCore::Update(float dt) {
                         if (ImGui::SliderFloat("Sharpness (RCAS)##upscs", &s_set_fsr1_sharp, 0.0f, 1.0f, "%.2f")) apply_res_mode();
                     }
                     {   // #193 (owner 22.10): one switch over the three ground settings; a manual change below makes it Custom
-                        static const char* kGpNm[] = { "aniso1 (default)", "dyn075", "reuse05", "Custom" };
+                        static const char* kGpNm[] = { "aniso1", "dyn075 (default)", "reuse05", "Custom" };
                         s_set_gp = ground_preset_now();
                         int gp = s_set_gp;
                         ImGui::SetNextItemWidth(220.f);
