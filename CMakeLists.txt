@@ -20,9 +20,10 @@ set_target_properties(md_session_synthetic_test PROPERTIES CXX_STANDARD 17)
 add_test(NAME session_synthetic COMMAND md_session_synthetic_test)
 
 # #196: reader of the FCS .def files (editor/data/fcs_def.*), tested on synthetic mini files: ninja md_fcs_def_test && ctest -R fcs_def (KENSHI_DIR set: also parses the install's real files)
-add_library(md_fcs_def STATIC editor/data/fcs_def.cpp editor/data/data_browser.cpp)
+add_library(md_fcs_def STATIC editor/data/fcs_def.cpp editor/data/data_browser.cpp editor/data/data_panel.cpp)
 target_include_directories(md_fcs_def PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor/data)
 target_link_libraries(md_fcs_def PUBLIC monkey_dust::engine)
+target_include_directories(md_fcs_def PRIVATE ${CMAKE_SOURCE_DIR}/tools/third_party/imgui)
 set_target_properties(md_fcs_def PROPERTIES CXX_STANDARD 17)
 add_executable(md_fcs_def_test tests/fcs_def_test.cpp ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp)
 target_link_libraries(md_fcs_def_test PRIVATE md_fcs_def)
@@ -150,6 +151,7 @@ target_compile_definitions(monkey_dust_editor PRIVATE
 )
 target_link_libraries(monkey_dust_editor PRIVATE
     md_character
+    md_fcs_def
     monkey_dust::engine
     $<IF:$<BOOL:${MD_STATIC_DEPS}>,SDL3::SDL3-static,SDL3::SDL3>
     $<$<BOOL:${USE_GRANITE}>:Vulkan::Vulkan>

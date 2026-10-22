@@ -29,6 +29,7 @@
 #include "editor_3d_bridge.h"
 #include "editor_char_preview.h"
 #include "character_mygui.h"
+#include "data/data_panel.h"
 #include "character_editor.h"
 #include "editor_layout.h"
 #include "bug_capture.h"
@@ -451,6 +452,7 @@ int main(int argc, char** argv) {
                                  });
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Kenshi data", nullptr, (forced_tab && strcmp(forced_tab, "Kenshi data") == 0) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) { s_active_tab = 9; KenshiDataPanel::Draw(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Inspector")) { s_active_tab = 7;
                 ImGui::SetCursorPos({8, ImGui::GetCursorPosY() + 4});
                 EditorReflectInspector::DrawContent(s_ecs_world);

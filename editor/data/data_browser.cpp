@@ -54,7 +54,7 @@ bool DataBrowser::FieldText(const md::fcs::GameData& rec, const std::string& fie
         case FieldKind::RefList: case FieldKind::RefString: {
             out.clear();
             if (const auto* refs = rec.Refs(field))
-                for (const auto& r : *refs) { if (!out.empty()) out += ", "; out += r.first; }
+                for (const auto& r : *refs) { if (!out.empty()) out += ", "; const md::fcs::GameData* t = data_.Get(r.first); out += t && !t->name.empty() ? t->name : r.first; }   // the target's name, its id when it is not loaded
             break;
         }
         default: break;
