@@ -52,6 +52,7 @@ extern void  md_settings_set_vsync(bool on);   // #175
 extern void  md_settings_set_fps_cap(int fps); // #191
 extern void  md_settings_set_town_buildings(bool on, float range_m); // #119
 extern void  md_settings_set_town_foliage(bool on, float range_m);   // #120
+extern void  md_settings_set_town_grass(bool on, float range_m, float density);   // #120
 extern void  md_settings_set_view_distance(float v);   // #175
 extern void  md_settings_set_ground_aniso(int level);   // #180
 extern int   md_settings_get_ground_reuse_cr();   // #193
@@ -75,6 +76,9 @@ static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.
 static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
 static bool  s_set_tbld      = false;  // "tbld": buildings of the zones around the camera (#119), off by default
 static bool  s_set_tfol      = false;  // plants and rocks of the zones around the camera (#120), off by default, not saved
+static bool  s_set_grass     = false;  // CLOSE grass (#120), off by default, not saved
+static float s_set_grange    = 50.f;   // Kenshi CLOSE range, metres
+static float s_set_gdens     = 1.f;    // grass density x
 static float s_set_fvr       = 100.f;  // Kenshi MEDIUM foliage range, metres (default 100 = 1000 units)
 static float s_set_ovr       = 300.f;  // "ovr": Kenshi `objects view range`, metres (default 300 = 3000 units)
 static int   s_set_fcap      = -1;     // "fcap": frame cap -1 = auto (30 idle / 60 moving, default), 60, 30, 0 = unlimited (#191)
@@ -533,6 +537,14 @@ void EditorCore::Update(float dt) {
                     if (s_set_tfol) {
                         ImGui::SetNextItemWidth(220.f);
                         if (ImGui::SliderFloat("Plants view range (m)##fvr", &s_set_fvr, 50.f, 400.f, "%.0f")) md_settings_set_town_foliage(true, s_set_fvr);
+                        if (ImGui::Checkbox("Grass##grs", &s_set_grass)) md_settings_set_town_grass(s_set_grass, s_set_grange, s_set_gdens);
+                        if (s_set_grass) {
+                            ImGui::SetNextItemWidth(220.f);
+                            bool ch = ImGui::SliderFloat("Grass view range (m)##grng", &s_set_grange, 20.f, 150.f, "%.0f");
+                            ImGui::SetNextItemWidth(220.f);
+                            ch |= ImGui::SliderFloat("Grass density##gdn", &s_set_gdens, 0.25f, 2.f, "%.2f");
+                            if (ch) md_settings_set_town_grass(true, s_set_grange, s_set_gdens);
+                        }
                     }
                     {
                         static const char* kCapNm[] = { "Auto (30 idle / 60 moving)", "60", "30", "Unlimited" }; static const int kCapV[] = { -1, 60, 30, 0 };
