@@ -78,6 +78,18 @@ void Draw() {
     ImGui::SameLine(); if (ImGui::Button("Undo") && g.edits->Undo()) Refresh();
     ImGui::SameLine(); if (ImGui::Button("Redo") && g.edits->Redo()) Refresh();
     ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
+    if (g.node && !g.node->type.empty()) {
+        int kind = -1; for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (g.node->type == md::fcs::ItemTypeName(k)) { kind = k; break; }
+        ImGui::SameLine(); if (kind >= 0 && ImGui::Button("New")) { g.selected = g.edits->NewRecord(kind, "New item"); g.rows = g.browser->Items(*g.node); Refresh(); }
+    }
+    if (!g.selected.empty()) {
+        ImGui::SameLine(); if (ImGui::Button("Duplicate")) { const std::string n = g.edits->Duplicate(g.selected, g.edits->NameOf(g.selected) + " copy"); if (!n.empty()) { g.selected = n; g.rows = g.browser->Items(*g.node); Refresh(); } }
+        ImGui::SameLine();
+        if (g.edits->StateOfRecord(g.selected) == md::fcsdef::RecordState::Removed) { if (ImGui::Button("Restore")) { g.edits->Restore(g.selected); g.rows = g.browser->Items(*g.node); } }
+        else if (ImGui::Button("Remove")) { g.edits->Remove(g.selected); g.rows = g.browser->Items(*g.node); }
+        const std::string owner = g.edits->OwnerOf(g.selected);
+        if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); }
+    }
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     std::string cat;
     for (const md::fcsdef::CardField& c : g.card) {
@@ -105,9 +117,45 @@ void Draw() {
         ImGui::SameLine(640); ImGui::TextDisabled("%s  (default %s)", c.type.c_str(), c.def.c_str());
         if (ImGui::IsItemHovered() && !c.description.empty()) ImGui::SetTooltip("%s", c.description.c_str());
     }
+    {   // links of the reference fields that have any: remove, change v0..v2, add by target id
+        static char tgt[96] = ""; static int vals[3] = {0, 0, 0}; static int add_field = 0;
+        bool header = false;
+        for (const md::fcsdef::CardField& c : g.card) {
+            if (c.type != "refs") continue;
+            const auto refs = g.edits->Refs(g.selected, c.name);
+            if (refs.empty()) continue;
+            if (!header) { ImGui::SeparatorText("References"); header = true; }
+            for (const auto& r : refs) {
+                ImGui::PushID((c.name + r.first).c_str());
+                ImGui::Text("%s  ->  %s", c.name.c_str(), g.edits->NameOf(r.first).empty() ? r.first.c_str() : g.edits->NameOf(r.first).c_str());
+                int v[3] = { r.second[0], r.second[1], r.second[2] };
+                ImGui::SameLine(420); ImGui::SetNextItemWidth(200);
+                if (ImGui::InputInt3("##v", v, ImGuiInputTextFlags_EnterReturnsTrue)) { g.edits->SetRef(g.selected, c.name, r.first, { v[0], v[1], v[2] }); Refresh(); }
+                ImGui::SameLine(); if (ImGui::SmallButton("x")) { g.edits->RemoveRef(g.selected, c.name, r.first); Refresh(); }
+                ImGui::PopID();
+            }
+        }
+        if (!g.card.empty()) {
+            ImGui::SeparatorText("Add reference");
+            std::vector<const char*> names; for (const md::fcsdef::CardField& c : g.card) if (c.type == "refs") names.push_back(c.name.c_str());
+            if (!names.empty()) {
+                if (add_field >= (int)names.size()) add_field = 0;
+                ImGui::SetNextItemWidth(200); ImGui::Combo("field", &add_field, names.data(), (int)names.size());
+                ImGui::SetNextItemWidth(260); ImGui::InputText("target string_id", tgt, sizeof tgt);
+                ImGui::SetNextItemWidth(200); ImGui::InputInt3("v0 v1 v2", vals);
+                if (ImGui::Button("Add") && g.edits->Exists(tgt) && g.edits->SetRef(g.selected, names[add_field], tgt, { vals[0], vals[1], vals[2] })) { g.status.clear(); Refresh(); }
+                else if (ImGui::IsItemClicked() && !g.edits->Exists(tgt)) g.status = std::string("no record ") + tgt;
+            }
+        }
+    }
     if (!g.insts.empty()) {
         ImGui::SeparatorText("Instances");
-        for (const md::fcsdef::CardInstance& c : g.insts) ImGui::Text("%s  ->  %s   (%.1f, %.1f, %.1f)%s", c.id.c_str(), c.target_name.c_str(), c.pos[0], c.pos[1], c.pos[2], c.states.empty() ? "" : "  [states]");
+        for (const md::fcsdef::CardInstance& c : g.insts) {
+            ImGui::PushID(c.id.c_str());
+            ImGui::Text("%s  ->  %s   (%.1f, %.1f, %.1f)%s", c.id.c_str(), c.target_name.c_str(), c.pos[0], c.pos[1], c.pos[2], c.states.empty() ? "" : "  [states]");
+            ImGui::SameLine(); if (ImGui::SmallButton("x")) { g.edits->RemoveInstance(g.selected, c.id); Refresh(); }
+            ImGui::PopID();
+        }
     }
     ImGui::EndChild();
 }

@@ -54,8 +54,10 @@ bool DataBrowser::FieldText(const md::fcs::GameData& rec, const std::string& fie
         case FieldKind::File: { auto it = rec.files.find(field); if (it != rec.files.end()) out = it->second; break; }
         case FieldKind::RefList: case FieldKind::RefString: {
             out.clear();
-            if (const auto* refs = rec.Refs(field))
-                for (const auto& r : *refs) { if (!out.empty()) out += ", "; const md::fcs::GameData* t = data_.Get(r.first); out += t && !t->name.empty() ? t->name : r.first; }   // the target's name, its id when it is not loaded
+            std::vector<std::string> ids;
+            if (edits_) for (const auto& r : edits_->Refs(rec.string_id, field)) ids.push_back(r.first);
+            else if (const auto* refs = rec.Refs(field)) for (const auto& r : *refs) ids.push_back(r.first);
+            for (const std::string& id : ids) { if (!out.empty()) out += ", "; std::string n = edits_ ? edits_->NameOf(id) : (data_.Get(id) ? data_.Get(id)->name : std::string()); out += n.empty() ? id : n; }   // the target's name, its id when it is not loaded
             break;
         }
         default: break;
@@ -101,7 +103,13 @@ std::vector<ItemRow> DataBrowser::Items(const LayoutNode& node) const {
     for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (node.type == md::fcs::ItemTypeName(k)) { kind = k; break; }
     if (kind < 0) return rows;
     for (const md::fcs::GameData* r : data_.OfType(kind))
-        if (node.filter.empty() || Passes(*r, node.filter)) rows.push_back({ r->string_id, r->name });
+        if (node.filter.empty() || Passes(*r, node.filter)) {
+            if (edits_) {
+                const RecordState st = edits_->StateOfRecord(r->string_id);
+                rows.push_back({ r->string_id, edits_->NameOf(r->string_id) + (st == RecordState::Removed ? " [removed]" : st == RecordState::Modified ? " *" : "") });
+            } else rows.push_back({ r->string_id, r->name });
+        }
+    if (edits_ && node.filter.empty()) for (const std::string& n : edits_->NewRecords()) if (edits_->KindOf(n) == kind) rows.push_back({ n, edits_->NameOf(n) + " [new]" });
     std::sort(rows.begin(), rows.end(), [](const ItemRow& a, const ItemRow& b) { return a.name != b.name ? a.name < b.name : a.string_id < b.string_id; });
     return rows;
 }
@@ -109,6 +117,8 @@ std::vector<ItemRow> DataBrowser::Items(const LayoutNode& node) const {
 std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
     std::vector<CardField> card;
     const md::fcs::GameData* rec = data_.Get(string_id);
+    md::fcs::GameData tmp;   // a record only the edit layer has
+    if (!rec && edits_ && edits_->KindOf(string_id) >= 0) { tmp.kind = edits_->KindOf(string_id); tmp.string_id = string_id; tmp.name = edits_->NameOf(string_id); rec = &tmp; }
     if (!rec) return card;
     for (const Field* f : schema_.FieldsOf(md::fcs::ItemTypeName(rec->kind))) {
         CardField c;
@@ -121,7 +131,7 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
             case FieldKind::Int: case FieldKind::Color: case FieldKind::Enum: c.changed = rec->ints.count(f->name) != 0; break;
             case FieldKind::String: c.changed = rec->strings.count(f->name) != 0; break;
             case FieldKind::File: c.changed = rec->files.count(f->name) != 0; break;
-            default: c.changed = rec->Refs(f->name) != nullptr; break;
+            default: c.changed = edits_ ? !edits_->Refs(string_id, f->name).empty() : rec->Refs(f->name) != nullptr; break;
         }
         card.push_back(std::move(c));
     }
@@ -131,13 +141,15 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
 std::vector<CardInstance> DataBrowser::Instances(const std::string& string_id) const {
     std::vector<CardInstance> out;
     const md::fcs::GameData* rec = data_.Get(string_id);
-    if (!rec) return out;
-    for (const md::fcs::Instance& in : rec->instances) {
+    std::vector<md::fcs::Instance> eff;
+    if (edits_) eff = edits_->Instances(string_id); else if (rec) eff = rec->instances;
+    if (!rec && eff.empty()) return out;
+    for (const md::fcs::Instance& in : eff) {
         if (in.target.empty()) continue;
         CardInstance c; c.id = in.id; c.target_id = in.target; c.states = in.states;
         for (int k = 0; k < 3; ++k) c.pos[k] = in.position[k];
-        const md::fcs::GameData* t = data_.Get(in.target);
-        c.target_name = t ? t->name : in.target;
+        const std::string tn = edits_ ? edits_->NameOf(in.target) : (data_.Get(in.target) ? data_.Get(in.target)->name : std::string());
+        c.target_name = tn.empty() ? in.target : tn;
         out.push_back(std::move(c));
     }
     return out;

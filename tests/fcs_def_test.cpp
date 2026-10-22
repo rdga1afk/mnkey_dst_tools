@@ -171,7 +171,61 @@ static void BrowserTest() {
     br.SetEdits(nullptr);
 }
 
+// F4: references, instances, new / copied / removed records, OWNED
+static void RefTest() {
+    W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
+    auto rec = [&](int kind, int id, const std::string& name, const std::string& sid, const std::string& ref_target, bool inst) {
+        f.i32(0).i32(kind).i32(id).str(name).str(sid).i32(0).i32(0).i32(0).i32(0).i32(0).i32(0).i32(0).i32(0);   // no bools .. no files
+        if (ref_target.empty()) f.i32(0); else f.i32(1).str("parts").i32(1).str(ref_target).i32(1).i32(2).i32(3);
+        if (inst) f.i32(1).str("i1").str("3-t").f32(1).f32(2).f32(3).f32(1).f32(0).f32(0).f32(0).i32(0); else f.i32(0);
+    };
+    rec(2, 1, "Sword", "1-w", "2-p", true);    // WEAPON owns part 2-p through `parts`
+    rec(4, 2, "Blade", "2-p", "", false);      // ITEM
+    rec(4, 3, "Target", "3-t", "", false);
+    md::fcs::File file; md::fcs::Error e;
+    CHECK(md::fcs::Parse(f.b.data(), f.b.size(), file, e));
+    md::fcs::GameDataContainer data; data.ApplyFile("t.mod", file); data.id_counter = 100;
+    Schema s; std::string err;
+    CHECK(ParseText("[WEAPON]\nOWNED: parts\nparts: ITEM\nweight: 1.0\n[ITEM]\nweight: 1.0\n", s, err));
+    EditSession ed(s, data, "md_test.mod");
+    CHECK(ed.OwnerOf("2-p") == "1-w" && ed.OwnedOf("1-w").size() == 1);
+    // references: change values, add, remove (a base link is removed with v2 = INT32_MAX), undo
+    CHECK(ed.Refs("1-w", "parts").size() == 1 && ed.Refs("1-w", "parts")[0].second == (EditSession::Triple{1, 2, 3}));
+    CHECK(ed.SetRef("1-w", "parts", "2-p", {7, 8, 9}) && ed.Refs("1-w", "parts")[0].second == (EditSession::Triple{7, 8, 9}));
+    CHECK(ed.SetRef("1-w", "parts", "3-t", {0, 0, 0}) && ed.Refs("1-w", "parts").size() == 2);
+    CHECK(ed.RemoveRef("1-w", "parts", "3-t") && ed.Refs("1-w", "parts").size() == 1 && !ed.RefLayer().at("1-w").at("parts").count("3-t"));   // a link only the layer had just disappears
+    CHECK(ed.RemoveRef("1-w", "parts", "2-p") && ed.Refs("1-w", "parts").empty() && ed.RefLayer().at("1-w").at("parts").at("2-p")[2] == INT32_MAX);
+    CHECK(!ed.RemoveRef("1-w", "parts", "nope"));
+    CHECK(ed.Undo() && ed.Refs("1-w", "parts").size() == 1);
+    // instances
+    CHECK(ed.Instances("1-w").size() == 1);
+    md::fcs::Instance ni; ni.id = "i2"; ni.target = "3-t"; ni.position[0] = 5;
+    CHECK(ed.SetInstance("1-w", ni) && ed.Instances("1-w").size() == 2);
+    CHECK(ed.RemoveInstance("1-w", "i1") && ed.Instances("1-w").size() == 1 && ed.InstanceLayer().at("1-w").at("i1").target.empty());
+    CHECK(ed.RemoveInstance("1-w", "i2") && ed.Instances("1-w").empty());
+    // new record: ids continue from the counter, the string id carries the mod name
+    const std::string nr = ed.NewRecord(2, "Fresh");
+    CHECK(nr == "101-md_test.mod" && ed.StateOfRecord(nr) == RecordState::New && ed.NameOf(nr) == "Fresh" && ed.Exists(nr));
+    std::string err2;
+    CHECK(ed.Set(nr, "weight", "4", err2) && ed.EditedText(nr, "weight", err2) && err2 == "4");
+    CHECK(ed.LastId() == 101);
+    // duplicate: the owned part is copied too and the copy points at the copy
+    const std::string cp = ed.Duplicate("1-w", "Sword copy");
+    CHECK(!cp.empty() && ed.NameOf(cp) == "Sword copy" && ed.StateOfRecord(cp) == RecordState::New);
+    const auto cr = ed.Refs(cp, "parts");
+    CHECK(cr.size() == 1 && cr[0].first != "2-p" && ed.NameOf(cr[0].first) == "Blade" && cr[0].second == (EditSession::Triple{7, 8, 9}));
+    CHECK(ed.OwnerOf(cr[0].first) == cp);
+    CHECK(ed.NewRecords().size() == 3);   // Fresh, Sword copy, Blade copy
+    // remove: the owner and what it owns
+    CHECK(ed.Remove("1-w") && !ed.Exists("1-w") && !ed.Exists("2-p") && ed.Exists("3-t") && ed.StateOfRecord("2-p") == RecordState::Removed);
+    CHECK(ed.Restore("1-w") && ed.Exists("1-w") && !ed.Exists("2-p"));
+    CHECK(ed.SetName("1-w", "Renamed") && ed.NameOf("1-w") == "Renamed" && ed.StateOfRecord("1-w") == RecordState::Modified);
+    while (ed.Undo()) {}
+    CHECK(ed.ModifiedCount() == 0 && ed.Exists("1-w") && ed.NameOf("1-w") == "Sword" && ed.TouchedRecords().empty() && ed.LastId() == 100);
+}
+
 int main() {
+    RefTest();
     BrowserTest();
     Schema s; std::string err;
     CHECK(ParseText(kEnums, s, err));
