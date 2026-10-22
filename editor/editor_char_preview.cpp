@@ -32,7 +32,7 @@ using md::character::Mul;
 using namespace md::character;
 
 // vertex layout of shaders/char_preview.vert: pos(12) normal(12) uv(8) joints u8x4(4) weights f4(16)
-struct Vtx { float px, py, pz, nx, ny, nz, u, v; uint8_t ji[4]; float wt[4]; };
+struct Vtx { float px, py, pz, nx, ny, nz, u, v; uint8_t ji[4]; float wt[4]; float tx, ty, tz, bx, by, bz; };
 struct VU { float mvp[16]; };
 struct VU2 { float mv[16]; };
 bool g_kenshi_light = false;
@@ -107,9 +107,10 @@ void EnsureRtt(int w, int h) {
 bool CreatePipelines() {
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/char_preview.vert"; pd.frag_path = "shaders/char_body.frag";
-    pd.layout.count = 5; pd.layout.stride = sizeof(Vtx);
+    pd.layout.count = 7; pd.layout.stride = sizeof(Vtx);
     pd.layout.attribs[0] = {0, 0, GpuAttribFmt::F3}; pd.layout.attribs[1] = {1, 12, GpuAttribFmt::F3}; pd.layout.attribs[2] = {2, 24, GpuAttribFmt::F2};
     pd.layout.attribs[3] = {3, 32, GpuAttribFmt::U8x4}; pd.layout.attribs[4] = {4, 36, GpuAttribFmt::F4};
+    pd.layout.attribs[5] = {5, 52, GpuAttribFmt::F3}; pd.layout.attribs[6] = {6, 64, GpuAttribFmt::F3};
     pd.raster.depth_test = true; pd.raster.depth_write = true; pd.raster.cull_back = true;
     pd.vert_uniform_bufs = 3; pd.vert_samplers = 0; pd.frag_samplers = 10; pd.frag_uniform_bufs = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
@@ -233,6 +234,7 @@ bool Rebuild() {
         const SkinnedVertex& sv = g_body.vertices[i]; Vtx& v = g_base[i];
         v.px = sv.pos[0]; v.py = sv.pos[1]; v.pz = sv.pos[2]; v.nx = sv.normal[0]; v.ny = sv.normal[1]; v.nz = sv.normal[2]; v.u = sv.uv[0]; v.v = sv.uv[1];
         for (int k = 0; k < 4; ++k) { v.ji[k] = sv.joint[k]; v.wt[k] = sv.weight[k]; }
+        v.tx = sv.tangent[0]; v.ty = sv.tangent[1]; v.tz = sv.tangent[2]; v.bx = sv.binormal[0]; v.by = sv.binormal[1]; v.bz = sv.binormal[2];
     }
     // body texture from the race, head texture = `texture map` of the first head (stored paths are stale: found by file name)
     std::string body_tex = ss.Resources().Path(FileOf(race.id, female ? "body texture female" : "body texture male"));
@@ -284,6 +286,7 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
         const SkinnedVertex& sv = sb.vertices[i]; Vtx& v = vtx[i];
         v.px = sv.pos[0]; v.py = sv.pos[1]; v.pz = sv.pos[2]; v.nx = sv.normal[0]; v.ny = sv.normal[1]; v.nz = sv.normal[2]; v.u = sv.uv[0]; v.v = sv.uv[1];
         for (int k = 0; k < 4; ++k) { v.ji[k] = sv.joint[k]; v.wt[k] = sv.weight[k]; }
+        v.tx = sv.tangent[0]; v.ty = sv.tangent[1]; v.tz = sv.tangent[2]; v.bx = sv.binormal[0]; v.by = sv.binormal[1]; v.bz = sv.binormal[2];
     }
     std::string tp = ss.Resources().Path(info->Texture(female)); const char* tpc = tp.c_str();
     if (tp.empty() || !a.tex.InitFromDDSArray(&tpc, 1, sd)) { fprintf(stderr, "[CharPreview] hair texture not found: %s\n", info->Texture(female).c_str()); return; }

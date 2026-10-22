@@ -11,6 +11,7 @@ namespace md::character {
 
 struct SkinnedVertex {
     float pos[3] = {}, normal[3] = {}, uv[2] = {};
+    float tangent[3] = {}, binormal[3] = {};   // the mesh's own TANGENT / BINORMAL elements (zero when it has none)
     uint8_t joint[4] = {};
     float weight[4] = {};
 };

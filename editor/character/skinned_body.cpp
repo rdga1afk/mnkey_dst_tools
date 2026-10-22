@@ -41,6 +41,8 @@ bool BuildSkinnedBody(const md::ogre::Mesh& mesh, const md::ogre::Skeleton& sk, 
     std::vector<float> pos, nrm, uv;
     if (!g.Positions(pos)) { error = "no float position element"; return false; }
     bool has_n = g.Normals(nrm), has_uv = g.Uvs(0, uv);
+    std::vector<float> tan, bin;
+    const bool has_t = g.Floats(md::ogre::semantic::TANGENT, 0, 3, tan), has_b = g.Floats(md::ogre::semantic::BINORMAL, 0, 3, bin);
     const size_t nv = g.vertex_count;
     out.vertices.assign(nv, SkinnedVertex());
     std::vector<std::vector<std::pair<float, int>>> infl(nv);   // weight, bone index
@@ -54,6 +56,8 @@ bool BuildSkinnedBody(const md::ogre::Mesh& mesh, const md::ogre::Skeleton& sk, 
         std::memcpy(o.pos, &pos[v * 3], 12);
         if (has_n) std::memcpy(o.normal, &nrm[v * 3], 12);
         if (has_uv) std::memcpy(o.uv, &uv[v * 2], 8);
+        if (has_t) std::memcpy(o.tangent, &tan[v * 3], 12);
+        if (has_b) std::memcpy(o.binormal, &bin[v * 3], 12);
         auto& w = infl[v];
         if (w.empty()) { error = "vertex " + std::to_string(v) + " has no bone influence"; return false; }
         std::stable_sort(w.begin(), w.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
