@@ -228,7 +228,7 @@ bool EditSession::SetRef(const std::string& sid, const std::string& cat, const s
     if (!Exists(sid)) return false;
     if (v[2] == kRemoved) return false;   // use RemoveRef
     for (const auto& r : Refs(sid, cat)) if (r.first == target && r.second == v) return true;
-    Push(); layer_.refs[sid][cat][target] = v; return true;
+    Push(); PutRef(sid, cat, target, v); return true;
 }
 
 bool EditSession::RemoveRef(const std::string& sid, const std::string& cat, const std::string& target) {
@@ -239,9 +239,26 @@ bool EditSession::RemoveRef(const std::string& sid, const std::string& cat, cons
     const md::fcs::GameData* rec = base_.Get(sid);
     const auto* b = rec ? rec->Refs(cat) : nullptr;
     bool in_base = false; if (b) for (const auto& r : *b) if (r.first == target) in_base = true;
-    if (in_base) layer_.refs[sid][cat][target] = Triple{kRemoved, kRemoved, kRemoved};
+    if (in_base) PutRef(sid, cat, target, Triple{kRemoved, kRemoved, kRemoved});
     else { auto& m = layer_.refs[sid][cat]; m.erase(target); if (m.empty()) layer_.refs[sid].erase(cat); if (layer_.refs[sid].empty()) layer_.refs.erase(sid); }
     return true;
+}
+
+void EditSession::PutRef(const std::string& sid, const std::string& cat, const std::string& target, Triple v) {
+    auto& m = layer_.refs[sid][cat];
+    if (!m.count(target)) layer_.ref_seq[sid][cat][target] = ++layer_.seq;
+    m[target] = v;
+}
+
+std::vector<std::string> EditSession::RefOrder(const std::string& sid, const std::string& cat) const {
+    std::vector<std::pair<uint32_t, std::string>> o;
+    auto it = layer_.refs.find(sid); if (it == layer_.refs.end()) return {};
+    auto c = it->second.find(cat); if (c == it->second.end()) return {};
+    auto s = layer_.ref_seq.find(sid);
+    for (const auto& kv : c->second) { uint32_t q = 0; if (s != layer_.ref_seq.end()) { auto sc = s->second.find(cat); if (sc != s->second.end()) { auto st = sc->second.find(kv.first); if (st != sc->second.end()) q = st->second; } } o.push_back({q, kv.first}); }
+    std::sort(o.begin(), o.end());
+    std::vector<std::string> r; for (auto& x : o) r.push_back(x.second);
+    return r;
 }
 
 std::vector<std::pair<std::string, EditSession::Triple>> EditSession::Refs(const std::string& sid, const std::string& cat) const {
@@ -252,7 +269,8 @@ std::vector<std::pair<std::string, EditSession::Triple>> EditSession::Refs(const
     if (it != layer_.refs.end()) {
         auto c = it->second.find(cat);
         if (c != it->second.end())
-            for (const auto& kv : c->second) {
+            for (const std::string& tg : RefOrder(sid, cat)) {
+                const auto kv = std::make_pair(tg, c->second.at(tg));
                 auto pos = std::find_if(out.begin(), out.end(), [&](const auto& x) { return x.first == kv.first; });
                 if (kv.second[2] == kRemoved) { if (pos != out.end()) out.erase(pos); }
                 else if (pos != out.end()) pos->second = kv.second; else out.push_back({kv.first, kv.second});
@@ -312,7 +330,7 @@ std::string EditSession::DuplicateInner(const std::string& sid, const std::strin
         for (const auto& r : Refs(sid, cat)) {
             std::string target = r.first;
             if (owned_cat && Exists(target)) target = DuplicateInner(target, NameOf(target), copied);   // owned records are copied with their owner
-            layer_.refs[nsid][cat][target] = r.second;
+            PutRef(nsid, cat, target, r.second);
         }
     }
     for (const md::fcs::Instance& i : Instances(sid)) { md::fcs::Instance c = i; layer_.insts[nsid][c.id] = c; }
@@ -338,6 +356,56 @@ std::vector<std::string> EditSession::TouchedRecords() const {
     for (const auto& kv : layer_.names) s.insert(kv.first);
     for (const std::string& r : layer_.removed) s.insert(r);
     return std::vector<std::string>(s.begin(), s.end());
+}
+
+bool EditSession::ImportFile(const md::fcs::File& file, size_t* skipped) {
+    Push();
+    size_t skip = 0;
+    for (const md::fcs::Record& r : file.records) {
+        const std::string& sid = r.string_id;
+        const bool in_base = base_.Get(sid) != nullptr;
+        if (!in_base) {
+            NewRec n; n.kind = r.kind; n.id = r.id; n.name = r.name;
+            layer_.created[sid] = n;
+            layer_.last_id = std::max(layer_.last_id, std::max(r.id, file.header.id_counter));
+        } else if (r.name != base_.Get(sid)->name && (r.datatype & md::fcs::DATATYPE_SETS_NAME)) layer_.names[sid] = r.name;
+        for (const auto& kv : r.bools) { if (kv.first == "REMOVED") { if (kv.second) layer_.removed.insert(sid); else layer_.removed.erase(sid); } else layer_.fields[sid][kv.first] = kv.second; }
+        for (const auto& kv : r.floats) layer_.fields[sid][kv.first] = kv.second;
+        for (const auto& kv : r.ints) layer_.fields[sid][kv.first] = kv.second;
+        for (const auto& kv : r.strings) layer_.fields[sid][kv.first] = kv.second;
+        for (const auto& kv : r.files) { layer_.fields[sid][kv.first] = kv.second; layer_.file_fields.insert({sid, kv.first}); }
+        skip += r.vec3s.size() + r.vec4s.size();
+        for (const auto& cat : r.references) for (const md::fcs::Reference& ref : cat.second) PutRef(sid, cat.first, ref.target, Triple{ref.values[0], ref.values[1], ref.values[2]});
+        for (const md::fcs::Instance& in : r.instances) layer_.insts[sid][in.id] = in;
+    }
+    layer_.last_id = std::max(layer_.last_id, file.header.id_counter);
+    if (skipped) *skipped = skip;
+    return true;
+}
+
+size_t EditSession::Cleanup() {
+    Push();
+    size_t n = 0;
+    for (auto it = layer_.created.begin(); it != layer_.created.end();) {
+        if (layer_.removed.count(it->first)) {
+            layer_.fields.erase(it->first); layer_.refs.erase(it->first); layer_.insts.erase(it->first); layer_.removed.erase(it->first);
+            it = layer_.created.erase(it); ++n;
+        } else ++it;
+    }
+    for (auto& rec : layer_.refs)
+        for (auto& cat : rec.second)
+            for (auto t = cat.second.begin(); t != cat.second.end();) {
+                const bool marker = t->second[2] == kRemoved;
+                if (!marker && !Exists(t->first)) { t = cat.second.erase(t); ++n; } else ++t;
+            }
+    for (auto it = layer_.refs.begin(); it != layer_.refs.end();) {
+        for (auto c = it->second.begin(); c != it->second.end();) c = c->second.empty() ? it->second.erase(c) : std::next(c);
+        it = it->second.empty() ? layer_.refs.erase(it) : std::next(it);
+    }
+    for (auto it = layer_.fields.begin(); it != layer_.fields.end();) it = it->second.empty() ? layer_.fields.erase(it) : std::next(it);
+    for (auto it = layer_.insts.begin(); it != layer_.insts.end();) it = it->second.empty() ? layer_.insts.erase(it) : std::next(it);
+    if (n == 0) { undo_.pop_back(); }
+    return n;
 }
 
 }  // namespace md::fcsdef

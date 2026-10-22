@@ -34,6 +34,7 @@ struct State {
     std::string line, line_parent;                  // selected dialogue line (the one being edited) and the dialogue it was opened from
     char new_text[256] = "";
     char search[64] = "";
+    char import_path[512] = "";
     std::vector<md::fcsdef::Hit> hits;
     std::vector<md::fcsdef::Problem> problems;
 } g;
@@ -160,6 +161,15 @@ void Draw() {
     ImGui::SameLine(); if (ImGui::Button("Undo") && g.edits->Undo()) Refresh();
     ImGui::SameLine(); if (ImGui::Button("Redo") && g.edits->Redo()) Refresh();
     ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
+    ImGui::SameLine();
+    if (ImGui::Button("Cleanup")) { const size_t n = g.edits->Cleanup(); g.status = "cleanup dropped " + std::to_string(n); Refresh(); }
+    ImGui::SameLine(); ImGui::SetNextItemWidth(220); ImGui::InputTextWithHint("##imp", "mod file to merge in", g.import_path, sizeof g.import_path);
+    ImGui::SameLine();
+    if (ImGui::Button("Merge")) {
+        md::fcs::File f; md::fcs::Error fe; size_t sk = 0;
+        if (md::fcs::ReadFile(g.import_path, f, fe) && g.edits->ImportFile(f, &sk)) { g.status = "merged " + std::to_string(f.records.size()) + " records" + (sk ? " (" + std::to_string(sk) + " vector fields skipped)" : ""); g.rows = g.node ? g.browser->Items(*g.node) : g.rows; Refresh(); }
+        else g.status = "merge failed: " + fe.Message();
+    }
     ImGui::SameLine();
     if (ImGui::Button("Check")) g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
     ImGui::SameLine();

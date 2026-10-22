@@ -167,6 +167,23 @@ static void RealDialogTest(const std::string& kd, Schema& schema) {
         md::fcs::File f; if (!md::fcs::ReadFile(kd + "/data/" + n, f, e)) { std::printf("skip F6 real: %s\n", n); return; }
         data.ApplyFile(n, f);
     }
+    {   // merge on the install: gamedata.base + (Dialogue.mod imported as edits, written, applied) == gamedata.base + Dialogue.mod
+        md::fcs::File b0, dm0; md::fcs::GameDataContainer only_base;
+        if (md::fcs::ReadFile(kd + "/data/gamedata.base", b0, e) && md::fcs::ReadFile(kd + "/data/Dialogue.mod", dm0, e)) {
+            only_base.ApplyFile("gamedata.base", b0);
+            EditSession m(schema, only_base, "md_test.mod"); size_t sk = 0; ModInfo mi;
+            CHECK(m.ImportFile(dm0, &sk));
+            md::fcs::File out = BuildMod(m, schema, mi);
+            md::fcs::GameDataContainer viaedit; viaedit.ApplyFile("gamedata.base", b0); viaedit.ApplyFile("md_test.mod", out);
+            auto sorted_cats = [](md::fcs::GameData g) { std::sort(g.references.begin(), g.references.end()); return g.references; };   // category order only is not kept (file order inside a category is)
+            auto sorted_refs = [](md::fcs::GameData g) { for (auto& c : g.references) std::sort(c.second.begin(), c.second.end()); std::sort(g.references.begin(), g.references.end()); return g.references; };
+            size_t order_only = 0; for (const std::string& id : data.order) { const auto* x = data.Get(id); const auto* y = viaedit.Get(id); if (x && y && sorted_cats(*x) != sorted_cats(*y) && sorted_refs(*x) == sorted_refs(*y)) ++order_only; }
+            std::printf("  reference lists differing only in order: %zu\n", order_only);
+            size_t diff = 0; for (const std::string& id : data.order) { const auto* x = data.Get(id); const auto* y = viaedit.Get(id); if (!x || !y || x->name != y->name || x->ints != y->ints || x->floats != y->floats || x->strings != y->strings || (sorted_cats(*x) != sorted_cats(*y))) { if (diff++ < 4 && x && y) { for (size_t ci = 0; ci < x->references.size() && ci < y->references.size(); ++ci) if (x->references[ci] != y->references[ci]) { std::printf("  cat %s/%s sizes %zu %zu first:", x->references[ci].first.c_str(), y->references[ci].first.c_str(), x->references[ci].second.size(), y->references[ci].second.size()); for (size_t k = 0; k < 3 && k < x->references[ci].second.size() && k < y->references[ci].second.size(); ++k) std::printf(" %s|%s", x->references[ci].second[k].first.c_str(), y->references[ci].second[k].first.c_str()); std::printf("\n"); } { std::printf("  differs %s: name %d ints %d floats %d strings %d refs %d\n", id.c_str(), x->name != y->name, x->ints != y->ints, x->floats != y->floats, x->strings != y->strings, x->references != y->references); for (auto& kv : x->strings) { auto f = y->strings.find(kv.first); if (f == y->strings.end() || f->second != kv.second) std::printf("    string %s: '%.40s' vs '%.40s'\n", kv.first.c_str(), kv.second.c_str(), f == y->strings.end() ? "<none>" : f->second.c_str()); } for (auto& kv : y->strings) if (!x->strings.count(kv.first)) std::printf("    extra %s\n", kv.first.c_str()); } } } }
+            std::printf("F7 merge: Dialogue.mod -> %zu edited/new records, %zu vector fields skipped, %zu of %zu records differ from the plain load\n", out.records.size(), sk, diff, data.order.size());
+            CHECK(diff == 0 && viaedit.order.size() == data.order.size());
+        }
+    }
     const int code_enums = AddCodeEnums(schema, "docs/research/kenshi_specs/fcs_code_enums.json");   // from the main repo's cwd; skipped elsewhere
     AddDialogActionFields(schema);
     EditSession ed(schema, data, "md_test.mod"); DialogModel dm(ed, schema, data);
@@ -334,6 +351,20 @@ static void RefTest() {
         bool warn = false; for (auto& p : pr) if (p.record == "2-p" && p.level == Problem::Warning) warn = true;
         CHECK(warn);
         CHECK(SearchAll(c, data, "swo").size() == 1 && SearchAll(c, data, "1-w").size() == 1 && SearchAll(c, data, "BLADE", "ITEM").empty() == true);   // 2-p removed
+        // merge and cleanup: a mod written from session A imported into session B gives the same mod
+        EditSession a(s, data, "a.mod"); std::string e2;
+        const std::string n1 = a.NewRecord(2, "Merged weapon"); a.Set(n1, "weight", "9", e2); a.SetRef(n1, "parts", "3-t", {1, 2, 3}); a.SetName("1-w", "Merged name");
+        ModInfo mi; md::fcs::File fa = BuildMod(a, s, mi);
+        EditSession b(s, data, "b.mod");
+        size_t sk = 99; CHECK(b.ImportFile(fa, &sk) && sk == 0);
+        CHECK(b.NameOf("1-w") == "Merged name" && b.NameOf(n1) == "Merged weapon" && b.Refs(n1, "parts").size() == 1 && b.StateOfRecord(n1) == RecordState::New);
+        md::fcs::File fb = BuildMod(b, s, mi);
+        std::vector<uint8_t> ba, bb; md::fcs::Error se;
+        CHECK(md::fcs::Serialize(fa, ba, se) && md::fcs::Serialize(fb, bb, se) && ba == bb);
+        // cleanup: a new record that was removed again, a link to it
+        const std::string tmp = b.NewRecord(2, "Temp"); b.SetRef("1-w", "parts", tmp, {0, 0, 0}); b.Remove(tmp);
+        CHECK(b.Cleanup() >= 2 && b.StateOfRecord(tmp) != RecordState::New && b.Refs("1-w", "parts").size() == 1 && b.Cleanup() == 0);
+        CHECK(b.Undo() && b.StateOfRecord(tmp) == RecordState::Removed);
         CHECK(SearchAll(c, data, "targ", "ITEM").size() == 1 && SearchAll(c, data, "targ", "WEAPON").empty());
     }
     // instances

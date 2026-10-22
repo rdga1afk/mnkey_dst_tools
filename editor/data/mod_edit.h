@@ -62,6 +62,13 @@ public:
     std::vector<md::fcs::Instance> Instances(const std::string& string_id) const;
     std::vector<std::string> OwnedOf(const std::string& string_id) const;            // records the OWNED categories of the section point to
     std::string OwnerOf(const std::string& string_id) const;                         // "" when no record owns it
+    // ---- F7: merge and cleanup ----
+    // Take the changes of another mod file into the layer (as if made here): records the loaded data has become edits, the others become new records under their own string_id;
+    // REMOVED, names, links and instances come along. vec3 / vec4 fields are not in the layer and are counted in `skipped`. Later import wins per field.
+    bool ImportFile(const md::fcs::File& file, size_t* skipped = nullptr);
+    // Drops what a mod does not need: new records that are also removed, links to records that do not exist any more (new links only; a base link is removed with a marker),
+    // and empty layer entries. Returns the number of things dropped. One undo step.
+    size_t Cleanup();
     std::vector<std::string> NewRecords() const;
     std::vector<std::string> RemovedRecords() const;
     std::vector<std::string> TouchedRecords() const;                                 // every record with any change, for the writer
@@ -70,6 +77,9 @@ public:
     const std::map<std::string, std::map<std::string, md::fcs::Instance>>& InstanceLayer() const { return layer_.insts; }
     const std::map<std::string, EditValue>& FieldLayer(const std::string& string_id) const { static const std::map<std::string, EditValue> none; auto it = layer_.fields.find(string_id); return it == layer_.fields.end() ? none : it->second; }
     bool IsRenamed(const std::string& string_id) const { return layer_.names.count(string_id) != 0; }
+    // The layer's links of a category in the order they were first set (a link order can matter: the replies of a dialogue line).
+    std::vector<std::string> RefOrder(const std::string& string_id, const std::string& category) const;
+    bool IsImportedFile(const std::string& string_id, const std::string& field) const { return layer_.file_fields.count({string_id, field}) != 0; }
     int32_t LastId() const { return layer_.last_id; }
 
 private:
@@ -81,8 +91,12 @@ private:
         std::map<std::string, NewRec> created;
         std::map<std::string, std::string> names;
         std::set<std::string> removed;
+        std::map<std::string, std::map<std::string, std::map<std::string, uint32_t>>> ref_seq;   // order in which the layer got each link (file order of a re-read mod)
+        uint32_t seq = 0;
+        std::set<std::pair<std::string, std::string>> file_fields;   // imported file-valued fields the schema does not describe (kept as files when written)
         int32_t last_id = 0;
     };
+    void PutRef(const std::string& sid, const std::string& cat, const std::string& target, Triple v);
     void Push();   // snapshot for undo
     const std::vector<std::string>* OwnedCategories(int32_t kind) const;
     std::string DuplicateInner(const std::string& sid, const std::string& name, std::map<std::string, std::string>& copied);
