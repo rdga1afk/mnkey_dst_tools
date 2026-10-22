@@ -9,6 +9,7 @@
 #include <imgui.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -46,6 +47,8 @@ struct State {
     int autosave_min = 5; double last_autosave = 0;   // FCS settings: autosave interval in minutes (0 = off)
     std::vector<md::fcsdef::AssetRow> assets; bool assets_ready = false;
     std::vector<md::fcs::LoadEntry> mods;           // the installed mods in load order (core files excluded): the «Load mod» list
+    bool w_world = true, w_item = true, w_info = false, w_changes = false, w_find = false, w_settings = false, w_assets = false, w_errors = false, show_refs = true;   // child windows of the main shell
+    bool col_sid = false, col_type = false, col_state = false;   // Game World list columns (Columns submenu)
 } g;
 
 void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
@@ -209,169 +212,205 @@ void DrawDialogue(int kind) {
     }
 }
 
-}  // namespace
 
-void Draw() {
-    if (!g.tried) Load();
-    if (!g.ok) { ImGui::TextWrapped("Kenshi data: %s", g.error.empty() ? "not loaded" : g.error.c_str()); return; }
-    if (g.autosave_min > 0 && g.edits->TouchedRecords().size()) {   // FCS autosave: a copy next to the saved mod, never the install
-        const double now = ImGui::GetTime();
-        if (g.last_autosave == 0) g.last_autosave = now;
-        if (now - g.last_autosave >= g.autosave_min * 60.0) {
-            g.last_autosave = now; std::filesystem::create_directories("temp_/md_mods");
-            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps; info.references = g.mod_refs;
-            if (md::fcsdef::WriteMod(std::string("temp_/md_mods/") + g.mod_name + ".autosave.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "autosaved"; else g.status = "autosave failed: " + err;
-        }
+std::string s_dump;   // MD_FCS_LAYOUT_DUMP: this frame's layout (toolbar order, window sizes, splits), checked by tests/fcs_layout_check.py
+void Dump(const std::string& line) { s_dump += line + "\n"; }
+
+ImVec2 s_origin;   // top-left of the area below the toolbar: the child windows open relative to it
+
+bool BeginWin(bool& open, const char* title, float w, float h, float dx = 40) {
+    if (!open) return false;
+    Dump(std::string("window|") + title + "|" + std::to_string((int)w) + "|" + std::to_string((int)h));
+    ImGui::SetNextWindowPos(ImVec2(s_origin.x + dx, s_origin.y + dx), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(w, h), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(title, &open)) { ImGui::End(); return false; }
+    return true;
+}
+
+void SaveMod() {   // for now only into temp_/md_mods/ (never into the install); not with errors
+    g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
+    bool errors = false; for (const auto& pr : g.problems) if (pr.level == md::fcsdef::Problem::Critical) errors = true;
+    if (errors) { g.status = "not saved: fix the errors listed in Errors"; g.w_errors = true; return; }
+    std::filesystem::create_directories("temp_/md_mods");
+    std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps; info.references = g.mod_refs;
+    const std::string path = std::string("temp_/md_mods/") + g.mod_name + ".mod";
+    if (md::fcsdef::WriteMod(path, *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved " + path; else g.status = "save failed: " + err;
+}
+
+void MergeMod() {
+    md::fcs::File f; md::fcs::Error fe; size_t sk = 0;
+    if (md::fcs::ReadFile(g.import_path, f, fe) && g.edits->ImportFile(f, &sk)) { g.status = "merged " + std::to_string(f.records.size()) + " records" + (sk ? " (" + std::to_string(sk) + " vector fields skipped)" : ""); g.rows = g.node ? g.browser->Items(*g.node) : g.rows; Refresh(); }
+    else g.status = "merge failed: " + fe.Message();
+}
+
+void ExportPot() {   // strings to translate, into temp_/md_mods/ (never the install)
+    std::filesystem::create_directories("temp_/md_mods");
+    const auto ex = md::fcsdef::ExtractStrings(g.schema, g.data, *g.browser);
+    FILE* o = std::fopen("temp_/md_mods/gamedata.pot", "wb");
+    if (o) { const std::string t = md::fcsdef::MakePot(ex); std::fwrite(t.data(), 1, t.size(), o); std::fclose(o); g.status = "wrote temp_/md_mods/gamedata.pot (" + std::to_string(ex.size()) + " strings)"; } else g.status = "cannot write the .pot";
+}
+
+void ExportModsFile() {   // a copy in temp_/md_mods/, never over the install's data/mods.cfg
+    std::filesystem::create_directories("temp_/md_mods");
+    FILE* o = std::fopen("temp_/md_mods/mods.cfg", "wb");
+    if (o) { for (const md::fcs::LoadEntry& m : g.mods) std::fprintf(o, "%s\n", m.name.c_str()); std::fclose(o); g.status = "wrote temp_/md_mods/mods.cfg (" + std::to_string(g.mods.size()) + " mods)"; } else g.status = "cannot write mods.cfg";
+}
+
+void CloseAll() { std::string err; if (LoadFiles({}, err)) { Rebuild(); g.status = "closed: install load order"; } else g.status = err; }
+
+void OpenSingle() {
+    md::fcs::LoadEntry e; e.path = g.single_path; e.name = std::filesystem::path(e.path).filename().string(); e.core = e.name == "gamedata.base";
+    std::string err; if (LoadFiles({e}, err)) { Rebuild(); g.status = "opened " + e.name + " alone (single-file mode)"; } else g.status = "open failed: " + err;
+}
+
+// The main toolbar of the FCS, left to right (FCS_UI.md); a button without an implementation is disabled.
+void DrawToolbar() {
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3, 2)); ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 2));
+    bool first = true;
+    auto B = [&](const char* label, const char* tip, bool en = true) {
+        if (!first) ImGui::SameLine(0, 2);
+        first = false; Dump(std::string("button|") + label);
+        ImGui::BeginDisabled(!en); const bool c = ImGui::Button(label); ImGui::EndDisabled();
+        if (tip && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", en ? tip : "not implemented yet");
+        return c;
+    };
+    auto S = [&]() { ImGui::SameLine(0, 6); ImGui::TextDisabled("|"); };
+    const bool touched = !g.edits->TouchedRecords().empty();
+    if (B("Load", "Pick an installed mod to merge in")) ImGui::OpenPopup("kd_load");
+    if (B("Save", "Save the mod into temp_/md_mods/", touched)) SaveMod();
+    if (B("FCS Settings", nullptr)) g.w_settings = true;
+    S();
+    if (B("Undo", nullptr) && g.edits->Undo()) Refresh();
+    if (B("Redo", nullptr) && g.edits->Redo()) Refresh();
+    S();
+    if (B("Back", nullptr, g.hpos > 0)) Go(g.hist[--g.hpos], false);
+    if (B("Forward", nullptr, g.hpos + 1 < (int)g.hist.size())) Go(g.hist[++g.hpos], false);
+    S();
+    if (B("Mod Info", nullptr)) g.w_info = true;
+    B("Global settings", nullptr, false); B("Artifacts settings", nullptr, false); B("Regions", nullptr, false);
+    S();
+    if (B("Cleanup", "Drop edits that equal the original")) { const size_t n = g.edits->Cleanup(); g.status = "cleanup dropped " + std::to_string(n); Refresh(); }
+    if (B("Changes", nullptr)) g.w_changes = true;
+    if (B("Assets", nullptr)) g.w_assets = true;
+    B("Notes", nullptr, false);
+    if (B("Errors", "Check the mod")) { g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); g.w_errors = true; }
+    S();
+    if (B("Merge Mod", "Merge the file picked with Load", g.import_path[0] != 0)) MergeMod();
+    if (B("Export Mods file", nullptr)) ExportModsFile();
+    S();
+    if (B("Find and replace", nullptr)) g.w_find = true;
+    B("Spell check", nullptr, false); B("Lexicon", nullptr, false);
+    if (B("Translations", "Export the strings to temp_/md_mods/gamedata.pot")) ExportPot();
+    B("Translaton Fix", nullptr, false);
+    S();
+    if (B("Open any", "Open a single .mod / .base alone")) ImGui::OpenPopup("kd_open_any");
+    if (B("Close All", "Back to the install's load order")) CloseAll();
+    if (ImGui::BeginPopup("kd_load")) {
+        for (const md::fcs::LoadEntry& m : g.mods) if (ImGui::Selectable(m.name.c_str())) std::snprintf(g.import_path, sizeof g.import_path, "%s", m.path.c_str());
+        ImGui::SetNextItemWidth(320); ImGui::InputTextWithHint("##imp", "mod file to merge in", g.import_path, sizeof g.import_path);
+        ImGui::EndPopup();
     }
+    if (ImGui::BeginPopup("kd_open_any")) {
+        ImGui::SetNextItemWidth(420); ImGui::InputTextWithHint("##single", "path of a .mod / .base to open alone", g.single_path, sizeof g.single_path);
+        if (ImGui::Button("Open")) { OpenSingle(); ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+}
+
+void RefreshRows() { if (g.node) g.rows = g.browser->Items(*g.node); Refresh(); }
+
+// «Game World»: category tree 186 px | item list (column Name + the chosen ones) with the filter box at the bottom.
+void DrawGameWorld() {
+    constexpr float kTreeW = 186;
+    if (!BeginWin(g.w_world, "Game World", 800, 564, 0)) return;
+    Dump("split|Game World|" + std::to_string((int)kTreeW));
     const float h = ImGui::GetContentRegionAvail().y;
-    ImGui::BeginChild("kd_tree", ImVec2(220, h), true); DrawTree(g.schema.layout); ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("kd_items", ImVec2(300, h), true);
-    ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##f", "filter", g.filter, sizeof g.filter);
-    ImGui::SetNextItemWidth(-60); if (ImGui::InputTextWithHint("##s", "search all data", g.search, sizeof g.search, ImGuiInputTextFlags_EnterReturnsTrue)) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search, g.node ? g.node->type : "");
-    ImGui::SameLine(); if (ImGui::Button("all")) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search);
-    if (!g.hits.empty()) {
-        ImGui::Text("%zu hits", g.hits.size()); ImGui::SameLine(); if (ImGui::SmallButton("close")) g.hits.clear();
-        for (const md::fcsdef::Hit& h : g.hits) if (ImGui::Selectable((h.name + "  [" + md::fcs::ItemTypeName(g.edits->KindOf(h.string_id)) + ", " + h.where + "]##" + h.string_id).c_str(), g.selected == h.string_id)) Go(h.string_id);
-        ImGui::Separator();
-    }
-    ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##cols", "extra columns: field, field", g.columns, sizeof g.columns);
-    ImGui::Text("%zu items", g.rows.size());
+    ImGui::BeginChild("kd_tree", ImVec2(kTreeW, h), true); DrawTree(g.schema.layout); ImGui::EndChild();
+    ImGui::SameLine(0, 0);
+    ImGui::BeginChild("kd_right", ImVec2(0, h), false);
     std::vector<std::string> cols; { std::string cur; for (const char* c = g.columns;; ++c) { if (*c == ',' || !*c) { size_t a = cur.find_first_not_of(' '), b = cur.find_last_not_of(' '); if (a != std::string::npos) cols.push_back(cur.substr(a, b - a + 1)); cur.clear(); if (!*c) break; } else cur += *c; } }
-    for (const md::fcsdef::ItemRow& r : g.rows) {
-        if (g.filter[0] && r.name.find(g.filter) == std::string::npos) continue;
-        std::string label = r.name;
-        if (!cols.empty()) if (const md::fcs::GameData* rec = g.data.Get(r.string_id)) for (const std::string& c : cols) { std::string v; if (g.browser->FieldText(*rec, c, v)) label += "  |  " + v.substr(0, 24); }
-        if (ImGui::Selectable((label + "##" + r.string_id).c_str(), g.selected == r.string_id)) Go(r.string_id);
+    const int ncol = 1 + (int)g.col_sid + (int)g.col_type + (int)g.col_state + (int)cols.size();
+    if (ImGui::BeginTable("kd_list", ncol, ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Borders, ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::GetFrameHeightWithSpacing()))) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Name");
+        if (g.col_sid) ImGui::TableSetupColumn("StringID");
+        if (g.col_type) ImGui::TableSetupColumn("Type");
+        if (g.col_state) ImGui::TableSetupColumn("State");
+        for (const std::string& c : cols) ImGui::TableSetupColumn(c.c_str());
+        ImGui::TableHeadersRow();
+        for (const md::fcsdef::ItemRow& r : g.rows) {
+            if (g.filter[0] && r.name.find(g.filter) == std::string::npos) continue;
+            const md::fcsdef::RecordState st = g.edits->StateOfRecord(r.string_id);
+            ImGui::TableNextRow(); ImGui::TableNextColumn();
+            const bool tint = st != md::fcsdef::RecordState::Original;
+            if (tint) ImGui::PushStyleColor(ImGuiCol_Text, st == md::fcsdef::RecordState::Removed ? ImVec4(0.65f, 0.65f, 0.65f, 1) : st == md::fcsdef::RecordState::New ? ImVec4(0.2f, 0.7f, 0.2f, 1) : ImVec4(0.3f, 0.45f, 1, 1));
+            if (ImGui::Selectable((r.name + "##" + r.string_id).c_str(), g.selected == r.string_id, ImGuiSelectableFlags_SpanAllColumns)) Go(r.string_id);
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) Go(r.string_id);
+            if (ImGui::BeginPopupContextItem()) {
+                int kind = -1;
+                if (g.node && !g.node->type.empty()) for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (g.node->type == md::fcs::ItemTypeName(k)) { kind = k; break; }
+                if (ImGui::MenuItem("Open Item")) g.w_item = true;
+                if (ImGui::MenuItem("List References")) { g.w_item = true; g.show_refs = true; }
+                ImGui::MenuItem("Replace references", nullptr, false, false); ImGui::MenuItem("Add Note Item", nullptr, false, false); ImGui::MenuItem("Add Todo Item", nullptr, false, false);
+                if (ImGui::MenuItem("Copy ID")) ImGui::SetClipboardText(r.string_id.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("New Item", nullptr, false, kind >= 0)) { g.selected = g.edits->NewRecord(kind, "New item"); RefreshRows(); }
+                if (ImGui::MenuItem("Duplicate Item")) { const std::string n = g.edits->Duplicate(r.string_id, g.edits->NameOf(r.string_id) + " copy"); if (!n.empty()) { g.selected = n; RefreshRows(); } }
+                ImGui::Separator();
+                ImGui::MenuItem("Clean Item", nullptr, false, false); ImGui::MenuItem("Spell check", nullptr, false, false);
+                if (ImGui::MenuItem("Show Mod Info")) g.w_info = true;
+                if (ImGui::MenuItem("Set Field")) g.w_find = true;
+                if (ImGui::MenuItem("Find / Replace Values")) g.w_find = true;
+                ImGui::MenuItem("Revert Changes", nullptr, false, false);
+                if (st == md::fcsdef::RecordState::Removed) { if (ImGui::MenuItem("Restore Item")) { g.edits->Restore(r.string_id); RefreshRows(); } }
+                else if (ImGui::MenuItem("Delete Item")) { g.edits->Remove(r.string_id); RefreshRows(); }
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Columns")) {
+                    ImGui::MenuItem("StringID", nullptr, &g.col_sid); ImGui::MenuItem("Ref", nullptr, false, false); ImGui::MenuItem("Type", nullptr, &g.col_type); ImGui::MenuItem("State", nullptr, &g.col_state);
+                    ImGui::Separator();
+                    ImGui::SetNextItemWidth(180); ImGui::InputTextWithHint("##addcol", "Add: field, field", g.columns, sizeof g.columns);
+                    if (ImGui::MenuItem("Reset")) { g.columns[0] = 0; g.col_sid = g.col_type = g.col_state = false; }
+                    ImGui::EndMenu();
+                }
+                ImGui::EndPopup();
+            }
+            if (tint) ImGui::PopStyleColor();
+            if (g.col_sid) { ImGui::TableNextColumn(); ImGui::TextUnformatted(r.string_id.c_str()); }
+            if (g.col_type) { ImGui::TableNextColumn(); ImGui::TextUnformatted(md::fcs::ItemTypeName(g.edits->KindOf(r.string_id))); }
+            if (g.col_state) { ImGui::TableNextColumn(); ImGui::TextUnformatted(st == md::fcsdef::RecordState::Original ? "Original" : st == md::fcsdef::RecordState::Modified ? "Modified" : st == md::fcsdef::RecordState::New ? "Owned" : "Removed"); }
+            if (!cols.empty()) { const md::fcs::GameData* rec = g.data.Get(r.string_id); for (const std::string& c : cols) { ImGui::TableNextColumn(); std::string v; if (rec && g.browser->FieldText(*rec, c, v)) ImGui::TextUnformatted(v.substr(0, 40).c_str()); } }
+        }
+        ImGui::EndTable();
     }
+    ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##f", "filter", g.filter, sizeof g.filter);
     ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("kd_card", ImVec2(0, h), true);
+    ImGui::End();
+}
+
+// «Item» window: the property list of the selected item.
+void DrawItemWin() {
+    if (!g.w_item) return;
+    const std::string title = (g.selected.empty() ? std::string("Item") : g.edits->NameOf(g.selected)) + "###kd_item";
+    Dump("window|Item|529|559");
+    ImGui::SetNextWindowPos(ImVec2(s_origin.x + 800, s_origin.y), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(529, 559), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(title.c_str(), &g.w_item, ImGuiWindowFlags_MenuBar)) { ImGui::End(); return; }
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("Item")) {
+            ImGui::MenuItem("Show References", nullptr, &g.show_refs);
+            ImGui::MenuItem("Copy data from Item", nullptr, false, false); ImGui::MenuItem("Add Note Item", nullptr, false, false); ImGui::MenuItem("Add Todo List Item", nullptr, false, false); ImGui::MenuItem("Import Scene", nullptr, false, false);
+            if (ImGui::MenuItem("Duplicate Item", nullptr, false, !g.selected.empty())) { const std::string n = g.edits->Duplicate(g.selected, g.edits->NameOf(g.selected) + " copy"); if (!n.empty()) { g.selected = n; RefreshRows(); } }
+            ImGui::MenuItem("Add Missing Fields", nullptr, false, false);
+            if (ImGui::MenuItem("Remove Obsolete Fields")) { const size_t n = g.edits->CleanOutsideSchema(); g.status = "clean dropped " + std::to_string(n) + " (fields outside the schema)"; Refresh(); }
+            if (ImGui::MenuItem("Delete This Item", nullptr, false, !g.selected.empty())) { g.edits->Remove(g.selected); RefreshRows(); }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+    if (!g.selected.empty() && g.edits->StateOfRecord(g.selected) == md::fcsdef::RecordState::Removed) { if (ImGui::Button("Restore")) { g.edits->Restore(g.selected); RefreshRows(); } }
     ImGui::Checkbox("only fields set by the data", &g.only_changed); ImGui::SameLine(); ImGui::Checkbox("hidden by conditions", &g.show_hidden);
-    ImGui::BeginDisabled(g.hpos <= 0); if (ImGui::Button("Back")) Go(g.hist[--g.hpos], false); ImGui::EndDisabled();
-    ImGui::SameLine(); ImGui::BeginDisabled(g.hpos + 1 >= (int)g.hist.size()); if (ImGui::Button("Forward")) Go(g.hist[++g.hpos], false); ImGui::EndDisabled();
-    ImGui::SameLine(); if (ImGui::Button("Undo") && g.edits->Undo()) Refresh();
-    ImGui::SameLine(); if (ImGui::Button("Redo") && g.edits->Redo()) Refresh();
-    ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
-    ImGui::SameLine();
-    if (ImGui::Button("Cleanup")) { const size_t n = g.edits->Cleanup(); g.status = "cleanup dropped " + std::to_string(n); Refresh(); }
-    ImGui::SameLine();
-    if (ImGui::Button("Export .pot")) {   // strings to translate, into temp_/md_mods/ (never the install)
-        std::filesystem::create_directories("temp_/md_mods");
-        const auto ex = md::fcsdef::ExtractStrings(g.schema, g.data, *g.browser);
-        FILE* o = std::fopen("temp_/md_mods/gamedata.pot", "wb");
-        if (o) { const std::string t = md::fcsdef::MakePot(ex); std::fwrite(t.data(), 1, t.size(), o); std::fclose(o); g.status = "wrote temp_/md_mods/gamedata.pot (" + std::to_string(ex.size()) + " strings)"; } else g.status = "cannot write the .pot";
-    }
-    ImGui::SameLine(); if (ImGui::Button("Clean")) { const size_t n = g.edits->CleanOutsideSchema(); g.status = "clean dropped " + std::to_string(n) + " (fields outside the schema)"; Refresh(); }
-    ImGui::SameLine(); ImGui::SetNextItemWidth(140);
-    if (ImGui::BeginCombo("##loadmod", "Load mod")) { for (const md::fcs::LoadEntry& m : g.mods) if (ImGui::Selectable(m.name.c_str())) std::snprintf(g.import_path, sizeof g.import_path, "%s", m.path.c_str()); ImGui::EndCombo(); }
-    ImGui::SameLine(); ImGui::SetNextItemWidth(220); ImGui::InputTextWithHint("##imp", "mod file to merge in", g.import_path, sizeof g.import_path);
-    ImGui::SameLine();
-    if (ImGui::Button("Merge")) {
-        md::fcs::File f; md::fcs::Error fe; size_t sk = 0;
-        if (md::fcs::ReadFile(g.import_path, f, fe) && g.edits->ImportFile(f, &sk)) { g.status = "merged " + std::to_string(f.records.size()) + " records" + (sk ? " (" + std::to_string(sk) + " vector fields skipped)" : ""); g.rows = g.node ? g.browser->Items(*g.node) : g.rows; Refresh(); }
-        else g.status = "merge failed: " + fe.Message();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Check")) g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
-    ImGui::SameLine();
-    if (ImGui::Button("Save mod") && g.edits->TouchedRecords().size()) {   // for now only into temp_/md_mods/ (never into the install); not with errors
-        g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
-        bool errors = false; for (const auto& pr : g.problems) if (pr.level == md::fcsdef::Problem::Critical) errors = true;
-        if (errors) g.status = "not saved: fix the errors listed below";
-        else {
-            std::filesystem::create_directories("temp_/md_mods");
-            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps; info.references = g.mod_refs;
-            const std::string path = std::string("temp_/md_mods/") + g.mod_name + ".mod";
-            if (md::fcsdef::WriteMod(path, *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved " + path; else g.status = "save failed: " + err;
-        }
-    }
-    if (g.node && !g.node->type.empty()) {
-        int kind = -1; for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (g.node->type == md::fcs::ItemTypeName(k)) { kind = k; break; }
-        ImGui::SameLine(); if (kind >= 0 && ImGui::Button("New")) { g.selected = g.edits->NewRecord(kind, "New item"); g.rows = g.browser->Items(*g.node); Refresh(); }
-    }
-    if (!g.selected.empty()) {
-        ImGui::SameLine(); if (ImGui::Button("Duplicate")) { const std::string n = g.edits->Duplicate(g.selected, g.edits->NameOf(g.selected) + " copy"); if (!n.empty()) { g.selected = n; g.rows = g.browser->Items(*g.node); Refresh(); } }
-        ImGui::SameLine();
-        if (g.edits->StateOfRecord(g.selected) == md::fcsdef::RecordState::Removed) { if (ImGui::Button("Restore")) { g.edits->Restore(g.selected); g.rows = g.browser->Items(*g.node); } }
-        else if (ImGui::Button("Remove")) { g.edits->Remove(g.selected); g.rows = g.browser->Items(*g.node); }
-        const std::string owner = g.edits->OwnerOf(g.selected);
-        if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); }
-    }
-    if (ImGui::CollapsingHeader("Mod info / new mod")) {
-        ImGui::SetNextItemWidth(160); ImGui::InputText("name##mi", g.mod_name, sizeof g.mod_name); ImGui::SameLine();
-        ImGui::SetNextItemWidth(120); ImGui::InputText("author##mi", g.mod_author, sizeof g.mod_author);
-        ImGui::SetNextItemWidth(500); ImGui::InputText("description##mi", g.mod_desc, sizeof g.mod_desc);
-        ImGui::SetNextItemWidth(500); ImGui::InputText("dependencies##mi", g.mod_deps, sizeof g.mod_deps);
-        ImGui::SetNextItemWidth(500); ImGui::InputText("referenced (not required)##mi", g.mod_refs, sizeof g.mod_refs);
-        if (ImGui::Button("New mod (discard edits)")) NewMod();
-        ImGui::SameLine(); if (ImGui::Button("Close all (back to the install)")) { std::string err; if (LoadFiles({}, err)) { Rebuild(); g.status = "closed: install load order"; } else g.status = err; }
-        ImGui::SetNextItemWidth(420); ImGui::InputTextWithHint("##single", "path of a .mod / .base to open alone", g.single_path, sizeof g.single_path); ImGui::SameLine();
-        if (ImGui::Button("Open single file")) {
-            md::fcs::LoadEntry e; e.path = g.single_path; e.name = std::filesystem::path(e.path).filename().string(); e.core = e.name == "gamedata.base";
-            std::string err; if (LoadFiles({e}, err)) { Rebuild(); g.status = "opened " + e.name + " alone (single-file mode)"; } else g.status = "open failed: " + err;
-        }
-        if (ImGui::Button("Export mods.cfg of the loaded mods")) {   // a copy in temp_/md_mods/, never over the install's data/mods.cfg
-            std::filesystem::create_directories("temp_/md_mods");
-            FILE* o = std::fopen("temp_/md_mods/mods.cfg", "wb");
-            if (o) { for (const md::fcs::LoadEntry& m : g.mods) std::fprintf(o, "%s\n", m.name.c_str()); std::fclose(o); g.status = "wrote temp_/md_mods/mods.cfg (" + std::to_string(g.mods.size()) + " mods)"; } else g.status = "cannot write mods.cfg";
-        }
-        ImGui::SameLine(); ImGui::TextDisabled("saves to temp_/md_mods/%s.mod", g.mod_name);
-    }
-    if (ImGui::CollapsingHeader("Changes of the mod")) {
-        for (const md::fcsdef::ChangeRow& r : md::fcsdef::ChangeList(*g.edits)) {
-            if (ImGui::Selectable((r.state + "  " + r.name + "   " + r.what + "##ch" + r.string_id).c_str(), g.selected == r.string_id)) Go(r.string_id);
-        }
-    }
-    if (ImGui::CollapsingHeader("Find and replace / set in all listed items")) {
-        ImGui::SetNextItemWidth(200); ImGui::InputText("find##fr", g.repl_find, sizeof g.repl_find); ImGui::SameLine();
-        ImGui::SetNextItemWidth(200); ImGui::InputText("replace with##fr", g.repl_with, sizeof g.repl_with);
-        const std::string type = g.node ? g.node->type : "";
-        if (ImGui::Button("Preview")) g.repl_hits = md::fcsdef::FindReplace(*g.edits, g.data, g.repl_find, g.repl_with, type, false);
-        ImGui::SameLine();
-        if (ImGui::Button("Replace all")) {
-            if (!g.repl_find[0]) g.status = "find text is empty";
-            else { g.repl_hits = md::fcsdef::FindReplace(*g.edits, g.data, g.repl_find, g.repl_with, type, true); g.status = "replaced in " + std::to_string(g.repl_hits.size()) + " places"; if (g.node) g.rows = g.browser->Items(*g.node); Refresh(); }
-        }
-        ImGui::TextDisabled("limited to the type of the selected category (%s)", type.empty() ? "all" : type.c_str());
-        for (size_t i = 0; i < g.repl_hits.size() && i < 30; ++i) ImGui::BulletText("%s %s: %s -> %s", g.edits->NameOf(g.repl_hits[i].string_id).c_str(), g.repl_hits[i].field.empty() ? "name" : g.repl_hits[i].field.c_str(), g.repl_hits[i].before.substr(0, 30).c_str(), g.repl_hits[i].after.substr(0, 30).c_str());
-        ImGui::Separator();
-        ImGui::SetNextItemWidth(160); ImGui::InputText("field##bk", g.bulk_field, sizeof g.bulk_field); ImGui::SameLine();
-        ImGui::SetNextItemWidth(160); ImGui::InputText("value##bk", g.bulk_value, sizeof g.bulk_value); ImGui::SameLine();
-        if (ImGui::Button("Set in all listed")) {
-            std::vector<std::string> ids; for (const md::fcsdef::ItemRow& r : g.rows) if (!g.filter[0] || r.name.find(g.filter) != std::string::npos) ids.push_back(r.string_id);
-            std::string err; const size_t n = md::fcsdef::SetMany(*g.edits, ids, g.bulk_field, g.bulk_value, err);
-            g.status = "set in " + std::to_string(n) + " of " + std::to_string(ids.size()) + (err.empty() ? "" : "; " + err); Refresh();
-        }
-    }
-    if (ImGui::CollapsingHeader("FCS settings")) {
-        ImGui::TextDisabled("data folder: %s", md::KenshiDir().c_str());
-        for (const auto& kv : g.schema.settings) ImGui::BulletText("%s = %s", kv.first.c_str(), kv.second.c_str());
-        ImGui::SetNextItemWidth(120); ImGui::InputInt("autosave every (min, 0 = off)", &g.autosave_min, 1, 5); if (g.autosave_min < 0) g.autosave_min = 0;
-    }
-    if (ImGui::CollapsingHeader("Assets (files the records point to)")) {
-        if (ImGui::Button("Scan")) { g.assets = md::fcsdef::AssetList(*g.edits, g.data, md::KenshiDir()); g.assets_ready = true; }
-        if (g.assets_ready) {
-            size_t missing = 0; for (const md::fcsdef::AssetRow& a : g.assets) missing += !a.found;
-            ImGui::SameLine(); ImGui::Text("%zu files, %zu not found under the install", g.assets.size(), missing);
-            for (size_t i = 0; i < g.assets.size() && i < 200; ++i) { const md::fcsdef::AssetRow& a = g.assets[i]; ImGui::TextColored(a.found ? ImVec4(0.7f, 0.7f, 0.7f, 1) : ImVec4(1, 0.5f, 0.4f, 1), "%s  (%s, %zu record%s, e.g. %s)", a.file.c_str(), a.kind_name.c_str(), a.records, a.records == 1 ? "" : "s", a.example_record.c_str()); }
-        }
-    }
-    if (!g.selected.empty() && ImGui::CollapsingHeader("Referenced by")) {
-        for (const md::fcsdef::RefHit& r : md::fcsdef::Referencing(*g.edits, g.data, g.selected)) if (ImGui::Selectable((r.name + "   (" + r.category + ")##rb" + r.string_id + r.category).c_str())) Go(r.string_id);
-    }
-    for (const auto& pr : g.problems) {
-        ImGui::PushID(&pr);
-        const ImVec4 col = pr.level == md::fcsdef::Problem::Critical ? ImVec4(1, 0.3f, 0.3f, 1) : pr.level == md::fcsdef::Problem::Warning ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.6f, 0.8f, 1, 1);
-        ImGui::TextColored(col, "%s %s  %s.%s: %s", pr.level == md::fcsdef::Problem::Critical ? "CRITICAL" : pr.level == md::fcsdef::Problem::Warning ? "warning" : "info", pr.code.c_str(), g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
-        struct A { unsigned bit; const char* label; md::fcsdef::ErrorAction act; };
-        bool applied = false;
-        for (const A& a : {A{md::fcsdef::kRemoveInvalidReferences, "remove invalid links", md::fcsdef::kRemoveInvalidReferences}, A{md::fcsdef::kRevertItem, "revert item", md::fcsdef::kRevertItem}, A{md::fcsdef::kDeleteItem, "delete item", md::fcsdef::kDeleteItem}})
-            if (pr.actions & a.bit) { ImGui::SameLine(); if (ImGui::SmallButton(a.label)) { md::fcsdef::ApplyFix(*g.edits, g.schema, pr, a.act); applied = true; } }
-        ImGui::PopID();
-        if (applied) { g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); Refresh(); break; }
-    }
-    if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
+    if (!g.selected.empty()) { const std::string owner = g.edits->OwnerOf(g.selected); if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); } }
     if (!g.selected.empty()) {
         const md::fcs::GameData* rec = g.data.Get(g.selected);
         if (rec && rec->source < g.data.files.size()) ImGui::TextDisabled("defined in %s%s", g.data.files[rec->source].c_str(), g.data.files[rec->source] == "gamedata.base" || rec->source + 1 < g.data.files.size() ? "  (LOCKED: edits go to your mod as changes)" : "");
@@ -470,7 +509,133 @@ void Draw() {
         }
     }
     if (!g.selected.empty()) { const int k = g.edits->KindOf(g.selected); if (k == md::fcsdef::kItemDialogue || k == md::fcsdef::kItemDialogueLine || k == md::fcsdef::kItemDialoguePackage) DrawDialogue(k); }
-    ImGui::EndChild();
+    if (g.show_refs && !g.selected.empty() && ImGui::CollapsingHeader("Referenced by")) {
+        for (const md::fcsdef::RefHit& r : md::fcsdef::Referencing(*g.edits, g.data, g.selected)) if (ImGui::Selectable((r.name + "   (" + r.category + ")##rb" + r.string_id + r.category).c_str())) Go(r.string_id);
+    }
+    ImGui::End();
 }
+
+void DrawInfoWin() {
+    if (!BeginWin(g.w_info, "Info", 681, 498)) return;
+        ImGui::SetNextItemWidth(160); ImGui::InputText("name##mi", g.mod_name, sizeof g.mod_name); ImGui::SameLine();
+        ImGui::SetNextItemWidth(120); ImGui::InputText("author##mi", g.mod_author, sizeof g.mod_author);
+        ImGui::SetNextItemWidth(500); ImGui::InputText("description##mi", g.mod_desc, sizeof g.mod_desc);
+        ImGui::SetNextItemWidth(500); ImGui::InputText("dependencies##mi", g.mod_deps, sizeof g.mod_deps);
+        ImGui::SetNextItemWidth(500); ImGui::InputText("referenced (not required)##mi", g.mod_refs, sizeof g.mod_refs);
+        if (ImGui::Button("New mod (discard edits)")) NewMod();
+        ImGui::SameLine(); if (ImGui::Button("Close all (back to the install)")) { std::string err; if (LoadFiles({}, err)) { Rebuild(); g.status = "closed: install load order"; } else g.status = err; }
+        ImGui::SetNextItemWidth(420); ImGui::InputTextWithHint("##single", "path of a .mod / .base to open alone", g.single_path, sizeof g.single_path); ImGui::SameLine();
+        if (ImGui::Button("Open single file")) {
+            md::fcs::LoadEntry e; e.path = g.single_path; e.name = std::filesystem::path(e.path).filename().string(); e.core = e.name == "gamedata.base";
+            std::string err; if (LoadFiles({e}, err)) { Rebuild(); g.status = "opened " + e.name + " alone (single-file mode)"; } else g.status = "open failed: " + err;
+        }
+        if (ImGui::Button("Export mods.cfg of the loaded mods")) {   // a copy in temp_/md_mods/, never over the install's data/mods.cfg
+            std::filesystem::create_directories("temp_/md_mods");
+            FILE* o = std::fopen("temp_/md_mods/mods.cfg", "wb");
+            if (o) { for (const md::fcs::LoadEntry& m : g.mods) std::fprintf(o, "%s\n", m.name.c_str()); std::fclose(o); g.status = "wrote temp_/md_mods/mods.cfg (" + std::to_string(g.mods.size()) + " mods)"; } else g.status = "cannot write mods.cfg";
+        }
+        ImGui::SameLine(); ImGui::TextDisabled("saves to temp_/md_mods/%s.mod", g.mod_name);
+    ImGui::End();
+}
+
+void DrawChangesWin() {
+    if (!BeginWin(g.w_changes, "Change List", 447, 575)) return;
+        for (const md::fcsdef::ChangeRow& r : md::fcsdef::ChangeList(*g.edits)) {
+            if (ImGui::Selectable((r.state + "  " + r.name + "   " + r.what + "##ch" + r.string_id).c_str(), g.selected == r.string_id)) Go(r.string_id);
+        }
+    ImGui::End();
+}
+
+void DrawSettingsWin() {
+    if (!BeginWin(g.w_settings, "FCS Settings", 346, 248)) return;
+        ImGui::TextDisabled("data folder: %s", md::KenshiDir().c_str());
+        for (const auto& kv : g.schema.settings) ImGui::BulletText("%s = %s", kv.first.c_str(), kv.second.c_str());
+        ImGui::SetNextItemWidth(120); ImGui::InputInt("autosave every (min, 0 = off)", &g.autosave_min, 1, 5); if (g.autosave_min < 0) g.autosave_min = 0;
+    ImGui::End();
+}
+
+void DrawAssetsWin() {
+    if (!BeginWin(g.w_assets, "Assets", 503, 534)) return;
+        if (ImGui::Button("Scan")) { g.assets = md::fcsdef::AssetList(*g.edits, g.data, md::KenshiDir()); g.assets_ready = true; }
+        if (g.assets_ready) {
+            size_t missing = 0; for (const md::fcsdef::AssetRow& a : g.assets) missing += !a.found;
+            ImGui::SameLine(); ImGui::Text("%zu files, %zu not found under the install", g.assets.size(), missing);
+            for (size_t i = 0; i < g.assets.size() && i < 200; ++i) { const md::fcsdef::AssetRow& a = g.assets[i]; ImGui::TextColored(a.found ? ImVec4(0.7f, 0.7f, 0.7f, 1) : ImVec4(1, 0.5f, 0.4f, 1), "%s  (%s, %zu record%s, e.g. %s)", a.file.c_str(), a.kind_name.c_str(), a.records, a.records == 1 ? "" : "s", a.example_record.c_str()); }
+        }
+    ImGui::End();
+}
+
+void DrawErrorsWin() {
+    if (!BeginWin(g.w_errors, "Errors", 984, 469)) return;
+    for (const auto& pr : g.problems) {
+        ImGui::PushID(&pr);
+        const ImVec4 col = pr.level == md::fcsdef::Problem::Critical ? ImVec4(1, 0.3f, 0.3f, 1) : pr.level == md::fcsdef::Problem::Warning ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.6f, 0.8f, 1, 1);
+        ImGui::TextColored(col, "%s %s  %s.%s: %s", pr.level == md::fcsdef::Problem::Critical ? "CRITICAL" : pr.level == md::fcsdef::Problem::Warning ? "warning" : "info", pr.code.c_str(), g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
+        struct A { unsigned bit; const char* label; md::fcsdef::ErrorAction act; };
+        bool applied = false;
+        for (const A& a : {A{md::fcsdef::kRemoveInvalidReferences, "remove invalid links", md::fcsdef::kRemoveInvalidReferences}, A{md::fcsdef::kRevertItem, "revert item", md::fcsdef::kRevertItem}, A{md::fcsdef::kDeleteItem, "delete item", md::fcsdef::kDeleteItem}})
+            if (pr.actions & a.bit) { ImGui::SameLine(); if (ImGui::SmallButton(a.label)) { md::fcsdef::ApplyFix(*g.edits, g.schema, pr, a.act); applied = true; } }
+        ImGui::PopID();
+        if (applied) { g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); Refresh(); break; }
+    }
+    ImGui::End();
+}
+
+void DrawFindWin() {
+    if (!BeginWin(g.w_find, "Find and replace", 634, 333)) return;
+    ImGui::SetNextItemWidth(-60); if (ImGui::InputTextWithHint("##s", "search all data", g.search, sizeof g.search, ImGuiInputTextFlags_EnterReturnsTrue)) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search, g.node ? g.node->type : "");
+    ImGui::SameLine(); if (ImGui::Button("all")) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search);
+    if (!g.hits.empty()) {
+        ImGui::Text("%zu hits", g.hits.size()); ImGui::SameLine(); if (ImGui::SmallButton("close")) g.hits.clear();
+        for (const md::fcsdef::Hit& h : g.hits) if (ImGui::Selectable((h.name + "  [" + md::fcs::ItemTypeName(g.edits->KindOf(h.string_id)) + ", " + h.where + "]##" + h.string_id).c_str(), g.selected == h.string_id)) Go(h.string_id);
+        ImGui::Separator();
+    }
+    ImGui::Separator();
+        ImGui::SetNextItemWidth(200); ImGui::InputText("find##fr", g.repl_find, sizeof g.repl_find); ImGui::SameLine();
+        ImGui::SetNextItemWidth(200); ImGui::InputText("replace with##fr", g.repl_with, sizeof g.repl_with);
+        const std::string type = g.node ? g.node->type : "";
+        if (ImGui::Button("Preview")) g.repl_hits = md::fcsdef::FindReplace(*g.edits, g.data, g.repl_find, g.repl_with, type, false);
+        ImGui::SameLine();
+        if (ImGui::Button("Replace all")) {
+            if (!g.repl_find[0]) g.status = "find text is empty";
+            else { g.repl_hits = md::fcsdef::FindReplace(*g.edits, g.data, g.repl_find, g.repl_with, type, true); g.status = "replaced in " + std::to_string(g.repl_hits.size()) + " places"; if (g.node) g.rows = g.browser->Items(*g.node); Refresh(); }
+        }
+        ImGui::TextDisabled("limited to the type of the selected category (%s)", type.empty() ? "all" : type.c_str());
+        for (size_t i = 0; i < g.repl_hits.size() && i < 30; ++i) ImGui::BulletText("%s %s: %s -> %s", g.edits->NameOf(g.repl_hits[i].string_id).c_str(), g.repl_hits[i].field.empty() ? "name" : g.repl_hits[i].field.c_str(), g.repl_hits[i].before.substr(0, 30).c_str(), g.repl_hits[i].after.substr(0, 30).c_str());
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(160); ImGui::InputText("field##bk", g.bulk_field, sizeof g.bulk_field); ImGui::SameLine();
+        ImGui::SetNextItemWidth(160); ImGui::InputText("value##bk", g.bulk_value, sizeof g.bulk_value); ImGui::SameLine();
+        if (ImGui::Button("Set in all listed")) {
+            std::vector<std::string> ids; for (const md::fcsdef::ItemRow& r : g.rows) if (!g.filter[0] || r.name.find(g.filter) != std::string::npos) ids.push_back(r.string_id);
+            std::string err; const size_t n = md::fcsdef::SetMany(*g.edits, ids, g.bulk_field, g.bulk_value, err);
+            g.status = "set in " + std::to_string(n) + " of " + std::to_string(ids.size()) + (err.empty() ? "" : "; " + err); Refresh();
+        }
+    ImGui::End();
+}
+
+}  // namespace
+
+void Draw() {
+    if (!g.tried) Load();
+    if (!g.ok) { ImGui::TextWrapped("Kenshi data: %s", g.error.empty() ? "not loaded" : g.error.c_str()); return; }
+    if (g.autosave_min > 0 && g.edits->TouchedRecords().size()) {   // FCS autosave: a copy next to the saved mod, never the install
+        const double now = ImGui::GetTime();
+        if (g.last_autosave == 0) g.last_autosave = now;
+        if (now - g.last_autosave >= g.autosave_min * 60.0) {
+            g.last_autosave = now; std::filesystem::create_directories("temp_/md_mods");
+            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps; info.references = g.mod_refs;
+            if (md::fcsdef::WriteMod(std::string("temp_/md_mods/") + g.mod_name + ".autosave.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "autosaved"; else g.status = "autosave failed: " + err;
+        }
+    }
+    static const char* const dump_path = std::getenv("MD_FCS_LAYOUT_DUMP"); static int dump_frames = 0;
+    if (dump_path && dump_frames == 0) g.w_info = g.w_changes = g.w_find = g.w_settings = g.w_assets = g.w_errors = true;
+    s_dump.clear();
+    DrawToolbar();
+    if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
+    s_origin = ImGui::GetCursorScreenPos();
+    DrawGameWorld(); DrawItemWin(); DrawInfoWin(); DrawChangesWin(); DrawFindWin(); DrawSettingsWin(); DrawAssetsWin(); DrawErrorsWin();
+    if (dump_path && ++dump_frames == 5) { if (FILE* o = std::fopen(dump_path, "wb")) { std::fwrite(s_dump.data(), 1, s_dump.size(), o); std::fclose(o); } }
+}
+
 
 }  // namespace KenshiDataPanel
