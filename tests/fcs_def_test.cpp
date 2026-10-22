@@ -1,6 +1,7 @@
 // Synthetic mini .def files (not Kenshi data) through the schema reader. With KENSHI_DIR set, also loads the real files and checks only that they parse.
 #include "../editor/data/data_browser.h"
 #include "../editor/data/dialog_model.h"
+#include "../editor/data/mod_check.h"
 #include "../editor/data/mod_write.h"
 #include <algorithm>
 #include <filesystem>
@@ -322,6 +323,19 @@ static void RefTest() {
     CHECK(ed.RemoveRef("1-w", "parts", "2-p") && ed.Refs("1-w", "parts").empty() && ed.RefLayer().at("1-w").at("parts").at("2-p")[2] == INT32_MAX);
     CHECK(!ed.RemoveRef("1-w", "parts", "nope"));
     CHECK(ed.Undo() && ed.Refs("1-w", "parts").size() == 1);
+    {   // F7: checks and search
+        EditSession c(s, data, "md_test.mod");
+        CHECK(CheckMod(c, s, data).empty());
+        c.SetRef("1-w", "parts", "nope-id", {0, 0, 0});
+        auto pr = CheckMod(c, s, data);
+        CHECK(pr.size() == 1 && pr[0].level == Problem::Error && pr[0].field == "parts");
+        c.Remove("2-p");   // 1-w still links to it
+        pr = CheckMod(c, s, data);
+        bool warn = false; for (auto& p : pr) if (p.record == "2-p" && p.level == Problem::Warning) warn = true;
+        CHECK(warn);
+        CHECK(SearchAll(c, data, "swo").size() == 1 && SearchAll(c, data, "1-w").size() == 1 && SearchAll(c, data, "BLADE", "ITEM").empty() == true);   // 2-p removed
+        CHECK(SearchAll(c, data, "targ", "ITEM").size() == 1 && SearchAll(c, data, "targ", "WEAPON").empty());
+    }
     // instances
     CHECK(ed.Instances("1-w").size() == 1);
     md::fcs::Instance ni; ni.id = "i2"; ni.target = "3-t"; ni.position[0] = 5;
@@ -423,7 +437,19 @@ static void DialogTest() {
     CHECK(AddCodeEnums(s, "/nonexistent.json") == 0);
 }
 
+static void ConditionTest() {
+    std::vector<CardField> card(3);
+    card[0].name = "slot"; card[0].value = "AttachSlot.ATTACH_BODY";
+    card[1].name = "single gender"; card[1].value = "false";
+    card[2].name = "mode"; card[2].value = "DUAL_TEXTURE";
+    CHECK(EvalCondition("\"slot\" is AttachSlot.ATTACH_BODY", card) && !EvalCondition("\"slot\" is AttachSlot.ATTACH_HEAD", card));
+    CHECK(EvalCondition("\"single gender\" is False", card) && !EvalCondition("\"single gender\" is True", card));
+    CHECK(EvalCondition("\"mode\" is MapFeatureMode.DUAL_TEXTURE or MapFeatureMode.DUAL_TRIPLANAR", card) && !EvalCondition("\"mode\" not MapFeatureMode.DUAL_TEXTURE or MapFeatureMode.X", card));
+    CHECK(EvalCondition("\"mode\" not MapFeatureMode.TERRAIN", card) && EvalCondition("\"nope\" is X", card) && EvalCondition("garbage", card));
+}
+
 int main() {
+    ConditionTest();
     RefTest();
     DialogTest();
     BrowserTest();

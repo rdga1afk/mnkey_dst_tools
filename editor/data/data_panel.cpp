@@ -1,6 +1,7 @@
 #include "data_panel.h"
 #include "data_browser.h"
 #include "dialog_model.h"
+#include "mod_check.h"
 #include "mod_write.h"
 #include <algorithm>
 #include <filesystem>
@@ -29,9 +30,12 @@ struct State {
     std::vector<md::fcsdef::CardField> card;
     std::vector<md::fcsdef::CardInstance> insts;
     char filter[64] = "";
-    bool only_changed = false;
+    bool only_changed = false, show_hidden = false;
     std::string line, line_parent;                  // selected dialogue line (the one being edited) and the dialogue it was opened from
     char new_text[256] = "";
+    char search[64] = "";
+    std::vector<md::fcsdef::Hit> hits;
+    std::vector<md::fcsdef::Problem> problems;
 } g;
 
 void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
@@ -137,6 +141,13 @@ void Draw() {
     ImGui::SameLine();
     ImGui::BeginChild("kd_items", ImVec2(300, h), true);
     ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##f", "filter", g.filter, sizeof g.filter);
+    ImGui::SetNextItemWidth(-60); if (ImGui::InputTextWithHint("##s", "search all data", g.search, sizeof g.search, ImGuiInputTextFlags_EnterReturnsTrue)) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search, g.node ? g.node->type : "");
+    ImGui::SameLine(); if (ImGui::Button("all")) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search);
+    if (!g.hits.empty()) {
+        ImGui::Text("%zu hits", g.hits.size()); ImGui::SameLine(); if (ImGui::SmallButton("close")) g.hits.clear();
+        for (const md::fcsdef::Hit& h : g.hits) if (ImGui::Selectable((h.name + "  [" + md::fcs::ItemTypeName(g.edits->KindOf(h.string_id)) + ", " + h.where + "]##" + h.string_id).c_str(), g.selected == h.string_id)) { g.selected = h.string_id; Refresh(); }
+        ImGui::Separator();
+    }
     ImGui::Text("%zu items", g.rows.size());
     for (const md::fcsdef::ItemRow& r : g.rows) {
         if (g.filter[0] && r.name.find(g.filter) == std::string::npos) continue;
@@ -145,15 +156,22 @@ void Draw() {
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("kd_card", ImVec2(0, h), true);
-    ImGui::Checkbox("only fields set by the data", &g.only_changed);
+    ImGui::Checkbox("only fields set by the data", &g.only_changed); ImGui::SameLine(); ImGui::Checkbox("hidden by conditions", &g.show_hidden);
     ImGui::SameLine(); if (ImGui::Button("Undo") && g.edits->Undo()) Refresh();
     ImGui::SameLine(); if (ImGui::Button("Redo") && g.edits->Redo()) Refresh();
     ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
     ImGui::SameLine();
-    if (ImGui::Button("Save mod") && g.edits->ModifiedCount()) {   // for now only into temp_/md_mods/ (never into the install)
-        std::filesystem::create_directories("temp_/md_mods");
-        std::string err; md::fcsdef::ModInfo info; info.description = "made with the md editor";
-        if (md::fcsdef::WriteMod("temp_/md_mods/md_test.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved temp_/md_mods/md_test.mod"; else g.status = "save failed: " + err;
+    if (ImGui::Button("Check")) g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
+    ImGui::SameLine();
+    if (ImGui::Button("Save mod") && g.edits->TouchedRecords().size()) {   // for now only into temp_/md_mods/ (never into the install); not with errors
+        g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
+        bool errors = false; for (const auto& pr : g.problems) if (pr.level == md::fcsdef::Problem::Error) errors = true;
+        if (errors) g.status = "not saved: fix the errors listed below";
+        else {
+            std::filesystem::create_directories("temp_/md_mods");
+            std::string err; md::fcsdef::ModInfo info; info.description = "made with the md editor";
+            if (md::fcsdef::WriteMod("temp_/md_mods/md_test.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved temp_/md_mods/md_test.mod"; else g.status = "save failed: " + err;
+        }
     }
     if (g.node && !g.node->type.empty()) {
         int kind = -1; for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (g.node->type == md::fcs::ItemTypeName(k)) { kind = k; break; }
@@ -167,10 +185,12 @@ void Draw() {
         const std::string owner = g.edits->OwnerOf(g.selected);
         if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); }
     }
+    for (const auto& pr : g.problems) ImGui::TextColored(pr.level == md::fcsdef::Problem::Error ? ImVec4(1, 0.3f, 0.3f, 1) : ImVec4(1, 0.8f, 0.3f, 1), "%s  %s.%s: %s", pr.level == md::fcsdef::Problem::Error ? "error" : "warning", g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     std::string cat;
     for (const md::fcsdef::CardField& c : g.card) {
         if (g.only_changed && !c.changed && !c.edited) continue;
+        if (!c.visible && !g.show_hidden) continue;
         if (c.category != cat) { cat = c.category; ImGui::SeparatorText(cat.c_str()); }
         const ImVec4 col = c.edited ? ImVec4(0.5f, 1, 0.5f, 1) : c.changed ? ImVec4(1, 0.85f, 0.4f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);   // green MODIFIED here, yellow set by the data, grey default
         ImGui::TextColored(col, "%s", c.name.c_str());

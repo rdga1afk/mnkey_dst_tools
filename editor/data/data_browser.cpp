@@ -114,6 +114,30 @@ std::vector<ItemRow> DataBrowser::Items(const LayoutNode& node) const {
     return rows;
 }
 
+bool EvalCondition(const std::string& cond, const std::vector<CardField>& card) {
+    if (cond.size() < 3 || cond[0] != '"') return true;
+    const size_t q = cond.find('"', 1); if (q == std::string::npos) return true;
+    const std::string field = cond.substr(1, q - 1);
+    std::string rest = cond.substr(q + 1);
+    auto lower = [](std::string s) { for (char& ch : s) ch = (char)tolower((unsigned char)ch); return s; };
+    auto trim = [](std::string s) { size_t a = s.find_first_not_of(" \t"), b = s.find_last_not_of(" \t"); return a == std::string::npos ? std::string() : s.substr(a, b - a + 1); };
+    rest = trim(rest);
+    bool negate;
+    if (rest.compare(0, 3, "is ") == 0) negate = false; else if (rest.compare(0, 4, "not ") == 0) negate = true; else return true;
+    rest = trim(rest.substr(negate ? 4 : 3));
+    const CardField* other = nullptr; for (const CardField& c : card) if (c.name == field) { other = &c; break; }
+    if (!other) return true;
+    auto bare = [&](std::string v) { v = lower(trim(v)); const size_t d = v.find('.'); return d == std::string::npos ? v : v.substr(d + 1); };
+    const std::string have = bare(other->value);
+    bool any = false;
+    for (size_t pos = 0; pos <= rest.size();) {
+        size_t e = rest.find(" or ", pos); if (e == std::string::npos) e = rest.size();
+        if (bare(rest.substr(pos, e - pos)) == have) any = true;
+        pos = e + 4;
+    }
+    return negate ? !any : any;
+}
+
 std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
     std::vector<CardField> card;
     const md::fcs::GameData* rec = data_.Get(string_id);
@@ -135,6 +159,8 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
         }
         card.push_back(std::move(c));
     }
+    size_t i = 0;
+    for (const Field* f : schema_.FieldsOf(md::fcs::ItemTypeName(rec->kind))) { if (!f->condition.empty()) card[i].visible = EvalCondition(f->condition, card); ++i; }
     return card;
 }
 

@@ -12,8 +12,12 @@ namespace md::fcsdef {
 
 struct CardField {
     std::string category, name, type, value, def, description;   // type: bool / float / int / string / colour / enum / file / refs ...
+    bool visible = true;                                                         // false when the field's `condition` is not met by the other fields' values
     bool changed = false, edited = false;                                        // the record sets it (differs from the schema default)
 };
+
+// `"other" is A or B` / `"other" not A`: true when the other field's shown value (enum: NAME or Enum.NAME, bool: true/false) is (not) one of the listed ones. An unknown form or field is true (shown).
+bool EvalCondition(const std::string& cond, const std::vector<CardField>& card);
 
 struct CardInstance { std::string id, target_id, target_name; float pos[3] = {0, 0, 0}; std::vector<std::string> states; };
 
