@@ -1,3 +1,4 @@
+#include <monkey_dust/io/kenshi_dir.h>
 #include "character/appearance.h"
 #include "character/face_poses.h"
 #include "character/pose_solver.h"
@@ -32,11 +33,14 @@ using namespace md::character;
 // vertex layout of shaders/char_preview.vert: pos(12) normal(12) uv(8) joints u8x4(4) weights f4(16)
 struct Vtx { float px, py, pz, nx, ny, nz, u, v; uint8_t ji[4]; float wt[4]; };
 struct VU { float mvp[16]; };
+struct VU2 { float mv[16]; };
+bool g_kenshi_light = false;   // view * model of the body: view-space lighting
 
 Session* g_session = nullptr;
 std::unique_ptr<md::render_backend::SdlGpuBackend> g_backend;
 GpuPipeline    g_body_pipe, g_hair_pipe, g_bg_pipe, g_scene_pipe, g_plat_pipe;
 GpuStaticBuffer g_vbo, g_ibo, g_scene_vbo, g_scene_ibo, g_plat_vbo, g_plat_ibo;
+GpuTexture     g_irr_cube, g_spec_cube;   // Kenshi's environment cubes (the character screen's lighting)
 GpuTexture     g_tex, g_tex_head, g_tex_none, g_bg_sand, g_bg_dune, g_plat_tex, g_plat_tex2;
 int g_plat_ni = 0;
 GpuColorTexture g_color, g_depth;
@@ -103,9 +107,10 @@ bool CreatePipelines() {
     pd.layout.attribs[0] = {0, 0, GpuAttribFmt::F3}; pd.layout.attribs[1] = {1, 12, GpuAttribFmt::F3}; pd.layout.attribs[2] = {2, 24, GpuAttribFmt::F2};
     pd.layout.attribs[3] = {3, 32, GpuAttribFmt::U8x4}; pd.layout.attribs[4] = {4, 36, GpuAttribFmt::F4};
     pd.raster.depth_test = true; pd.raster.depth_write = true; pd.raster.cull_back = true;
-    pd.vert_uniform_bufs = 2; pd.vert_samplers = 0; pd.frag_samplers = 4; pd.frag_uniform_bufs = 1;
+    pd.vert_uniform_bufs = 3; pd.vert_samplers = 0; pd.frag_samplers = 6; pd.frag_uniform_bufs = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
     if (!g_body_pipe.Create(pd)) { fprintf(stderr, "[CharPreview] body pipeline create failed\n"); return false; }
+    { const std::string kd = md::KenshiDir(); if (!g_irr_cube.InitFromDDSCube((kd + "/data/materials/mp_irradiance.dds").c_str()) || !g_spec_cube.InitFromDDSCube((kd + "/data/materials/mp_specularity.dds").c_str())) fprintf(stderr, "[CharPreview] environment cubes missing under %s/data/materials\n", kd.c_str()); }
     GpuPipeline::Desc hd = pd;
     hd.frag_path = "shaders/char_hair.frag"; hd.frag_samplers = 1; hd.raster.cull_back = false;
     if (!g_hair_pipe.Create(hd)) fprintf(stderr, "[CharPreview] hair pipeline create failed\n");
@@ -415,10 +420,13 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         VU vu; memcpy(vu.mvp, body_mvp.data(), 64);
         pv.PushVertexUniforms(0, &vu, sizeof(vu));
         pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
+        VU2 vu2; { M4 mvm = Mul(view, Mul(Translate(0.f, -g_ground * 0.1f, 0.f), scale)); memcpy(vu2.mv, mvm.data(), 64); }
+        pv.PushVertexUniforms(2, &vu2, sizeof(vu2));
         const auto hrgb = g_session->HairRgb();
         const Attach& ha = g_hair; const Attach& be = g_beard;
         const bool hh = ha.head_ok, bh = be.head_ok;
-        struct { float tint[4], colour[4], hair_mult[4], hair_alpha[4], beard_alpha[4]; } bu;
+        struct { float tint[4], colour[4], hair_mult[4], hair_alpha[4], beard_alpha[4], mode[4]; } bu;
+        bu.mode[0] = g_kenshi_light ? 1.f : 0.f; bu.mode[1] = bu.mode[2] = bu.mode[3] = 0.f;
         memcpy(bu.tint, g_tint, 16);
         bu.colour[0] = hrgb[0]; bu.colour[1] = hrgb[1]; bu.colour[2] = hrgb[2]; bu.colour[3] = 1.f;
         for (int k = 0; k < 4; ++k) { bu.hair_mult[k] = hh ? ha.head_mult[k] : 0.f; bu.hair_alpha[k] = hh ? ha.head_alpha[k] : 0.f; bu.beard_alpha[k] = bh ? be.head_alpha[k] : 0.f; }
@@ -427,7 +435,8 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         SDL_GPUTextureSamplerBinding t[4] = {{g_tex.SDLTexture(), g_tex.SDLSampler()}, {g_tex_head.SDLTexture(), g_tex_head.SDLSampler()},
                                              {hh ? ha.head_tex.SDLTexture() : none, hh ? ha.head_tex.SDLSampler() : nsm},
                                              {bh ? be.head_tex.SDLTexture() : none, bh ? be.head_tex.SDLSampler() : nsm}};
-        pv.BindFragmentSamplers(0, t, 4);
+        SDL_GPUTextureSamplerBinding tb[6] = {t[0], t[1], t[2], t[3], {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}, {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()}};
+        pv.BindFragmentSamplers(0, tb, 6);
         pv.DrawIndexed(uint32_t(g_ni), 1, 0, 0, 0);
     }
     if (g_hair_pipe.SDLPipeline()) {
@@ -440,6 +449,7 @@ void Draw(md::GpuCommandBufferHandle cmd) {
             VU vu; memcpy(vu.mvp, body_mvp.data(), 64);
             pv.PushVertexUniforms(0, &vu, sizeof(vu));
             pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
+            { M4 mvm = Mul(view, Mul(Translate(0.f, -g_ground * 0.1f, 0.f), scale)); VU2 hv2; memcpy(hv2.mv, mvm.data(), 64); pv.PushVertexUniforms(2, &hv2, sizeof(hv2)); }
             struct { float colour[4], diffuse[4], alpha[4], params[4]; } fu = {{rgb[0], rgb[1], rgb[2], 1.f}, {a->diffuse[0], a->diffuse[1], a->diffuse[2], a->diffuse[3]},
                                                                                {a->alpha[0], a->alpha[1], a->alpha[2], a->alpha[3]}, {a->threshold, 0.f, 0.f, 0.f}};
             pv.PushFragmentUniforms(0, &fu, sizeof(fu));
@@ -487,6 +497,8 @@ void SetCameraForTab(int tab) {
 }
 void GetCamera(float& pitch, float& distance, float& look_at_y) { pitch = g_pit; distance = g_dist; look_at_y = g_lookat_y; }
 void SetYaw(float radians) { g_yaw = radians; }
+void SetKenshiLight(bool on) { g_kenshi_light = on; }
+
 void SetCamera(float pitch, float distance, float look_at_y) { g_pit = pitch; g_dist = distance; g_lookat_y = look_at_y; }
 
 void DumpState(FILE* f) {

@@ -110,6 +110,7 @@ static int l_md_char_editor_import(lua_State* L) {
     lua_pushboolean(L, ok);
     return 1;
 }
+static int l_md_char_preview_kenshi_light(lua_State* L) { CharPreviewSDLGPU::SetKenshiLight(lua_toboolean(L, 1) != 0); return 0; }   // #192: Kenshi's character-screen lighting, default off
 static int l_md_char_editor_view(lua_State* L) {
     CharPreviewSDLGPU::SetCameraForTab((int)luaL_checkinteger(L, 1));
     CharPreviewSDLGPU::SetYaw((float)luaL_optnumber(L, 2, 0.0));
@@ -243,6 +244,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_select", l_md_char_editor_select);
     sys.RegisterNamespaceFunction("char_editor_set", l_md_char_editor_set);
     sys.RegisterNamespaceFunction("char_editor_view", l_md_char_editor_view);
+    sys.RegisterNamespaceFunction("char_preview_kenshi_light", l_md_char_preview_kenshi_light);
     sys.RegisterNamespaceFunction("char_editor_randomise", l_md_char_editor_randomise);
     sys.RegisterNamespaceFunction("char_editor_export", l_md_char_editor_export);
     sys.RegisterNamespaceFunction("char_editor_import", l_md_char_editor_import);
