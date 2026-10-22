@@ -135,7 +135,7 @@ void DrawLine(const std::string& parent, const std::string& sid, std::vector<std
     const auto kids = looped ? std::vector<std::string>() : g.dialogs->ChildLines(sid);
     ImGui::PushID(sid.c_str());
     ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_SpanAvailWidth | (kids.empty() ? ImGuiTreeNodeFlags_Leaf : 0);
-    const bool open = ImGui::TreeNodeEx("##n", f, "[%s] %s%s", n.speaker.c_str(), title.substr(0, 90).c_str(), looped ? "  (loops back)" : "");
+    const bool open = ImGui::TreeNodeEx("##n", f, "[%s]%s %s%s", n.speaker.c_str(), (!n.conditions.empty() || n.has_template) ? " C" : "", title.substr(0, 90).c_str(), looped ? "  (loops back)" : "");
     if (ImGui::IsItemClicked()) { g.line = sid; g.line_parent = parent; }
     if (open) {
         path.push_back(sid);
@@ -178,7 +178,18 @@ void DrawDialogue(int kind) {
             if (ImGui::InputText("##t", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue)) { if (n.texts[i].size() >= sizeof buf - 1) g.status = "text too long to edit here (8191 bytes)"; else { g.dialogs->SetText(g.line, (int)i, buf); Refresh(); } }
             ImGui::PopID();
         }
-        for (const DialogAction& c : n.conditions) ImGui::BulletText("condition  %s  %s", c.what.c_str(), c.detail.c_str());
+        if (n.has_template) ImGui::BulletText("conditions template: %s", n.template_name.c_str());
+        for (const DialogAction& c : n.conditions) ImGui::BulletText("condition%s  %s  %s", c.from_template ? " (template)" : "", c.what.c_str(), c.detail.c_str());
+        {   // templates: use / drop one for this line; make a new one; who uses it
+            static int ti = 0; const auto tl = g.dialogs->Templates();
+            if (!tl.empty()) { if (ti >= (int)tl.size()) ti = 0; ImGui::SetNextItemWidth(260); if (ImGui::BeginCombo("##tmpl", g.edits->NameOf(tl[ti]).c_str())) { for (int i = 0; i < (int)tl.size(); ++i) if (ImGui::Selectable(g.edits->NameOf(tl[i]).c_str(), i == ti)) ti = i; ImGui::EndCombo(); }
+                ImGui::SameLine(); if (ImGui::SmallButton("use")) { g.dialogs->SetTemplate(g.line, tl[ti], true); Refresh(); }
+                ImGui::SameLine(); if (ImGui::SmallButton("drop")) { g.dialogs->SetTemplate(g.line, tl[ti], false); Refresh(); }
+                ImGui::SameLine(); if (ImGui::SmallButton("edit")) Go(tl[ti]);
+                ImGui::SameLine(); ImGui::TextDisabled("used by %zu", g.dialogs->LinesUsing(tl[ti]).size()); }
+            static char tn[64] = "New conditions template"; ImGui::SetNextItemWidth(220); ImGui::InputText("##tn", tn, sizeof tn); ImGui::SameLine();
+            if (ImGui::SmallButton("new template")) { const std::string t = g.dialogs->NewTemplate(tn); g.dialogs->SetTemplate(g.line, t, true); Refresh(); }
+        }
         for (const DialogAction& c : n.effects) ImGui::BulletText("effect  %s  %s", c.what.c_str(), c.detail.c_str());
         {   // templates by menu: a condition (what, who, compare, value) and an effect (what, value)
             static int ci = 1, who = 0, cmp = 0, cval = 0, ai = 1, aval = 0;
@@ -266,7 +277,7 @@ void Draw() {
     ImGui::SameLine();
     if (ImGui::Button("Save mod") && g.edits->TouchedRecords().size()) {   // for now only into temp_/md_mods/ (never into the install); not with errors
         g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data);
-        bool errors = false; for (const auto& pr : g.problems) if (pr.level == md::fcsdef::Problem::Error) errors = true;
+        bool errors = false; for (const auto& pr : g.problems) if (pr.level == md::fcsdef::Problem::Critical) errors = true;
         if (errors) g.status = "not saved: fix the errors listed below";
         else {
             std::filesystem::create_directories("temp_/md_mods");
@@ -351,9 +362,14 @@ void Draw() {
     }
     for (const auto& pr : g.problems) {
         ImGui::PushID(&pr);
-        ImGui::TextColored(pr.level == md::fcsdef::Problem::Error ? ImVec4(1, 0.3f, 0.3f, 1) : ImVec4(1, 0.8f, 0.3f, 1), "%s  %s.%s: %s", pr.level == md::fcsdef::Problem::Error ? "error" : "warning", g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
-        if (pr.fix != md::fcsdef::Problem::None) { ImGui::SameLine(); if (ImGui::SmallButton(pr.fix == md::fcsdef::Problem::RemoveLink ? "remove link" : "name it")) { md::fcsdef::ApplyFix(*g.edits, pr); g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); ImGui::PopID(); Refresh(); break; } }
+        const ImVec4 col = pr.level == md::fcsdef::Problem::Critical ? ImVec4(1, 0.3f, 0.3f, 1) : pr.level == md::fcsdef::Problem::Warning ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.6f, 0.8f, 1, 1);
+        ImGui::TextColored(col, "%s %s  %s.%s: %s", pr.level == md::fcsdef::Problem::Critical ? "CRITICAL" : pr.level == md::fcsdef::Problem::Warning ? "warning" : "info", pr.code.c_str(), g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
+        struct A { unsigned bit; const char* label; md::fcsdef::ErrorAction act; };
+        bool applied = false;
+        for (const A& a : {A{md::fcsdef::kRemoveInvalidReferences, "remove invalid links", md::fcsdef::kRemoveInvalidReferences}, A{md::fcsdef::kRevertItem, "revert item", md::fcsdef::kRevertItem}, A{md::fcsdef::kDeleteItem, "delete item", md::fcsdef::kDeleteItem}})
+            if (pr.actions & a.bit) { ImGui::SameLine(); if (ImGui::SmallButton(a.label)) { md::fcsdef::ApplyFix(*g.edits, g.schema, pr, a.act); applied = true; } }
         ImGui::PopID();
+        if (applied) { g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); Refresh(); break; }
     }
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     if (!g.selected.empty()) {
@@ -378,6 +394,17 @@ void Draw() {
                 std::string err;
                 if (g.edits->Set(g.selected, c.name, buf, err)) g.status.clear(); else g.status = c.name + ": " + err;
                 Refresh();
+            }
+            if (c.bitset && c.type == "enum") {   // checklist: enum value N <-> bit 1 << N; text form = names joined with |
+                const md::fcsdef::EnumDef* en = g.schema.FindEnum(c.enum_name);
+                if (en && !en->values.empty() && ImGui::TreeNode("##bits", "bits")) {
+                    unsigned mask = 0; { std::string cur; for (size_t i = 0; i <= c.value.size(); ++i) if (i == c.value.size() || c.value[i] == '|') { for (const auto& ev : en->values) if (ev.name == cur || c.enum_name + "." + ev.name == cur) mask |= 1u << ev.value; cur.clear(); } else cur += c.value[i]; }
+                    unsigned nm = mask; bool all = false;
+                    if (ImGui::SmallButton("all")) { nm = 0; for (const auto& ev : en->values) nm |= 1u << ev.value; all = true; }
+                    for (const auto& ev : en->values) { bool b = (nm >> ev.value) & 1u; if (ImGui::Checkbox(ev.name.c_str(), &b)) { if (b) nm |= 1u << ev.value; else nm &= ~(1u << ev.value); all = true; } }
+                    if (all && nm != mask) { std::string t; for (const auto& ev : en->values) if ((nm >> ev.value) & 1u) { if (!t.empty()) t += "|"; t += ev.name; } std::string err; g.edits->Set(g.selected, c.name, t.empty() ? "0" : t, err); Refresh(); }
+                    ImGui::TreePop();
+                }
             }
             if (c.edited) { ImGui::SameLine(); if (ImGui::SmallButton("revert")) { g.edits->Revert(g.selected, c.name); Refresh(); } }
         } else {

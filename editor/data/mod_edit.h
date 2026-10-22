@@ -49,6 +49,7 @@ public:
     std::string Duplicate(const std::string& string_id, const std::string& name);    // copy with its fields, references, instances and OWNED records (those are copied too)
     bool Remove(const std::string& string_id);                                       // REMOVED = true on the record and, recursively, on its OWNED records
     bool Restore(const std::string& string_id);
+    bool RevertRecord(const std::string& string_id);                                 // drop every change of the record (fields, links, instances, name, removed); a new record is dropped entirely
     RecordState StateOfRecord(const std::string& string_id) const;
     bool Exists(const std::string& string_id) const;                                 // loaded or new, and not removed
     int32_t KindOf(const std::string& string_id) const;                              // -1 unknown

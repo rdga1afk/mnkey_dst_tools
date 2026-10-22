@@ -12,14 +12,34 @@ namespace {
 std::string Lower(std::string s) { for (char& c : s) c = (char)tolower((unsigned char)c); return s; }
 }
 
-bool ApplyFix(EditSession& ed, const Problem& p) {
-    if (p.fix == Problem::RemoveLink) return ed.RemoveRef(p.record, p.field, p.target);
-    if (p.fix == Problem::SetName) return ed.SetName(p.record, "Unnamed");
+namespace {
+// a link of `sid` in a reference field is invalid when its target is missing, removed, or (for a typed list) of another item type
+const char* LinkProblem(const EditSession& ed, const Field& f, const std::string& target) {
+    if (!ed.Exists(target)) return ed.KindOf(target) < 0 ? "UndefinedReference" : "ReferenceToDeletedItem";
+    if (!f.ref_type.empty() && f.ref_type != md::fcs::ItemTypeName(ed.KindOf(target))) return "ReferenceToIncorrectType";
+    return nullptr;
+}
+}  // namespace
+
+bool ApplyFix(EditSession& ed, const Schema& schema, const Problem& p, ErrorAction action) {
+    if (!(p.actions & action)) return false;
+    if (action == kDeleteItem) return ed.Remove(p.record);
+    if (action == kRevertItem) return ed.RevertRecord(p.record);
+    if (action == kRemoveInvalidReferences) {
+        const char* type = md::fcs::ItemTypeName(ed.KindOf(p.record));
+        bool any = false;
+        for (const Field* f : schema.FieldsOf(type)) {
+            if (f->kind != FieldKind::RefList && f->kind != FieldKind::RefString) continue;
+            for (const auto& r : ed.Refs(p.record, f->name)) if (LinkProblem(ed, *f, r.first)) any |= ed.RemoveRef(p.record, f->name, r.first);
+        }
+        return any;
+    }
     return false;
 }
 
 std::vector<Problem> CheckMod(const EditSession& ed, const Schema& schema, const md::fcs::GameDataContainer& base) {
     std::vector<Problem> out;
+    auto add = [&](Problem::Level l, const char* code, unsigned actions, const std::string& rec, const std::string& field, const std::string& what, const std::string& target = "") { out.push_back({l, code, actions, rec, field, what, target}); };
     for (const std::string& sid : ed.TouchedRecords()) {
         const RecordState st = ed.StateOfRecord(sid);
         if (st == RecordState::Removed) {   // loaded records that still point at it
@@ -27,28 +47,36 @@ std::vector<Problem> CheckMod(const EditSession& ed, const Schema& schema, const
                 const md::fcs::GameData* r = base.Get(id);
                 if (!r || id == sid || !ed.Exists(id)) continue;
                 for (const auto& cat : r->references) for (const auto& t : cat.second)
-                    if (t.first == sid && ed.Exists(sid) == false) {
+                    if (t.first == sid) {
                         bool still = false; for (const auto& x : ed.Refs(id, cat.first)) if (x.first == sid) still = true;
-                        if (still) { Problem p{Problem::Warning, Problem::RemoveLink, id, cat.first, "removed record " + ed.NameOf(sid) + " is still linked from " + ed.NameOf(id), sid}; out.push_back(p); }
+                        if (still) add(Problem::Critical, "ReferenceToDeletedItem", kRemoveInvalidReferences, id, cat.first, "removed record " + ed.NameOf(sid) + " is still linked from " + ed.NameOf(id), sid);
                     }
             }
             continue;
         }
-        if (ed.NameOf(sid).empty()) out.push_back({Problem::Warning, Problem::SetName, sid, "name", "empty name", ""});
         const int32_t kind = ed.KindOf(sid);
+        if (st == RecordState::New && base.Get(sid)) add(Problem::Critical, "ItemAlreadyDefined", kRevertItem, sid, "", "the id is already defined by another loaded file");
+        if (ed.NameOf(sid).empty()) add(Problem::Warning, "emptyName", 0, sid, "name", "empty name");
+        if ((kind == 19 || kind == 31) && st == RecordState::New) {   // a dialogue line / condition / effect nothing points at
+            bool owned = false;
+            for (const std::string& n : ed.NewRecords()) for (const char* cat : {"lines", "conditions", "effects"}) for (const auto& r : ed.Refs(n, cat)) if (r.first == sid) owned = true;
+            if (!owned) for (const std::string& id : base.order) { for (const char* cat : {"lines", "conditions", "effects"}) for (const auto& r : ed.Refs(id, cat)) if (r.first == sid) owned = true; if (owned) break; }
+            if (!owned) add(Problem::Warning, "OrphanedDialogueObject", kDeleteItem, sid, "", "not attached to any dialogue");
+        }
+        if (kind == 31) if (const EditValue* v = ed.Edited(sid, "who")) if (const int32_t* i = std::get_if<int32_t>(v)) if (const EnumDef* e = schema.FindEnum("TalkerEnum")) if (!e->values.empty() && (*i < 0 || *i >= (int)e->values.size())) add(Problem::Critical, "InvalidWhoEnum", 0, sid, "who", "talker " + std::to_string(*i) + " is out of range");
         for (const Field* f : schema.FieldsOf(md::fcs::ItemTypeName(kind))) {
             if (f->kind == FieldKind::RefList || f->kind == FieldKind::RefString) {
                 const auto refs = ed.Refs(sid, f->name);
-                for (const auto& r : refs) if (!ed.Exists(r.first)) { Problem p{Problem::Error, Problem::RemoveLink, sid, f->name, "link to a missing or removed record " + r.first, r.first}; out.push_back(p); }
-                if (f->limit > 0 && (int)refs.size() > f->limit) out.push_back({Problem::Error, Problem::None, sid, f->name, std::to_string(refs.size()) + " links, at most " + std::to_string(f->limit), ""});
-                if (f->required && refs.empty() && st == RecordState::New) out.push_back({Problem::Warning, Problem::None, sid, f->name, "required, empty", ""});
-            } else if (f->required && st == RecordState::New && !ed.Edited(sid, f->name)) out.push_back({Problem::Warning, Problem::None, sid, f->name, "required, not set", ""});
+                for (const auto& r : refs) if (const char* code = LinkProblem(ed, *f, r.first)) add(Problem::Critical, code, kRemoveInvalidReferences, sid, f->name, std::string(code) + ": " + r.first, r.first);
+                if (f->limit > 0 && (int)refs.size() > f->limit) add(Problem::Warning, "TooManyReferences", 0, sid, f->name, std::to_string(refs.size()) + " links, at most " + std::to_string(f->limit));
+                if (f->required && refs.empty() && st == RecordState::New) add(Problem::Warning, "MissingRequiredReference", 0, sid, f->name, "required list is empty");
+            } else if (f->required && st == RecordState::New && !ed.Edited(sid, f->name)) add(Problem::Warning, "requiredNotSet", 0, sid, f->name, "required, not set");
             if (f->kind == FieldKind::Enum && !f->bitset) {
                 const EnumDef* e = schema.FindEnum(f->enum_name);
                 const EditValue* v = ed.Edited(sid, f->name);
                 if (e && !e->values.empty() && v) if (const int32_t* i = std::get_if<int32_t>(v)) {
                     bool ok = false; for (const EnumValue& x : e->values) if (x.value == *i) ok = true;
-                    if (!ok) out.push_back({Problem::Warning, Problem::None, sid, f->name, "value " + std::to_string(*i) + " is not in " + f->enum_name, ""});
+                    if (!ok) add(Problem::Warning, "enumOutOfRange", 0, sid, f->name, "value " + std::to_string(*i) + " is not in " + f->enum_name);
                 }
             }
         }

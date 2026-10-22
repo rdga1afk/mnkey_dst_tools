@@ -371,15 +371,28 @@ static void RefTest() {
         CHECK(CheckMod(c, s, data).empty());
         c.SetRef("1-w", "parts", "nope-id", {0, 0, 0});
         auto pr = CheckMod(c, s, data);
-        CHECK(pr.size() == 1 && pr[0].level == Problem::Error && pr[0].field == "parts");
+        CHECK(pr.size() == 1 && pr[0].level == Problem::Critical && pr[0].code == "UndefinedReference" && pr[0].field == "parts");
         c.Remove("2-p");   // 1-w still links to it
         pr = CheckMod(c, s, data);
-        bool warn = false; for (auto& p : pr) if (p.record == "1-w" && p.target == "2-p" && p.level == Problem::Warning && p.fix == Problem::RemoveLink) warn = true;
+        bool warn = false; for (auto& p : pr) if (p.record == "1-w" && p.target == "2-p" && p.level == Problem::Critical && p.code == "ReferenceToDeletedItem" && (p.actions & kRemoveInvalidReferences)) warn = true;
         CHECK(warn);
+        {   // more codes: wrong type, orphan, revert / delete actions
+            EditSession w(s, data, "w.mod"); w.SetRef("1-w", "parts", "3-t", {0, 0, 0});   // 3-t is an ITEM too: fine
+            CHECK(CheckMod(w, s, data).empty());
+            const std::string wid = w.NewRecord(2, "W2"); w.SetRef(wid, "parts", "1-w", {0, 0, 0});   // a WEAPON in an ITEM list
+            auto pw = CheckMod(w, s, data);
+            bool wrong = false; for (auto& p : pw) if (p.code == "ReferenceToIncorrectType" && p.record == wid) wrong = true;
+            CHECK(wrong);
+            for (auto& p : pw) if (p.code == "ReferenceToIncorrectType") { CHECK(ApplyFix(w, s, p, kRemoveInvalidReferences)); break; }
+            bool still = false; for (auto& p : CheckMod(w, s, data)) if (p.code == "ReferenceToIncorrectType") still = true;
+            CHECK(!still);
+            CHECK(!ApplyFix(w, s, Problem{Problem::Warning, "x", 0, wid, "", "", ""}, kDeleteItem));   // not offered
+            CHECK(w.RevertRecord(wid) && !w.Exists(wid) && !w.RevertRecord(wid));
+        }
         {   // fix action, changes list, referencing, find & replace, bulk set (own sessions)
             EditSession e(s, data, "e.mod"); e.SetRef("1-w", "parts", "nope-id", {0, 0, 0});
             auto pr2 = CheckMod(e, s, data);
-            CHECK(pr2.size() == 1 && pr2[0].fix == Problem::RemoveLink && pr2[0].target == "nope-id" && ApplyFix(e, pr2[0]) && CheckMod(e, s, data).empty());
+            CHECK(pr2.size() == 1 && (pr2[0].actions & kRemoveInvalidReferences) && pr2[0].target == "nope-id" && ApplyFix(e, s, pr2[0], kRemoveInvalidReferences) && CheckMod(e, s, data).empty());
             CHECK(ChangeList(e).empty() || ChangeList(e)[0].state == "modified");
             e.SetName("1-w", "Renamed"); CHECK(ChangeList(e).size() == 1 && ChangeList(e)[0].what.find("renamed") != std::string::npos);
             auto rf = Referencing(e, data, "2-p"); CHECK(rf.size() == 1 && rf[0].string_id == "1-w" && rf[0].category == "parts");
@@ -578,6 +591,40 @@ static void OutsideSchemaTest() {
     CHECK(n.conditions.size() == 1 && n.conditions[0].detail == "0 1 5");
 }
 
+// F7 P1 (FCS_SCHEMA section 9): bitset = enum value N is bit 1 << N; condition templates
+static void BitsetAndTemplateTest() {
+    W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(1);
+    DialogRec(f, 2, 1, "Sword", "1-w", {{"flags", 9}}, {}, {});   // bits 0 and 3
+    md::fcs::File file; md::fcs::Error e;
+    CHECK(md::fcs::Parse(f.b.data(), f.b.size(), file, e));
+    md::fcs::GameDataContainer data; data.ApplyFile("t.mod", file); data.id_counter = 10;
+    Schema s; std::string err;
+    CHECK(ParseText("enum Flags { A, B, C, D }\n[WEAPON]\nflags: Flags.A bitset\n", s, err));
+    EditSession ed(s, data, "md_test.mod"); DataBrowser br(s, data); br.SetEdits(&ed);
+    auto card = [&]() { for (const CardField& c : br.Card("1-w")) if (c.name == "flags") return c; return CardField(); };
+    CHECK(card().bitset && card().enum_name == "Flags" && card().value == "A|D");                      // 9 = bits 0 and 3
+    CHECK(ed.Set("1-w", "flags", "B|C", err) && card().value == "B|C");
+    CHECK(std::get<int32_t>(*ed.Edited("1-w", "flags")) == 6);                                         // 1<<1 | 1<<2
+    CHECK(ed.Set("1-w", "flags", "A|D", err) && !ed.Edited("1-w", "flags"));                           // back to the base value 9
+    // condition templates
+    Schema ds; CHECK(ParseText("[DIALOGUE]\nOWNED: lines\n[DIALOGUE_LINE]\ntext0: \"\" multiline looped\nspeaker: 0\n[DIALOGUE,DIALOGUE_LINE]\nOWNED: conditions\n", ds, err));
+    AddDialogActionFields(ds);
+    W g; g.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(2);
+    DialogRec(g, 18, 1, "D", "1-d", {}, {}, {{"lines", {{"2-l", 100}}}});
+    DialogRec(g, 19, 2, "L", "2-l", {{"speaker", 0}}, {{"text0", "Hi"}}, {});
+    md::fcs::File gf; CHECK(md::fcs::Parse(g.b.data(), g.b.size(), gf, e));
+    md::fcs::GameDataContainer gd; gd.ApplyFile("t.mod", gf); gd.id_counter = 10;
+    EditSession ge(ds, gd, "md_test.mod"); DialogModel dm(ge, ds, gd);
+    CHECK(dm.Templates().empty());
+    const std::string tp = dm.NewTemplate("Rich");
+    CHECK(!tp.empty() && dm.Templates().size() == 1);
+    CHECK(ge.SetRef(tp, "conditions", "nope", {0, 0, 0}) == true);   // any link is allowed to be made; the checker catches a bad one
+    CHECK(ge.RemoveRef(tp, "conditions", "nope"));
+    CHECK(dm.SetTemplate("2-l", tp, true) && dm.LinesUsing(tp).size() == 1 && dm.LinesUsing(tp)[0] == "2-l");
+    DialogNode n = dm.Shallow("2-l"); CHECK(n.has_template && n.template_name == "Rich" && n.conditions.empty());
+    CHECK(dm.SetTemplate("2-l", tp, false) && !dm.Shallow("2-l").has_template && dm.LinesUsing(tp).empty());
+}
+
 static void ConditionTest() {
     std::vector<CardField> card(3);
     card[0].name = "slot"; card[0].value = "AttachSlot.ATTACH_BODY";
@@ -595,6 +642,7 @@ static void ConditionTest() {
 
 int main() {
     ConditionTest();
+    BitsetAndTemplateTest();
     OutsideSchemaTest();
     TranslationTest();
     RefTest();

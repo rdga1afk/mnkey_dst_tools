@@ -173,6 +173,10 @@ DialogNode DialogModel::Tree(const std::string& root, int max_depth) const {
                 for (const auto& [e, v] : m.ed_.Refs(sid, "effects")) if (m.ed_.Exists(e)) n.effects.push_back(m.Describe(e));
             }
             for (const auto& [c, v] : m.ed_.Refs(sid, "conditions")) if (m.ed_.Exists(c)) n.conditions.push_back(m.Describe(c));
+            for (const auto& [t, v] : m.ed_.Refs(sid, "conditions template")) if (m.ed_.Exists(t)) {
+                n.has_template = true; n.template_name = m.ed_.NameOf(t);
+                for (const auto& [c, v2] : m.ed_.Refs(t, "conditions")) if (m.ed_.Exists(c)) { DialogAction a = m.Describe(c); a.from_template = true; n.conditions.push_back(a); }
+            }
             if (depth < kMaxDepth) for (const auto& [l, v] : m.ed_.Refs(sid, "lines")) if (m.ed_.Exists(l)) n.children.push_back(Build(l, depth + 1));
             on.erase(sid);
             return n;
@@ -248,6 +252,35 @@ bool DialogModel::RemoveAction(const std::string& owner, const std::string& cate
 bool DialogModel::SetTrigger(const std::string& package, const std::string& dialogue, const std::string& trigger) {
     int t; if (!EnumNumber("EventTriggerEnum", trigger, t) || ed_.KindOf(package) != kItemDialoguePackage) return false;
     return ed_.SetRef(package, "dialogs", dialogue, {t, 0, 0});
+}
+
+std::vector<std::string> DialogModel::Templates() const {
+    std::set<std::string> ids(made_templates_.begin(), made_templates_.end());
+    auto scan = [&](const std::string& id, const md::fcs::GameData* r) { (void)r; for (const auto& [t, v] : ed_.Refs(id, "conditions template")) if (ed_.Exists(t)) ids.insert(t); };
+    for (const std::string& id : base_.order) if (base_.Get(id)->kind == kItemDialogueLine || base_.Get(id)->kind == kItemDialogue) scan(id, nullptr);
+    for (const std::string& id : ed_.NewRecords()) scan(id, nullptr);
+    std::vector<std::string> out; for (const std::string& i : ids) if (ed_.Exists(i)) out.push_back(i);
+    return ByName(ed_, out);
+}
+
+std::string DialogModel::NewTemplate(const std::string& name) {
+    const std::string sid = ed_.NewRecord(kItemDialogue, name);
+    made_templates_.insert(sid);
+    return sid;
+}
+
+bool DialogModel::SetTemplate(const std::string& line, const std::string& tmpl, bool on) {
+    const int32_t k = ed_.KindOf(line);
+    if ((k != kItemDialogue && k != kItemDialogueLine) || !ed_.Exists(tmpl) || line == tmpl) return false;
+    return on ? ed_.SetRef(line, "conditions template", tmpl, {0, 0, 0}) : ed_.RemoveRef(line, "conditions template", tmpl);
+}
+
+std::vector<std::string> DialogModel::LinesUsing(const std::string& tmpl) const {
+    std::vector<std::string> out;
+    auto scan = [&](const std::string& id) { if (!ed_.Exists(id)) return; for (const auto& [t, v] : ed_.Refs(id, "conditions template")) if (t == tmpl) out.push_back(id); };
+    for (const std::string& id : base_.order) scan(id);
+    for (const std::string& id : ed_.NewRecords()) scan(id);
+    return out;
 }
 
 std::string DialogModel::NewDialogue(const std::string& name, const std::string& package, const std::string& trigger) {

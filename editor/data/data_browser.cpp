@@ -50,7 +50,17 @@ bool DataBrowser::FieldText(const md::fcs::GameData& rec, const std::string& fie
         case FieldKind::Bool: { auto it = rec.bools.find(field); if (it != rec.bools.end()) out = it->second ? "true" : "false"; break; }
         case FieldKind::Float: { auto it = rec.floats.find(field); if (it != rec.floats.end()) out = Num(it->second); break; }
         case FieldKind::Int: case FieldKind::Color: { auto it = rec.ints.find(field); if (it != rec.ints.end()) out = std::to_string(it->second); break; }
-        case FieldKind::Enum: { auto it = rec.ints.find(field); if (it != rec.ints.end()) out = EnumNameOf(schema_, f->enum_name, it->second); break; }
+        case FieldKind::Enum: {
+            auto it = rec.ints.find(field); if (it == rec.ints.end()) break;
+            const EnumDef* e = f->bitset ? schema_.FindEnum(f->enum_name) : nullptr;
+            if (f->bitset) {   // enum value N is bit 1 << N (FCS_SCHEMA section 9): names of the set bits joined with |, raw hex without the enum
+                if (!e || e->values.empty()) { char b[16]; std::snprintf(b, sizeof b, "0x%X", (unsigned)it->second); out = b; break; }
+                out.clear(); for (const EnumValue& ev : e->values) if (ev.value >= 0 && ev.value < 32 && (((unsigned)it->second >> ev.value) & 1u)) { if (!out.empty()) out += "|"; out += ev.name; }
+                if (out.empty()) out = "0";
+                break;
+            }
+            out = EnumNameOf(schema_, f->enum_name, it->second); break;
+        }
         case FieldKind::String: { auto it = rec.strings.find(field); if (it != rec.strings.end()) out = it->second; break; }
         case FieldKind::File: { auto it = rec.files.find(field); if (it != rec.files.end()) out = it->second; break; }
         case FieldKind::RefList: case FieldKind::RefString: {
@@ -154,7 +164,7 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
     if (!rec) return card;
     for (const Field* f : schema_.FieldsOf(md::fcs::ItemTypeName(rec->kind))) {
         CardField c;
-        c.category = f->category; c.name = f->name; c.type = TypeName(f->kind); c.def = f->default_text; c.description = f->description;
+        c.category = f->category; c.name = f->name; c.type = TypeName(f->kind); c.def = f->default_text; c.description = f->description; c.bitset = f->bitset; c.enum_name = f->enum_name;
         FieldText(*rec, f->name, c.value);
         c.edited = edits_ && edits_->StateOf(string_id, f->name) == FieldState::Modified;
         switch (f->kind) {

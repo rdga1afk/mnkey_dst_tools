@@ -7,6 +7,7 @@
 //   DIALOGUE_LINE text0, text1, ...: the variants of the text, speaker: TalkerEnum.
 #pragma once
 #include "mod_edit.h"
+#include <set>
 #include <string>
 #include <vector>
 
@@ -19,13 +20,15 @@ void AddDialogActionFields(Schema& s);
 // The enums that live in the FCS code (not in fcs_enums.def): values from a JSON map {"Enum": [["NAME", value], ...]}, found by MD_FCS_ENUMS, else ../docs/research/kenshi_specs/fcs_code_enums.json (tools built inside the private main repo); they also complete `enum shared` ones. Returns the number of enums added / completed (0 when no file).
 int AddCodeEnums(Schema& s, const std::string& path = "");
 
-struct DialogAction { std::string sid; std::string what; std::string detail; };   // `what`: the condition / action enum name; detail: who, compare, value
+struct DialogAction { std::string sid; std::string what; std::string detail; bool from_template = false; };   // `what`: the condition / action enum name; detail: who, compare, value
 
 struct DialogNode {
     std::string sid, speaker;
     std::vector<std::string> texts;
     std::vector<DialogAction> conditions, effects;
     std::vector<DialogNode> children;
+    bool has_template = false;   // the line / dialogue references a `conditions template` (FCS_SCHEMA section 9); its conditions are in `conditions` with from_template
+    std::string template_name;
     bool cycle = false;   // the line is already on the path above it
 };
 
@@ -50,9 +53,15 @@ public:
     std::string AddEffect(const std::string& line, const std::string& action_enum_name, int value);
     bool RemoveAction(const std::string& owner, const std::string& category, const std::string& action);   // category "conditions" or "effects"
     bool SetTrigger(const std::string& package, const std::string& dialogue, const std::string& trigger_enum_name);   // v0 of the package's link
+    // ---- condition templates (reusable conditions lists referenced by `conditions template`; the item type is assumed to be DIALOGUE: UNVERIFIED) ----
+    std::vector<std::string> Templates() const;                                  // records that some `conditions template` link points at, and the ones made here
+    std::string NewTemplate(const std::string& name);
+    bool SetTemplate(const std::string& line, const std::string& tmpl, bool on);
+    std::vector<std::string> LinesUsing(const std::string& tmpl) const;
     std::string NewDialogue(const std::string& name, const std::string& package, const std::string& trigger_enum_name);   // empty dialogue linked from the package
 
 private:
+    std::set<std::string> made_templates_;
     int CompareOf(const std::string& sid) const;
     void Discard(const std::string& sid);
     DialogAction Describe(const std::string& action_sid) const;

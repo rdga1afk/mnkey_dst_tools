@@ -6,17 +6,20 @@
 
 namespace md::fcsdef {
 
+// FCS ErrorCode table (FCS_SCHEMA section 9): severity, code, and the resolution actions it offers (flags as in the FCS).
+enum ErrorAction : unsigned { kDeleteItem = 1, kRevertItem = 2, kRemoveInvalidReferences = 4, kTakeOwnership = 8 };
 struct Problem {
-    enum Level { Error, Warning } level = Error;
-    enum Fix { None, RemoveLink, SetName } fix = None;   // resolution the error window offers (FCS ErrorResolutionActions)
+    enum Level { Info, Warning, Critical } level = Warning;
+    std::string code;          // FCS ErrorCode name (UndefinedReference, ...); our own extras start with a lower-case word
+    unsigned actions = 0;      // ErrorAction flags
     std::string record, field, what, target;
 };
-// Applies the problem's resolution: RemoveLink drops the link `field` -> `target` of `record`; SetName gives the record the name "Unnamed". False when there is none.
-bool ApplyFix(EditSession& ed, const Problem& p);
+// Applies one resolution action to the problem's record: DeleteItem = Remove, RevertItem = drop every change of the record,
+// RemoveInvalidReferences = remove each link of the record to a missing / removed / wrong-type target. TakeOwnership is not needed here (we keep no «missing base» records).
+bool ApplyFix(EditSession& ed, const Schema& schema, const Problem& p, ErrorAction action);
 
-// Touched records only (new / modified / removed): a link to a record that does not exist or was removed (Error), more links than the field's SINGLE / N limit (Error),
-// a REQUIRED field with no value on a new record (Warning), an empty name (Warning), an enum value the enum does not list (Warning), a removed record that
-// other loaded records still link to (Warning).
+// Touched records only. Codes: UndefinedReference / ReferenceToDeletedItem / ReferenceToIncorrectType (CRITICAL, RemoveInvalidReferences), TooManyReferences,
+// MissingRequiredReference (WARNING), OrphanedDialogueObject (WARNING, DeleteItem), InvalidWhoEnum (CRITICAL), ItemAlreadyDefined (CRITICAL, RevertItem); extras: emptyName, enumOutOfRange, requiredNotSet.
 std::vector<Problem> CheckMod(const EditSession& ed, const Schema& schema, const md::fcs::GameDataContainer& base);
 
 struct Hit { std::string string_id, name, where; };   // where: "name", "id" or the string field that matched

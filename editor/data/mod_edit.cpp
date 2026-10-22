@@ -61,7 +61,7 @@ bool EditSession::Parse(const Field& f, const std::string& text, EditValue& out,
                 while (!part.empty() && part.front() == ' ') part.erase(part.begin());
                 while (!part.empty() && part.back() == ' ') part.pop_back();
                 const size_t dot = part.find('.'); if (dot != std::string::npos) part = part.substr(dot + 1);
-                bool found = false;   // bitset: bit number = the enum value (UNVERIFIED against the exe: shipped data only holds 0)
+                bool found = false;   // bitset: enum value N is bit 1 << N (FCS_SCHEMA section 9)
                 for (const EnumValue& v : e->values) if (v.name == part) { if (f.bitset) acc |= (int32_t)(1u << (unsigned)v.value); else acc = v.value; found = true; break; }
                 if (!found) { err = "unknown value '" + part + "' of " + f.enum_name; return false; }
                 any = true; pos = bar + 1;
@@ -79,6 +79,12 @@ std::string EditSession::Format(const Field& f, const EditValue& v) const {
     if (const bool* b = std::get_if<bool>(&v)) return *b ? "true" : "false";
     if (const float* x = std::get_if<float>(&v)) return Num(*x);
     if (const int32_t* i = std::get_if<int32_t>(&v)) {
+        if (f.kind == FieldKind::Enum && f.bitset) {   // names of the set bits joined with |; raw hex when the enum is unknown
+            const EnumDef* e = schema_.FindEnum(f.enum_name);
+            if (!e || e->values.empty()) { char b[16]; std::snprintf(b, sizeof b, "0x%X", (unsigned)*i); return b; }
+            std::string s; for (const EnumValue& ev : e->values) if (ev.value >= 0 && ev.value < 32 && (((unsigned)*i >> ev.value) & 1u)) { if (!s.empty()) s += "|"; s += ev.name; }
+            return s.empty() ? "0" : s;
+        }
         if (f.kind == FieldKind::Enum) if (const EnumDef* e = schema_.FindEnum(f.enum_name)) for (const EnumValue& ev : e->values) if (ev.value == *i) return f.enum_name + "." + ev.name;
         return std::to_string(*i);
     }
@@ -387,6 +393,14 @@ bool EditSession::ImportFile(const md::fcs::File& file, size_t* skipped) {
     }
     layer_.last_id = std::max(layer_.last_id, file.header.id_counter);
     if (skipped) *skipped = skip;
+    return true;
+}
+
+bool EditSession::RevertRecord(const std::string& sid) {
+    if (!layer_.fields.count(sid) && !layer_.refs.count(sid) && !layer_.insts.count(sid) && !layer_.names.count(sid) && !layer_.removed.count(sid) && !layer_.created.count(sid)) return false;
+    Push();
+    layer_.fields.erase(sid); layer_.refs.erase(sid); layer_.ref_seq.erase(sid); layer_.insts.erase(sid); layer_.names.erase(sid); layer_.removed.erase(sid); layer_.created.erase(sid);
+    for (auto q = layer_.file_fields.begin(); q != layer_.file_fields.end();) q = q->first == sid ? layer_.file_fields.erase(q) : std::next(q);
     return true;
 }
 
