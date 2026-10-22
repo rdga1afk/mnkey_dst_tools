@@ -138,7 +138,8 @@ int main(int argc, char** argv) {
 
     // ── SDL_GPU ───────────────────────────────────────────────────────────────
     if (!md::GpuDevice::Get().Init(_wnd::ptr())) {
-        fprintf(stderr, "[Editor] SDL_GPU init failed\n"); return 1;
+        const std::string msg = std::string("The Vulkan device could not be created: ") + SDL_GetError() + "\nCheck the Vulkan layers (VK_LOADER_DEBUG=layer); DISABLE_LSFGVK=1 turns the lsfg-vk layer off.";
+        fprintf(stderr, "[Editor] %s\n", msg.c_str()); SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "monkey_dust_editor", msg.c_str(), _wnd::ptr()); return 1;
     }
     // window.cpp creates every window with SDL_WINDOW_HIDDEN so the
     // compositor never shows an unpainted first frame; game_init.cpp
