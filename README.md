@@ -3,10 +3,10 @@ id: kb-tools-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-10-18
+updated: 2026-10-22
 repo: tools
 tags: [tools, readme, editor, kenshi, measurement, public-repo]
-summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character editor), measurement/QA drivers, read-only MCP servers (Ghidra, RenderDoc), offline Kenshi-data converters; build; licence"
+summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character editor and a Linux-native, FCS-compatible Kenshi data / mod editor), measurement/QA drivers, read-only MCP servers (Ghidra, RenderDoc), offline Kenshi-data converters; build; licence"
 ---
 
 # monkey_dust Tools
@@ -28,6 +28,7 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 |---|---|---|
 | **Editor** | `monkey_dust_editor` (`editor/`) | Standalone SDL_GPU editor (Dear ImGui): 3D world viewport (view-only), hierarchy, console + Lua REPL, graphics, camera, animation, GPU profiler |
 | | Characters tab (`editor/character_editor*.h`) | Character creator laid out like Kenshi's: race and gender, BODY / FACE / HAIR sliders, live 3D preview. Being brought to full parity with Kenshi's editor: body sliders scale skeleton bones as Kenshi does; a soft-tissue morph layer only on the bare body. Built here first, then moved into the game |
+| | **Kenshi data** tab (`editor/data/`) | **A Linux-native data and mod editor compatible with Kenshi's Forgotten Construction Set (FCS)** (22.10, in progress). Reads the field definitions (`fcs*.def`) from your Kenshi install at startup — no schema is bundled — and the game data plus mods in Kenshi's load order. Browse by category, edit every field type, references and instances, create / duplicate / delete items, undo / redo, dialogue editor (lines, conditions, effects, triggers), search and replace, validation before save, merge, clean-up, translation export. Saves `.mod` files in Kenshi's format (v17); the writer re-creates Kenshi's own files byte for byte. Never writes into the Kenshi folder. About 29 of 41 FCS features so far (all the essential ones). Not yet checked by opening our `.mod` in the original FCS |
 | | `shader_watch.sh` | Recompile shaders on save; `/reload-shaders` in the editor console reloads pipelines without restart |
 | **Measurement & QA** | `qa/game_cmd_driver.py` | Drives a running game: camera pose, screenshots, Lua commands. Basis of all performance measurements |
 | | `qa/resolve_pass_measure.py`, `qa/perf_gate.py`, `qa/terrain_zone_sweep.py` | Block-sampled (DVFS-safe) GPU timing, performance gates, zone sweeps |
@@ -94,6 +95,7 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 |---|---|---|
 | **Редактор** | `monkey_dust_editor` (`editor/`) | Окремий редактор на SDL_GPU (Dear ImGui): 3D-вікно світу (лише перегляд), ієрархія, консоль + Lua REPL, графіка, камера, анімація, профайлер GPU |
 | | Вкладка Characters (`editor/character_editor*.h`) | Редактор персонажів з розкладкою як у Kenshi: раса й стать, слайдери BODY / FACE / HAIR, живий 3D-перегляд. Доводиться до повної відповідності редактору Kenshi: слайдери тіла масштабують кістки скелета, як у Kenshi; шар м'яких тканин (морфи) — лише на голому тілі. Спершу тут, потім переноситься в гру |
+| | Вкладка **Kenshi data** (`editor/data/`) | **Нативний для Linux редактор даних і модів, сумісний з Forgotten Construction Set (FCS) Kenshi** (22.10, у роботі). Під час запуску читає описи полів (`fcs*.def`) з вашої інсталяції Kenshi — схема не вбудована — і дані гри з модами в порядку Kenshi. Перегляд за категоріями, редагування всіх типів полів, посилань і екземплярів, створення / копіювання / видалення предметів, скасування / повтор, редактор діалогів (репліки, умови, ефекти, тригери), пошук і заміна, перевірка перед збереженням, злиття, очищення, експорт для перекладу. Зберігає `.mod` у форматі Kenshi (v17); запис відтворює власні файли Kenshi байт у байт. Ніколи не пише в теку Kenshi. Поки ≈ 29 з 41 функції FCS (усі основні). Відкриття нашого `.mod` в оригінальному FCS ще не перевірено |
 | | `shader_watch.sh` | Перекомпіляція шейдерів при збереженні; `/reload-shaders` у консолі перезавантажує конвеєри без перезапуску |
 | **Заміри й QA** | `qa/game_cmd_driver.py` | Керує запущеною грою: камера, скриншоти, Lua-команди. Основа всіх замірів продуктивності |
 | | `qa/resolve_pass_measure.py`, `qa/perf_gate.py`, `qa/terrain_zone_sweep.py` | Блокові заміри GPU (стійкі до DVFS), пороги продуктивності, обхід зон |
