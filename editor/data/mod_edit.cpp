@@ -396,7 +396,13 @@ size_t EditSession::Cleanup() {
         for (auto& cat : rec.second)
             for (auto t = cat.second.begin(); t != cat.second.end();) {
                 const bool marker = t->second[2] == kRemoved;
-                if (!marker && !Exists(t->first)) { t = cat.second.erase(t); ++n; } else ++t;
+                if (!marker && !Exists(t->first)) {
+                    const md::fcs::GameData* br = base_.Get(rec.first); const auto* bl = br ? br->Refs(cat.first) : nullptr;
+                    bool in_base = false; if (bl) for (const auto& x : *bl) if (x.first == t->first) in_base = true;
+                    if (in_base) { t->second = Triple{kRemoved, kRemoved, kRemoved}; ++t; }   // a base link to a gone record is removed with a marker, not just forgotten
+                    else t = cat.second.erase(t);
+                    ++n;
+                } else ++t;
             }
     for (auto it = layer_.refs.begin(); it != layer_.refs.end();) {
         for (auto c = it->second.begin(); c != it->second.end();) c = c->second.empty() ? it->second.erase(c) : std::next(c);

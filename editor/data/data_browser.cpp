@@ -127,7 +127,14 @@ bool EvalCondition(const std::string& cond, const std::vector<CardField>& card) 
     rest = trim(rest.substr(negate ? 4 : 3));
     const CardField* other = nullptr; for (const CardField& c : card) if (c.name == field) { other = &c; break; }
     if (!other) return true;
-    auto bare = [&](std::string v) { v = trim(v); if (v.size() >= 2 && v.front() == '"' && v.back() == '"') return lower(v.substr(1, v.size() - 2)); v = lower(v); const size_t d = v.find('.'); return d == std::string::npos ? v : v.substr(d + 1); };
+    auto bare = [&](std::string v) {   // unquote, lower-case, drop an `Enum.` prefix (identifier + dot + one more word) the same way on both sides
+        v = trim(v); if (v.size() >= 2 && v.front() == '"' && v.back() == '"') v = v.substr(1, v.size() - 2);
+        v = lower(v); const size_t d = v.find('.');
+        if (d == std::string::npos || d == 0 || v.find('.', d + 1) != std::string::npos || !isalpha((unsigned char)v[0]) || v.find(' ') != std::string::npos) return v;
+        for (size_t i = 0; i < d; ++i) if (!isalnum((unsigned char)v[i]) && v[i] != '_') return v;
+        const std::string tail = v.substr(d + 1); size_t k = 0; while (k < tail.size() && isdigit((unsigned char)tail[k])) ++k;
+        return k == tail.size() ? v : tail;   // 1.5 and "foo.5" stay whole; Enum.NAME -> name
+    };
     const std::string have = bare(other->value);
     bool any = false;
     for (size_t pos = 0; pos <= rest.size();) {

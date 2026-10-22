@@ -119,9 +119,9 @@ void DrawDialogue(int kind) {
         ImGui::Separator(); ImGui::Text("selected line: %s", n.speaker.c_str());
         for (size_t i = 0; i < n.texts.size(); ++i) {
             ImGui::PushID((int)i);
-            static char buf[512]; std::snprintf(buf, sizeof buf, "%s", n.texts[i].c_str());
+            static char buf[8192]; std::snprintf(buf, sizeof buf, "%s", n.texts[i].c_str());
             ImGui::SetNextItemWidth(500);
-            if (ImGui::InputText("##t", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue)) { g.dialogs->SetText(g.line, (int)i, buf); Refresh(); }
+            if (ImGui::InputText("##t", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue)) { if (n.texts[i].size() >= sizeof buf - 1) g.status = "text too long to edit here (8191 bytes)"; else { g.dialogs->SetText(g.line, (int)i, buf); Refresh(); } }
             ImGui::PopID();
         }
         for (const DialogAction& c : n.conditions) ImGui::BulletText("condition  %s  %s", c.what.c_str(), c.detail.c_str());

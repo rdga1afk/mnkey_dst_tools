@@ -86,6 +86,8 @@ int AddCodeEnums(Schema& s, const std::string& path_in) {
     return n;
 }
 
+void DialogModel::Discard(const std::string& sid) { ed_.Remove(sid); ed_.Cleanup(); }   // a record whose set-up failed must not stay in the mod
+
 std::string DialogModel::EnumName(const char* en, int value) const {
     if (const EnumDef* e = schema_.FindEnum(en)) for (const EnumValue& v : e->values) if (v.value == value) return v.name;
     return std::to_string(value);
@@ -194,7 +196,7 @@ std::string DialogModel::AddLine(const std::string& parent, const std::string& t
     int sp = 0; if (!EnumNumber("TalkerEnum", speaker, sp)) return "";
     const std::string sid = ed_.NewRecord(kItemDialogueLine, text.substr(0, 40));
     std::string err;
-    if (!ed_.Set(sid, "text0", text, err) || !ed_.Set(sid, "speaker", std::to_string(sp), err)) return "";
+    if (!ed_.Set(sid, "text0", text, err) || !ed_.Set(sid, "speaker", std::to_string(sp), err)) { Discard(sid); return ""; }
     ed_.SetRef(parent, "lines", sid, {100, 0, 0});
     return sid;
 }
@@ -219,7 +221,7 @@ std::string DialogModel::AddCondition(const std::string& owner, const std::strin
     const std::string sid = ed_.NewRecord(kItemDialogAction, cond);
     std::string err;
     if (!ed_.Set(sid, "condition name", std::to_string(c), err) || !ed_.Set(sid, "who", std::to_string(w), err) ||
-        !ed_.Set(sid, "compare by", std::to_string(m), err) || !ed_.Set(sid, "tag", std::to_string(value), err)) return "";
+        !ed_.Set(sid, "compare by", std::to_string(m), err) || !ed_.Set(sid, "tag", std::to_string(value), err)) { Discard(sid); return ""; }
     ed_.SetRef(owner, "conditions", sid, {0, 0, 0});
     return sid;
 }
@@ -229,7 +231,7 @@ std::string DialogModel::AddEffect(const std::string& line, const std::string& a
     int a; if (!EnumNumber("DialogActionEnum", action, a)) return "";
     const std::string sid = ed_.NewRecord(kItemDialogAction, action);
     std::string err;
-    if (!ed_.Set(sid, "action name", std::to_string(a), err) || !ed_.Set(sid, "action value", std::to_string(value), err)) return "";
+    if (!ed_.Set(sid, "action name", std::to_string(a), err) || !ed_.Set(sid, "action value", std::to_string(value), err)) { Discard(sid); return ""; }
     ed_.SetRef(line, "effects", sid, {0, 0, 0});
     return sid;
 }

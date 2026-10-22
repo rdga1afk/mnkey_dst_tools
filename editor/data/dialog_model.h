@@ -53,6 +53,7 @@ public:
     std::string NewDialogue(const std::string& name, const std::string& package, const std::string& trigger_enum_name);   // empty dialogue linked from the package
 
 private:
+    void Discard(const std::string& sid);
     DialogAction Describe(const std::string& action_sid) const;
     std::string EnumName(const char* enum_name, int value) const;
     bool EnumNumber(const char* enum_name, const std::string& name, int& out) const;

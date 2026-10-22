@@ -382,6 +382,11 @@ static void RefTest() {
         CHECK(md::fcs::Serialize(fa, ba, se) && md::fcs::Serialize(fb, bb, se) && ba == bb);
         // cleanup: a new record that was removed again, a link to it
         const std::string tmp = b.NewRecord(2, "Temp"); b.SetRef("1-w", "parts", tmp, {0, 0, 0}); b.Remove(tmp);
+        {   // a changed base link to a record that is gone becomes a removal marker
+            EditSession z(s, data, "z.mod");
+            z.SetRef("1-w", "parts", "2-p", {7, 8, 9}); z.Remove("2-p");
+            CHECK(z.Cleanup() >= 1 && z.Refs("1-w", "parts").empty() && z.RefLayer().at("1-w").at("parts").at("2-p")[2] == INT32_MAX);
+        }
         CHECK(b.Cleanup() >= 2 && b.StateOfRecord(tmp) != RecordState::New && b.Refs("1-w", "parts").size() == 1 && b.Cleanup() == 0);
         CHECK(b.Undo() && b.StateOfRecord(tmp) == RecordState::Removed);
         CHECK(SearchAll(c, data, "targ", "ITEM").size() == 1 && SearchAll(c, data, "targ", "WEAPON").empty());
@@ -516,6 +521,10 @@ static void ConditionTest() {
     CHECK(EvalCondition("\"slot\" is AttachSlot.ATTACH_BODY", card) && !EvalCondition("\"slot\" is AttachSlot.ATTACH_HEAD", card));
     CHECK(EvalCondition("\"single gender\" is False", card) && !EvalCondition("\"single gender\" is True", card));
     CHECK(EvalCondition("\"mode\" is MapFeatureMode.DUAL_TEXTURE or MapFeatureMode.DUAL_TRIPLANAR", card) && !EvalCondition("\"mode\" not MapFeatureMode.DUAL_TEXTURE or MapFeatureMode.X", card));
+    card.push_back(CardField()); card.back().name = "ratio"; card.back().value = "1.5";
+    card.push_back(CardField()); card.back().name = "file"; card.back().value = "foo.txt";
+    CHECK(EvalCondition("\"ratio\" is 1.5", card) && !EvalCondition("\"ratio\" is 5", card));                       // floats are not cut at the dot
+    CHECK(EvalCondition("\"slot\" is \"AttachSlot.ATTACH_BODY\"", card) && EvalCondition("\"file\" is foo.txt", card));   // quoted and unquoted forms agree
     CHECK(EvalCondition("\"mode\" not MapFeatureMode.TERRAIN", card) && EvalCondition("\"nope\" is X", card) && EvalCondition("garbage", card));
 }
 
