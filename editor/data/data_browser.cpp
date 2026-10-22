@@ -127,7 +127,7 @@ bool EvalCondition(const std::string& cond, const std::vector<CardField>& card) 
     rest = trim(rest.substr(negate ? 4 : 3));
     const CardField* other = nullptr; for (const CardField& c : card) if (c.name == field) { other = &c; break; }
     if (!other) return true;
-    auto bare = [&](std::string v) { v = lower(trim(v)); const size_t d = v.find('.'); return d == std::string::npos ? v : v.substr(d + 1); };
+    auto bare = [&](std::string v) { v = trim(v); if (v.size() >= 2 && v.front() == '"' && v.back() == '"') return lower(v.substr(1, v.size() - 2)); v = lower(v); const size_t d = v.find('.'); return d == std::string::npos ? v : v.substr(d + 1); };
     const std::string have = bare(other->value);
     bool any = false;
     for (size_t pos = 0; pos <= rest.size();) {

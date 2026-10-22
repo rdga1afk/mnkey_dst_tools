@@ -2,6 +2,7 @@
 #include "../editor/data/data_browser.h"
 #include "../editor/data/dialog_model.h"
 #include "../editor/data/mod_check.h"
+#include "../editor/data/translation.h"
 #include "../editor/data/mod_write.h"
 #include <algorithm>
 #include <filesystem>
@@ -254,6 +255,24 @@ static void ListUndescribed(const std::string& kd, const Schema& schema, const c
     std::printf("undescribed (type, field, value type) in gamedata.base: %zu -> %s\n", rows.size(), out_path);
 }
 
+// F7 on the install: what we extract from gamedata.base against the msgids of the shipped ru_RU gamedata.po
+static void RealTranslationTest(const std::string& kd, const Schema& schema) {
+    md::fcs::File b; md::fcs::Error e;
+    if (!md::fcs::ReadFile(kd + "/data/gamedata.base", b, e)) return;
+    std::map<std::string, std::string> po;
+    if (!ReadPo(kd + "/locale/ru_RU/gamedata.po", po)) { std::printf("skip translation: no ru_RU/gamedata.po\n"); return; }
+    md::fcs::GameDataContainer data; data.ApplyFile("gamedata.base", b);
+    DataBrowser br(schema, data);
+    const auto ex = ExtractStrings(schema, data, br);
+    std::set<std::string> ids, covered; for (const TrEntry& t : ex) { ids.insert(t.msgid); if (po.count(t.msgid)) covered.insert(t.msgid); }
+    size_t translated = 0; for (const auto& kv : po) if (!kv.second.empty()) ++translated;
+    std::printf("F7 translation: %zu strings from gamedata.base (%zu distinct); ru_RU gamedata.po has %zu msgids (%zu translated); %zu of our distinct strings are in it (%.1f%%)\n",
+                ex.size(), ids.size(), po.size(), translated, covered.size(), ids.empty() ? 0.0 : 100.0 * covered.size() / ids.size());
+    { std::map<std::string, std::pair<size_t, size_t>> by; std::map<std::string, std::string> ex1; for (const TrEntry& t : ex) { auto& c = by[t.type + (t.field.empty() ? " name" : " " + t.field)]; ++c.first; if (!po.count(t.msgid)) { ++c.second; ex1[t.type + (t.field.empty() ? " name" : " " + t.field)] = t.msgid.substr(0, 40); } }
+      for (auto& kv : by) if (kv.second.second) std::printf("   missing %-32s %zu of %zu  e.g. '%s'\n", kv.first.c_str(), kv.second.second, kv.second.first, ex1[kv.first].c_str()); }
+    CHECK(!ids.empty() && covered.size() * 2 > ids.size());   // plausibility only, not parity: the shipped .po is older than the data and ALL also gives non-text fields (bone names, prefixes)
+}
+
 static void BrowserTest() {
     W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(3);
     Rec(f, 1, "Zeta", "1-z", 1, 2.5f); Rec(f, 2, "Alpha", "2-a", 0, 1.0f); Rec(f, 3, "Mid", "3-m", 1, 4.0f);
@@ -468,6 +487,27 @@ static void DialogTest() {
     CHECK(AddCodeEnums(s, "/nonexistent.json") == 0);
 }
 
+static void TranslationTest() {
+    CHECK(PoUnescape(PoEscape("a\"b\\c\nd")) == "a\"b\\c\nd");
+    const std::string po = (std::filesystem::temp_directory_path() / "md_tr.po").string();
+    { FILE* o = std::fopen(po.c_str(), "w"); std::fputs("msgid \"\"\nmsgstr \"\"\n\"X: y\\n\"\n\n#. Type: ITEM\nmsgid \"Sword\"\nmsgstr \"Meh\"\n\nmsgid \"Long \"\n\"line\"\nmsgstr \"\"\n\"Dovge\"\n\" slovo\"\n", o); std::fclose(o); }
+    std::map<std::string, std::string> m;
+    CHECK(ReadPo(po, m) && m.size() == 2 && m["Sword"] == "Meh" && m["Long line"] == "Dovge slovo");
+    std::filesystem::remove(po);
+    W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(2);
+    Rec(f, 1, "Zeta", "1-z", 1, 2.5f); Rec(f, 2, "Alpha", "2-a", 0, 1.0f);
+    md::fcs::File file; md::fcs::Error e;
+    CHECK(md::fcs::Parse(f.b.data(), f.b.size(), file, e));
+    md::fcs::GameDataContainer data; data.ApplyFile("t.mod", file);
+    Schema s; std::string err;
+    CHECK(ParseText("[WEAPON]\nkind: 0\nlabel: \"\"\nTRANSLATE: ALL if kind is 1\n", s, err));
+    DataBrowser br(s, data);
+    auto ex = ExtractStrings(s, data, br);
+    CHECK(ex.size() == 2 && ex[0].msgid == "Zeta" && ex[1].field == "label" && ex[1].msgid == "Zeta!");   // Alpha has kind 0: condition false
+    const std::string pot = MakePot(ex);
+    CHECK(pot.find("msgid \"Zeta!\"") != std::string::npos && pot.find("#. Type: WEAPON") != std::string::npos);
+}
+
 static void ConditionTest() {
     std::vector<CardField> card(3);
     card[0].name = "slot"; card[0].value = "AttachSlot.ATTACH_BODY";
@@ -481,6 +521,7 @@ static void ConditionTest() {
 
 int main() {
     ConditionTest();
+    TranslationTest();
     RefTest();
     DialogTest();
     BrowserTest();
@@ -525,6 +566,7 @@ int main() {
             for (const Section& sec : real.sections) { nf += sec.fields.size(); for (const Field& fl : sec.fields) ++kinds[(int)fl.kind]; }
             if (const char* lp = std::getenv("MD_FCS_LIST_UNDESCRIBED")) ListUndescribed(kd, real, lp);
             RealCardTest(kd, real); RealWriteTest(kd, real); RealDialogTest(kd, real);
+            RealTranslationTest(kd, real);
             std::printf("real files: %zu sections, %zu fields (bool %zu float %zu int %zu string %zu colour %zu enum %zu null %zu file %zu reflist %zu refstring %zu), %zu enums, %zu top layout nodes\n",
                         real.sections.size(), nf, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], kinds[6], kinds[7], kinds[8], kinds[9], real.enums.size(), real.layout.size());
         }

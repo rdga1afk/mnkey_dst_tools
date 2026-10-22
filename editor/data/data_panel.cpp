@@ -3,6 +3,7 @@
 #include "dialog_model.h"
 #include "mod_check.h"
 #include "mod_write.h"
+#include "translation.h"
 #include <algorithm>
 #include <filesystem>
 #include <imgui.h>
@@ -163,6 +164,13 @@ void Draw() {
     ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
     ImGui::SameLine();
     if (ImGui::Button("Cleanup")) { const size_t n = g.edits->Cleanup(); g.status = "cleanup dropped " + std::to_string(n); Refresh(); }
+    ImGui::SameLine();
+    if (ImGui::Button("Export .pot")) {   // strings to translate, into temp_/md_mods/ (never the install)
+        std::filesystem::create_directories("temp_/md_mods");
+        const auto ex = md::fcsdef::ExtractStrings(g.schema, g.data, *g.browser);
+        FILE* o = std::fopen("temp_/md_mods/gamedata.pot", "wb");
+        if (o) { const std::string t = md::fcsdef::MakePot(ex); std::fwrite(t.data(), 1, t.size(), o); std::fclose(o); g.status = "wrote temp_/md_mods/gamedata.pot (" + std::to_string(ex.size()) + " strings)"; } else g.status = "cannot write the .pot";
+    }
     ImGui::SameLine(); ImGui::SetNextItemWidth(220); ImGui::InputTextWithHint("##imp", "mod file to merge in", g.import_path, sizeof g.import_path);
     ImGui::SameLine();
     if (ImGui::Button("Merge")) {
