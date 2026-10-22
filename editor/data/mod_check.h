@@ -35,4 +35,8 @@ size_t SetMany(EditSession& ed, const std::vector<std::string>& ids, const std::
 struct ReplaceHit { std::string string_id, field, before, after; };
 std::vector<ReplaceHit> FindReplace(EditSession& ed, const md::fcs::GameDataContainer& base, const std::string& find, const std::string& with, const std::string& item_type, bool apply, size_t limit = 2000);
 
+// Files the records point to (string `file` fields, loaded + edited) and whether a file of that name exists anywhere under `root` (the install). Missing first.
+struct AssetRow { std::string file, kind_name; size_t records = 0; bool found = false; std::string example_record; };
+std::vector<AssetRow> AssetList(const EditSession& ed, const md::fcs::GameDataContainer& base, const std::string& root, size_t limit = 5000);
+
 }  // namespace md::fcsdef

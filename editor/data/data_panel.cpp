@@ -42,27 +42,43 @@ struct State {
     std::vector<std::string> hist; int hpos = -1;   // navigation history (Back / Forward)
     char repl_find[128] = "", repl_with[128] = "", bulk_field[64] = "", bulk_value[128] = "", columns[128] = "";
     std::vector<md::fcsdef::ReplaceHit> repl_hits;
+    char single_path[512] = "";
+    int autosave_min = 5; double last_autosave = 0;   // FCS settings: autosave interval in minutes (0 = off)
+    std::vector<md::fcsdef::AssetRow> assets; bool assets_ready = false;
     std::vector<md::fcs::LoadEntry> mods;           // the installed mods in load order (core files excluded): the «Load mod» list
 } g;
 
 void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
 void Select(const md::fcsdef::LayoutNode& n);
+// (Re)builds browser / edit layer / dialogues over g.data; the selection starts over.
+void Rebuild() {
+    g.browser = std::make_unique<md::fcsdef::DataBrowser>(g.schema, g.data);
+    g.edits = std::make_unique<md::fcsdef::EditSession>(g.schema, g.data, std::string(g.mod_name) + ".mod");
+    g.browser->SetEdits(g.edits.get());
+    g.dialogs = std::make_unique<md::fcsdef::DialogModel>(*g.edits, g.schema, g.data);
+    g.problems.clear(); g.hits.clear(); g.repl_hits.clear(); g.line.clear(); g.line_parent.clear(); g.hist.clear(); g.hpos = -1; g.selected.clear(); g.card.clear(); g.insts.clear(); g.rows.clear(); g.node = nullptr;
+    if (!g.schema.layout.empty()) { Select(g.schema.layout[0]); if (!g.rows.empty()) { g.selected = g.rows[0].string_id; g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }   // the first category and its first item are open on start
+}
+
+// `files` empty = the install's load order (core files + mods.cfg); otherwise only those files (single-file mode, «Open any»).
+bool LoadFiles(const std::vector<md::fcs::LoadEntry>& files, std::string& err) {
+    g.data = md::fcs::GameDataContainer();
+    md::fcs::LoadOrder order; md::fcs::Error e;
+    if (files.empty()) { md::fcs::Install inst(md::KenshiDir()); if (!inst.LoadOrderFor(order, e)) { err = e.Message(); return false; } g.mods.clear(); for (const md::fcs::LoadEntry& m : order.files) if (!m.core) g.mods.push_back(m); }
+    else order.files = files;
+    if (!g.data.Load(order, e)) { err = e.Message(); return false; }
+    return true;
+}
+
 void Load() {
     g.tried = true;
     const std::string dir = md::KenshiDir();
     if (!md::fcsdef::LoadDir(dir, g.schema, g.error)) return;
-    md::fcsdef::AddCodeEnums(g.schema);   // the code enums (talker, conditions, actions, triggers) when the file is found (MD_FCS_CODE_ENUMS)
+    md::fcsdef::AddCodeEnums(g.schema);   // the code enums (talker, conditions, actions, triggers) when the file is found (MD_FCS_ENUMS)
     md::fcsdef::AddDialogActionFields(g.schema);
-    md::fcs::Install inst(dir);
-    md::fcs::LoadOrder order; md::fcs::Error err;
-    if (!inst.LoadOrderFor(order, err) || !g.data.Load(order, err)) { g.error = err.Message(); return; }
-    for (const md::fcs::LoadEntry& e : order.files) if (!e.core) g.mods.push_back(e);
-    g.browser = std::make_unique<md::fcsdef::DataBrowser>(g.schema, g.data);
-    g.edits = std::make_unique<md::fcsdef::EditSession>(g.schema, g.data);
-    g.browser->SetEdits(g.edits.get());
-    g.dialogs = std::make_unique<md::fcsdef::DialogModel>(*g.edits, g.schema, g.data);
+    if (!LoadFiles({}, g.error)) return;
+    Rebuild();
     g.ok = true;
-    if (!g.schema.layout.empty()) { Select(g.schema.layout[0]); if (!g.rows.empty()) { g.selected = g.rows[0].string_id; g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }   // the first category and its first item are open on start
 }
 
 void Select(const md::fcsdef::LayoutNode& n) {
@@ -187,6 +203,15 @@ void DrawDialogue(int kind) {
 void Draw() {
     if (!g.tried) Load();
     if (!g.ok) { ImGui::TextWrapped("Kenshi data: %s", g.error.empty() ? "not loaded" : g.error.c_str()); return; }
+    if (g.autosave_min > 0 && g.edits->TouchedRecords().size()) {   // FCS autosave: a copy next to the saved mod, never the install
+        const double now = ImGui::GetTime();
+        if (g.last_autosave == 0) g.last_autosave = now;
+        if (now - g.last_autosave >= g.autosave_min * 60.0) {
+            g.last_autosave = now; std::filesystem::create_directories("temp_/md_mods");
+            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps; info.references = g.mod_refs;
+            if (md::fcsdef::WriteMod(std::string("temp_/md_mods/") + g.mod_name + ".autosave.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "autosaved"; else g.status = "autosave failed: " + err;
+        }
+    }
     const float h = ImGui::GetContentRegionAvail().y;
     ImGui::BeginChild("kd_tree", ImVec2(220, h), true); DrawTree(g.schema.layout); ImGui::EndChild();
     ImGui::SameLine();
@@ -269,6 +294,17 @@ void Draw() {
         ImGui::SetNextItemWidth(500); ImGui::InputText("dependencies##mi", g.mod_deps, sizeof g.mod_deps);
         ImGui::SetNextItemWidth(500); ImGui::InputText("referenced (not required)##mi", g.mod_refs, sizeof g.mod_refs);
         if (ImGui::Button("New mod (discard edits)")) NewMod();
+        ImGui::SameLine(); if (ImGui::Button("Close all (back to the install)")) { std::string err; if (LoadFiles({}, err)) { Rebuild(); g.status = "closed: install load order"; } else g.status = err; }
+        ImGui::SetNextItemWidth(420); ImGui::InputTextWithHint("##single", "path of a .mod / .base to open alone", g.single_path, sizeof g.single_path); ImGui::SameLine();
+        if (ImGui::Button("Open single file")) {
+            md::fcs::LoadEntry e; e.path = g.single_path; e.name = std::filesystem::path(e.path).filename().string(); e.core = e.name == "gamedata.base";
+            std::string err; if (LoadFiles({e}, err)) { Rebuild(); g.status = "opened " + e.name + " alone (single-file mode)"; } else g.status = "open failed: " + err;
+        }
+        if (ImGui::Button("Export mods.cfg of the loaded mods")) {   // a copy in temp_/md_mods/, never over the install's data/mods.cfg
+            std::filesystem::create_directories("temp_/md_mods");
+            FILE* o = std::fopen("temp_/md_mods/mods.cfg", "wb");
+            if (o) { for (const md::fcs::LoadEntry& m : g.mods) std::fprintf(o, "%s\n", m.name.c_str()); std::fclose(o); g.status = "wrote temp_/md_mods/mods.cfg (" + std::to_string(g.mods.size()) + " mods)"; } else g.status = "cannot write mods.cfg";
+        }
         ImGui::SameLine(); ImGui::TextDisabled("saves to temp_/md_mods/%s.mod", g.mod_name);
     }
     if (ImGui::CollapsingHeader("Changes of the mod")) {
@@ -295,6 +331,19 @@ void Draw() {
             std::vector<std::string> ids; for (const md::fcsdef::ItemRow& r : g.rows) if (!g.filter[0] || r.name.find(g.filter) != std::string::npos) ids.push_back(r.string_id);
             std::string err; const size_t n = md::fcsdef::SetMany(*g.edits, ids, g.bulk_field, g.bulk_value, err);
             g.status = "set in " + std::to_string(n) + " of " + std::to_string(ids.size()) + (err.empty() ? "" : "; " + err); Refresh();
+        }
+    }
+    if (ImGui::CollapsingHeader("FCS settings")) {
+        ImGui::TextDisabled("data folder: %s", md::KenshiDir().c_str());
+        for (const auto& kv : g.schema.settings) ImGui::BulletText("%s = %s", kv.first.c_str(), kv.second.c_str());
+        ImGui::SetNextItemWidth(120); ImGui::InputInt("autosave every (min, 0 = off)", &g.autosave_min, 1, 5); if (g.autosave_min < 0) g.autosave_min = 0;
+    }
+    if (ImGui::CollapsingHeader("Assets (files the records point to)")) {
+        if (ImGui::Button("Scan")) { g.assets = md::fcsdef::AssetList(*g.edits, g.data, md::KenshiDir()); g.assets_ready = true; }
+        if (g.assets_ready) {
+            size_t missing = 0; for (const md::fcsdef::AssetRow& a : g.assets) missing += !a.found;
+            ImGui::SameLine(); ImGui::Text("%zu files, %zu not found under the install", g.assets.size(), missing);
+            for (size_t i = 0; i < g.assets.size() && i < 200; ++i) { const md::fcsdef::AssetRow& a = g.assets[i]; ImGui::TextColored(a.found ? ImVec4(0.7f, 0.7f, 0.7f, 1) : ImVec4(1, 0.5f, 0.4f, 1), "%s  (%s, %zu record%s, e.g. %s)", a.file.c_str(), a.kind_name.c_str(), a.records, a.records == 1 ? "" : "s", a.example_record.c_str()); }
         }
     }
     if (!g.selected.empty() && ImGui::CollapsingHeader("Referenced by")) {

@@ -185,6 +185,13 @@ static void RealDialogTest(const std::string& kd, Schema& schema) {
             CHECK(diff == 0 && viaedit.order.size() == data.order.size());
         }
     }
+    {   // assets of the install: files the records name, found by file name under the install
+        EditSession as(schema, data, "as.mod");
+        const auto rows = AssetList(as, data, kd);
+        size_t miss = 0; for (const AssetRow& a : rows) miss += !a.found;
+        std::printf("F7 assets: %zu distinct files named by records, %zu not found by name under the install\n", rows.size(), miss);
+        CHECK(!rows.empty());
+    }
     const int code_enums = AddCodeEnums(schema, "docs/research/kenshi_specs/fcs_code_enums.json");   // from the main repo's cwd; skipped elsewhere
     AddDialogActionFields(schema);
     EditSession ed(schema, data, "md_test.mod"); DialogModel dm(ed, schema, data);
@@ -379,6 +386,16 @@ static void RefTest() {
             std::string e3; CHECK(SetMany(e, {"1-w", "2-p"}, "weight", "3", e3) == 2);
             auto h = FindReplace(e, data, "Renam", "Axe", "", false); CHECK(h.size() == 1 && h[0].before == "Renamed" && h[0].after == "Axeed" && e.NameOf("1-w") == "Renamed");
             h = FindReplace(e, data, "Renam", "Axe", "", true); CHECK(e.NameOf("1-w") == "Axeed");
+        }
+        {   // assets list: a file value of a record, found / not found by name under a root
+            const std::string root = (std::filesystem::temp_directory_path() / "md_assets_root").string(); std::filesystem::create_directories(root + "/sub");
+            { FILE* o = std::fopen((root + "/sub/Present.MESH").c_str(), "w"); std::fclose(o); }
+            md::fcs::File af; af.header.filetype = 17; af.header.version = 1; md::fcs::Record ar; ar.lead = 1; ar.kind = 2; ar.id = 60; ar.string_id = "60-a"; ar.name = "A"; ar.datatype = 0;
+            ar.files.emplace_back("mesh", "models/present.mesh"); ar.files.emplace_back("mesh2", "gone.mesh"); ar.files.emplace_back("mask", "Ogre mesh|*.mesh"); af.records.push_back(ar);
+            EditSession as(s, data, "as.mod"); as.ImportFile(af);
+            auto rows = AssetList(as, data, root);
+            CHECK(rows.size() == 2 && !rows[0].found && rows[0].file == "gone.mesh" && rows[1].found && rows[1].file == "models/present.mesh");
+            std::filesystem::remove_all(root);
         }
         CHECK(SearchAll(c, data, "swo").size() == 1 && SearchAll(c, data, "1-w").size() == 1 && SearchAll(c, data, "BLADE", "ITEM").empty() == true);   // 2-p removed
         // merge and cleanup: a mod written from session A imported into session B gives the same mod

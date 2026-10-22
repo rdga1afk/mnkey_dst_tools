@@ -1,6 +1,8 @@
 #include "mod_check.h"
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
+#include <map>
 #include <set>
 #include <variant>
 
@@ -135,6 +137,32 @@ std::vector<ReplaceHit> FindReplace(EditSession& ed, const md::fcs::GameDataCont
             if (sub(cur, res)) { out.push_back({id, f, cur, res}); if (apply) { std::string err; ed.Set(id, f, res, err); } }
         }
     }
+    return out;
+}
+
+std::vector<AssetRow> AssetList(const EditSession& ed, const md::fcs::GameDataContainer& base, const std::string& root, size_t limit) {
+    std::map<std::string, AssetRow> rows;
+    auto add = [&](const std::string& sid, const std::string& file) {
+        if (file.empty() || file.find('|') != std::string::npos) return;   // empty, or a file mask (a default), not a value
+        AssetRow& r = rows[file]; if (r.records++ == 0) { r.file = file; r.example_record = ed.NameOf(sid); r.kind_name = md::fcs::ItemTypeName(ed.KindOf(sid)); }
+    };
+    for (const std::string& id : base.order) {
+        if (!ed.Exists(id)) continue;
+        const md::fcs::GameData* r = base.Get(id);
+        for (const auto& kv : r->files) { const EditValue* e = ed.Edited(id, kv.first); if (!e) add(id, kv.second); }
+    }
+    for (const std::string& id : ed.TouchedRecords()) {
+        if (!ed.Exists(id)) continue;
+        for (const auto& kv : ed.FieldLayer(id)) if (ed.IsImportedFile(id, kv.first) || (std::holds_alternative<std::string>(kv.second) && kv.first.find("file") != std::string::npos)) if (const std::string* s = std::get_if<std::string>(&kv.second)) add(id, *s);
+    }
+    std::set<std::string> have;   // lower-case base names of every file under root
+    std::error_code ec;
+    for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec); !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
+        if (it->is_regular_file(ec)) have.insert(Lower(it->path().filename().string()));
+    std::vector<AssetRow> out;
+    for (auto& kv : rows) { std::string f = kv.first; size_t sl = f.find_last_of("/\\"); if (sl != std::string::npos) f = f.substr(sl + 1); kv.second.found = have.count(Lower(f)) != 0; out.push_back(kv.second); }
+    std::stable_sort(out.begin(), out.end(), [](const AssetRow& a, const AssetRow& b) { return a.found < b.found; });
+    if (out.size() > limit) out.resize(limit);
     return out;
 }
 
