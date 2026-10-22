@@ -367,8 +367,19 @@ static void RefTest() {
         CHECK(pr.size() == 1 && pr[0].level == Problem::Error && pr[0].field == "parts");
         c.Remove("2-p");   // 1-w still links to it
         pr = CheckMod(c, s, data);
-        bool warn = false; for (auto& p : pr) if (p.record == "2-p" && p.level == Problem::Warning) warn = true;
+        bool warn = false; for (auto& p : pr) if (p.record == "1-w" && p.target == "2-p" && p.level == Problem::Warning && p.fix == Problem::RemoveLink) warn = true;
         CHECK(warn);
+        {   // fix action, changes list, referencing, find & replace, bulk set (own sessions)
+            EditSession e(s, data, "e.mod"); e.SetRef("1-w", "parts", "nope-id", {0, 0, 0});
+            auto pr2 = CheckMod(e, s, data);
+            CHECK(pr2.size() == 1 && pr2[0].fix == Problem::RemoveLink && pr2[0].target == "nope-id" && ApplyFix(e, pr2[0]) && CheckMod(e, s, data).empty());
+            CHECK(ChangeList(e).empty() || ChangeList(e)[0].state == "modified");
+            e.SetName("1-w", "Renamed"); CHECK(ChangeList(e).size() == 1 && ChangeList(e)[0].what.find("renamed") != std::string::npos);
+            auto rf = Referencing(e, data, "2-p"); CHECK(rf.size() == 1 && rf[0].string_id == "1-w" && rf[0].category == "parts");
+            std::string e3; CHECK(SetMany(e, {"1-w", "2-p"}, "weight", "3", e3) == 2);
+            auto h = FindReplace(e, data, "Renam", "Axe", "", false); CHECK(h.size() == 1 && h[0].before == "Renamed" && h[0].after == "Axeed" && e.NameOf("1-w") == "Renamed");
+            h = FindReplace(e, data, "Renam", "Axe", "", true); CHECK(e.NameOf("1-w") == "Axeed");
+        }
         CHECK(SearchAll(c, data, "swo").size() == 1 && SearchAll(c, data, "1-w").size() == 1 && SearchAll(c, data, "BLADE", "ITEM").empty() == true);   // 2-p removed
         // merge and cleanup: a mod written from session A imported into session B gives the same mod
         EditSession a(s, data, "a.mod"); std::string e2;
@@ -450,7 +461,7 @@ static void DialogTest() {
     CHECK(ParseText("[DIALOGUE]\nOWNED: lines\n[DIALOGUE_LINE]\nOWNED: effects\ntext0: \"\" multiline looped\nspeaker: 0\n[DIALOGUE,DIALOGUE_LINE]\nOWNED: conditions\n", s, err));
     CHECK(AddCodeEnums(s, js) == 5 && s.FindEnum("TalkerEnum")->values.size() == 2);
     AddDialogActionFields(s); AddDialogActionFields(s);   // second call adds nothing
-    CHECK(s.FieldsOf("DIALOG_ACTION").size() == 7 && s.FieldsOf("DIALOGUE_LINE").size() == 2 + 15);
+    CHECK(s.FieldsOf("DIALOG_ACTION").size() == 7 && s.FieldsOf("DIALOGUE_LINE").size() == 2 && s.FindField("DIALOGUE_LINE", "text7") && s.FindField("DIALOGUE_LINE", "text7")->name == "text0" && !s.FindField("DIALOGUE_LINE", "speaker7"));
     EditSession ed(s, data, "md_test.mod");
     DialogModel dm(ed, s, data);
     CHECK(dm.Packages().size() == 1 && dm.AllDialogues().size() == 1);
@@ -461,6 +472,8 @@ static void DialogTest() {
     CHECK(t.children.size() == 1 && t.children[0].speaker == "T_TARGET" && t.children[0].texts.size() == 2 && t.children[0].texts[1] == "Hey");
     CHECK(t.children[0].effects.size() == 1 && t.children[0].effects[0].what == "DA_TRADE" && t.children[0].effects[0].detail == "7");
     CHECK(t.children[0].children.size() == 1 && t.children[0].children[0].texts[0] == "Bye");
+    // old files store `compare by` as text
+    { EditSession e2(s, data, "x.mod"); DialogModel d2(e2, s, data); (void)d2; }
     // edits
     const std::string nl = dm.AddLine("4-l", "Wait!", "T_TARGET");
     CHECK(!nl.empty() && dm.AddLine("4-l", "x", "NOPE").empty());
@@ -513,6 +526,41 @@ static void TranslationTest() {
     CHECK(pot.find("msgid \"Zeta!\"") != std::string::npos && pot.find("#. Type: WEAPON") != std::string::npos);
 }
 
+// F7 (FCS_SCHEMA section 8): looped variants on the card, fields outside the schema kept and read-only, Clean, `compare by` as text
+static void OutsideSchemaTest() {
+    W f; f.i32(16).i32(1).str("a").str("d").str("").str("").i32(10).i32(2);
+    DialogRec(f, 19, 1, "L", "1-l", {{"speaker", 1}, {"old thing", 7}}, {{"text0", "A"}, {"text1", "B"}, {"text2", "C"}, {"obsolete", "x"}}, {});
+    DialogRec(f, 31, 2, "c", "2-c", {{"condition name", 1}, {"who", 0}, {"tag", 5}}, {{"compare by", "<"}}, {});
+    md::fcs::File file; md::fcs::Error e;
+    CHECK(md::fcs::Parse(f.b.data(), f.b.size(), file, e));
+    md::fcs::GameDataContainer data; data.ApplyFile("t.mod", file); data.id_counter = 10;
+    Schema s; std::string err;
+    CHECK(ParseText("[DIALOGUE_LINE]\ntext0: \"\" multiline looped\nspeaker: 0\n", s, err));
+    AddDialogActionFields(s);
+    EditSession ed(s, data, "md_test.mod"); DataBrowser br(s, data); br.SetEdits(&ed);
+    CHECK(ed.Set("1-l", "text3", "D", err) && ed.Set("1-l", "text1", "B2", err));
+    const auto card = br.Card("1-l");
+    std::vector<std::string> names; for (const CardField& c : card) names.push_back(c.name);
+    auto idx = [&](const char* n) { for (size_t i = 0; i < names.size(); ++i) if (names[i] == n) return (int)i; return -1; };
+    CHECK(idx("text0") >= 0 && idx("text1") == idx("text0") + 1 && idx("text2") == idx("text0") + 2 && idx("text3") == idx("text0") + 3);   // variants follow their stem, in number order
+    CHECK(card[idx("text1")].value == "B2" && card[idx("text1")].edited && card[idx("text2")].value == "C" && !card[idx("text2")].edited && card[idx("text3")].value == "D");
+    CHECK(idx("obsolete") > idx("text3") && card[idx("obsolete")].readonly && card[idx("old thing")].readonly && card[idx("old thing")].value == "7" && card[idx("obsolete")].category.find("outside") != std::string::npos);
+    // duplicate carries variants (base and edited)
+    const std::string cp = ed.Duplicate("1-l", "copy");
+    std::string t2; CHECK(ed.EditedText(cp, "text2", t2) && t2 == "C" && ed.EditedText(cp, "text3", t2) && t2 == "D" && ed.EditedText(cp, "text1", t2) && t2 == "B2");
+    // Clean drops layer fields the schema does not describe (an imported one), keeps looped variants
+    md::fcs::File imp; imp.header.filetype = 17; imp.header.version = 1; md::fcs::Record r; r.lead = 1; r.kind = 19; r.id = 50; r.string_id = "1-l"; r.name = "L"; r.datatype = 1;
+    r.strings.emplace_back("junk", "z"); r.strings.emplace_back("text5", "E"); imp.records.push_back(r);
+    CHECK(ed.ImportFile(imp));
+    CHECK(ed.CleanOutsideSchema() == 1 && ed.EditedText("1-l", "text5", t2) && t2 == "E" && !ed.Edited("1-l", "junk"));
+    DialogModel dm(ed, s, data);
+    CHECK(dm.Tree("1-l").texts.size() == 4);   // text0..text3; text5 is behind a gap
+    // `compare by` stored as text in an old file
+    CHECK(ed.SetRef("1-l", "conditions", "2-c", {0, 0, 0}));
+    const DialogNode n = dm.Shallow("1-l");
+    CHECK(n.conditions.size() == 1 && n.conditions[0].detail == "0 1 5");
+}
+
 static void ConditionTest() {
     std::vector<CardField> card(3);
     card[0].name = "slot"; card[0].value = "AttachSlot.ATTACH_BODY";
@@ -530,6 +578,7 @@ static void ConditionTest() {
 
 int main() {
     ConditionTest();
+    OutsideSchemaTest();
     TranslationTest();
     RefTest();
     DialogTest();

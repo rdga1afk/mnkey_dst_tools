@@ -104,7 +104,7 @@ bool EditSession::Set(const std::string& sid, const std::string& field, const st
     const int32_t kind = KindOf(sid);
     if (kind < 0) { err = "no record " + sid; return false; }
     const Field* f = nullptr;
-    for (const Field* x : schema_.FieldsOf(md::fcs::ItemTypeName(kind))) if (x->name == field) { f = x; break; }
+    f = schema_.FindField(md::fcs::ItemTypeName(kind), field);
     if (!f) { err = std::string("the schema has no field '") + field + "' for " + md::fcs::ItemTypeName(kind); return false; }
     EditValue nv;
     if (!Parse(*f, text, nv, err)) return false;
@@ -112,7 +112,8 @@ bool EditSession::Set(const std::string& sid, const std::string& field, const st
     if (cur && EqualValue(*cur, nv)) return true;
     EditValue bv;
     const md::fcs::GameData* rec = base_.Get(sid);
-    const bool same_as_base = rec && BaseValue(*f, *rec, bv) && EqualValue(bv, nv);
+    Field vf = *f; vf.name = field;   // a looped variant (text3) reads its own value
+    const bool same_as_base = rec && BaseValue(vf, *rec, bv) && EqualValue(bv, nv);
     if (!cur && same_as_base) return true;
     Push();
     if (same_as_base) { auto it = layer_.fields.find(sid); it->second.erase(field); if (it->second.empty()) layer_.fields.erase(it); }
@@ -141,7 +142,7 @@ bool EditSession::EditedText(const std::string& sid, const std::string& field, s
     const EditValue* v = Edited(sid, field);
     if (!v) return false;
     const int32_t kind = KindOf(sid);
-    for (const Field* f : schema_.FieldsOf(md::fcs::ItemTypeName(kind))) if (f->name == field) { out = Format(*f, *v); return true; }
+    if (const Field* f = schema_.FindField(md::fcs::ItemTypeName(kind), field)) { out = Format(*f, *v); return true; }
     return false;
 }
 
@@ -321,6 +322,12 @@ std::string EditSession::DuplicateInner(const std::string& sid, const std::strin
         if (const EditValue* e = Edited(sid, f->name)) layer_.fields[nsid][f->name] = *e;
         else if (rec && BaseValue(*f, *rec, v)) layer_.fields[nsid][f->name] = v;
     }
+    if (rec) {   // looped variants (text1, text2 ...) the source has
+        const char* type = md::fcs::ItemTypeName(n.kind);
+        auto variants = [&](const auto& m) { for (const auto& kv : m) if (!Edited(sid, kv.first)) { const Field* f = schema_.FindField(type, kv.first); if (f && f->name != kv.first) { Field vf = *f; vf.name = kv.first; EditValue v; if (BaseValue(vf, *rec, v)) layer_.fields[nsid][kv.first] = v; } } };
+        variants(rec->strings); variants(rec->ints); variants(rec->floats); variants(rec->bools); variants(rec->files);
+    }
+    for (const auto& kv : FieldLayer(sid)) if (!layer_.fields[nsid].count(kv.first)) layer_.fields[nsid][kv.first] = kv.second;   // edited variants
     const std::vector<std::string>* own = OwnedCategories(n.kind);
     std::set<std::string> cats;
     if (rec) for (const auto& c : rec->references) cats.insert(c.first);
@@ -381,6 +388,29 @@ bool EditSession::ImportFile(const md::fcs::File& file, size_t* skipped) {
     layer_.last_id = std::max(layer_.last_id, file.header.id_counter);
     if (skipped) *skipped = skip;
     return true;
+}
+
+size_t EditSession::CleanOutsideSchema() {
+    Push();
+    size_t n = 0;
+    for (auto it = layer_.fields.begin(); it != layer_.fields.end();) {
+        const char* type = md::fcs::ItemTypeName(KindOf(it->first));
+        for (auto f = it->second.begin(); f != it->second.end();) {
+            if (!schema_.FindField(type, f->first)) { f = it->second.erase(f); ++n; } else ++f;
+        }
+        for (auto q = layer_.file_fields.begin(); q != layer_.file_fields.end();) q = (q->first == it->first && !it->second.count(q->second)) ? layer_.file_fields.erase(q) : std::next(q);
+        it = it->second.empty() ? layer_.fields.erase(it) : std::next(it);
+    }
+    for (auto& rec : layer_.refs) {
+        const char* type = md::fcs::ItemTypeName(KindOf(rec.first));
+        for (auto c = rec.second.begin(); c != rec.second.end();) {
+            const Field* f = schema_.FindField(type, c->first);
+            if (!f || (f->kind != FieldKind::RefList && f->kind != FieldKind::RefString)) { n += c->second.size(); c = rec.second.erase(c); } else ++c;
+        }
+    }
+    for (auto it = layer_.refs.begin(); it != layer_.refs.end();) it = it->second.empty() ? layer_.refs.erase(it) : std::next(it);
+    if (n == 0) undo_.pop_back();
+    return n;
 }
 
 size_t EditSession::Cleanup() {

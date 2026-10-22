@@ -47,6 +47,9 @@ struct Schema {
     const EnumDef* FindEnum(const std::string& name) const;
     // The fields of one item type, in file order (several sections can list the same type: their fields add up).
     std::vector<const Field*> FieldsOf(const std::string& item_type) const;
+    // One field by name. A name that ends in digits and is not described falls back to `<stem>0` when that field is `looped` (FCS_SCHEMA section 8: text1..text33 via text0);
+    // the returned field is the described one (its name is the stem0 name). Null when the type has no such field.
+    const Field* FindField(const std::string& item_type, const std::string& name) const;
 };
 
 // Parse one file's text into `out` (appends). Returns false and sets `err` on a malformed line.

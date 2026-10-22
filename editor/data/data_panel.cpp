@@ -38,6 +38,10 @@ struct State {
     char import_path[512] = "";
     std::vector<md::fcsdef::Hit> hits;
     std::vector<md::fcsdef::Problem> problems;
+    char mod_name[64] = "md_test", mod_author[64] = "md", mod_desc[256] = "made with the md editor", mod_deps[256] = "gamedata.base";
+    std::vector<std::string> hist; int hpos = -1;   // navigation history (Back / Forward)
+    char repl_find[128] = "", repl_with[128] = "", bulk_field[64] = "", bulk_value[128] = "", columns[128] = "";
+    std::vector<md::fcsdef::ReplaceHit> repl_hits;
 } g;
 
 void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
@@ -71,6 +75,38 @@ void DrawTree(const std::vector<md::fcsdef::LayoutNode>& nodes) {
         if (open) { DrawTree(n.children); ImGui::TreePop(); }
     }
 }
+
+void Go(const std::string& sid, bool record = true) {
+    g.selected = sid;
+    if (record) { g.hist.resize(g.hpos + 1); if (g.hist.empty() || g.hist.back() != sid) g.hist.push_back(sid); g.hpos = (int)g.hist.size() - 1; }
+    Refresh();
+}
+
+// A new empty mod: the edit layer starts over under the mod's name (string ids of new records end with it).
+void NewMod() {
+    g.edits = std::make_unique<md::fcsdef::EditSession>(g.schema, g.data, std::string(g.mod_name) + ".mod");
+    g.browser->SetEdits(g.edits.get());
+    g.dialogs = std::make_unique<md::fcsdef::DialogModel>(*g.edits, g.schema, g.data);
+    g.problems.clear(); g.hits.clear(); g.repl_hits.clear(); g.line.clear(); g.line_parent.clear(); g.hist.clear(); g.hpos = -1;
+    if (g.node) g.rows = g.browser->Items(*g.node);
+    Refresh();
+    g.status = std::string("new mod ") + g.mod_name + ".mod";
+}
+
+const md::fcsdef::EnumDef* EnumOf(const char* n) { return g.schema.FindEnum(n); }
+bool EnumCombo(const char* label, const char* enum_name, int& idx, float width) {
+    const md::fcsdef::EnumDef* e = EnumOf(enum_name);
+    if (!e || e->values.empty()) { ImGui::SetNextItemWidth(width); return ImGui::InputInt(label, &idx); }
+    if (idx < 0 || idx >= (int)e->values.size()) idx = 0;
+    ImGui::SetNextItemWidth(width);
+    bool changed = false;
+    if (ImGui::BeginCombo(label, e->values[idx].name.c_str())) {
+        for (int i = 0; i < (int)e->values.size(); ++i) if (ImGui::Selectable(e->values[i].name.c_str(), i == idx)) { idx = i; changed = true; }
+        ImGui::EndCombo();
+    }
+    return changed;
+}
+std::string EnumPick(const char* enum_name, int idx) { const md::fcsdef::EnumDef* e = EnumOf(enum_name); return e && idx >= 0 && idx < (int)e->values.size() ? e->values[idx].name : std::to_string(idx); }
 
 // One line of a dialogue and, when opened, the lines below it (read per frame only for open nodes). `path` guards against the loops the data has.
 void DrawLine(const std::string& parent, const std::string& sid, std::vector<std::string>& path) {
@@ -126,6 +162,17 @@ void DrawDialogue(int kind) {
         }
         for (const DialogAction& c : n.conditions) ImGui::BulletText("condition  %s  %s", c.what.c_str(), c.detail.c_str());
         for (const DialogAction& c : n.effects) ImGui::BulletText("effect  %s  %s", c.what.c_str(), c.detail.c_str());
+        {   // templates by menu: a condition (what, who, compare, value) and an effect (what, value)
+            static int ci = 1, who = 0, cmp = 0, cval = 0, ai = 1, aval = 0;
+            ImGui::SeparatorText("Add condition");
+            EnumCombo("##cond", "DialogConditionEnum", ci, 220); ImGui::SameLine(); EnumCombo("##who", "TalkerEnum", who, 130); ImGui::SameLine(); EnumCombo("##cmp", "ComparisonEnum", cmp, 130);
+            ImGui::SameLine(); ImGui::SetNextItemWidth(80); ImGui::InputInt("##cv", &cval, 0); ImGui::SameLine();
+            if (ImGui::Button("Add condition")) { if (g.dialogs->AddCondition(g.line, EnumPick("DialogConditionEnum", ci), EnumPick("TalkerEnum", who), EnumPick("ComparisonEnum", cmp), cval).empty()) g.status = "add condition failed (code enums not loaded?)"; else Refresh(); }
+            ImGui::SeparatorText("Add effect");
+            EnumCombo("##act", "DialogActionEnum", ai, 260); ImGui::SameLine(); ImGui::SetNextItemWidth(80); ImGui::InputInt("##av", &aval, 0); ImGui::SameLine();
+            if (ImGui::Button("Add effect")) { if (g.dialogs->AddEffect(g.line, EnumPick("DialogActionEnum", ai), aval).empty()) g.status = "add effect failed (code enums not loaded?)"; else Refresh(); }
+            ImGui::Separator();
+        }
         ImGui::SetNextItemWidth(400); ImGui::InputText("##rl", g.new_text, sizeof g.new_text);
         ImGui::SameLine();
         if (ImGui::Button("Add reply")) { if (g.dialogs->AddLine(g.line, g.new_text, "T_TARGET").empty()) g.status = "add reply failed"; else Refresh(); }
@@ -147,18 +194,24 @@ void Draw() {
     ImGui::SameLine(); if (ImGui::Button("all")) g.hits = md::fcsdef::SearchAll(*g.edits, g.data, g.search);
     if (!g.hits.empty()) {
         ImGui::Text("%zu hits", g.hits.size()); ImGui::SameLine(); if (ImGui::SmallButton("close")) g.hits.clear();
-        for (const md::fcsdef::Hit& h : g.hits) if (ImGui::Selectable((h.name + "  [" + md::fcs::ItemTypeName(g.edits->KindOf(h.string_id)) + ", " + h.where + "]##" + h.string_id).c_str(), g.selected == h.string_id)) { g.selected = h.string_id; Refresh(); }
+        for (const md::fcsdef::Hit& h : g.hits) if (ImGui::Selectable((h.name + "  [" + md::fcs::ItemTypeName(g.edits->KindOf(h.string_id)) + ", " + h.where + "]##" + h.string_id).c_str(), g.selected == h.string_id)) Go(h.string_id);
         ImGui::Separator();
     }
+    ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##cols", "extra columns: field, field", g.columns, sizeof g.columns);
     ImGui::Text("%zu items", g.rows.size());
+    std::vector<std::string> cols; { std::string cur; for (const char* c = g.columns;; ++c) { if (*c == ',' || !*c) { size_t a = cur.find_first_not_of(' '), b = cur.find_last_not_of(' '); if (a != std::string::npos) cols.push_back(cur.substr(a, b - a + 1)); cur.clear(); if (!*c) break; } else cur += *c; } }
     for (const md::fcsdef::ItemRow& r : g.rows) {
         if (g.filter[0] && r.name.find(g.filter) == std::string::npos) continue;
-        if (ImGui::Selectable((r.name + "##" + r.string_id).c_str(), g.selected == r.string_id)) { g.selected = r.string_id; g.card = g.browser->Card(r.string_id); g.insts = g.browser->Instances(r.string_id); }
+        std::string label = r.name;
+        if (!cols.empty()) if (const md::fcs::GameData* rec = g.data.Get(r.string_id)) for (const std::string& c : cols) { std::string v; if (g.browser->FieldText(*rec, c, v)) label += "  |  " + v.substr(0, 24); }
+        if (ImGui::Selectable((label + "##" + r.string_id).c_str(), g.selected == r.string_id)) Go(r.string_id);
     }
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("kd_card", ImVec2(0, h), true);
     ImGui::Checkbox("only fields set by the data", &g.only_changed); ImGui::SameLine(); ImGui::Checkbox("hidden by conditions", &g.show_hidden);
+    ImGui::BeginDisabled(g.hpos <= 0); if (ImGui::Button("Back")) Go(g.hist[--g.hpos], false); ImGui::EndDisabled();
+    ImGui::SameLine(); ImGui::BeginDisabled(g.hpos + 1 >= (int)g.hist.size()); if (ImGui::Button("Forward")) Go(g.hist[++g.hpos], false); ImGui::EndDisabled();
     ImGui::SameLine(); if (ImGui::Button("Undo") && g.edits->Undo()) Refresh();
     ImGui::SameLine(); if (ImGui::Button("Redo") && g.edits->Redo()) Refresh();
     ImGui::SameLine(); ImGui::TextDisabled("%zu modified", g.edits->ModifiedCount());
@@ -171,6 +224,7 @@ void Draw() {
         FILE* o = std::fopen("temp_/md_mods/gamedata.pot", "wb");
         if (o) { const std::string t = md::fcsdef::MakePot(ex); std::fwrite(t.data(), 1, t.size(), o); std::fclose(o); g.status = "wrote temp_/md_mods/gamedata.pot (" + std::to_string(ex.size()) + " strings)"; } else g.status = "cannot write the .pot";
     }
+    ImGui::SameLine(); if (ImGui::Button("Clean")) { const size_t n = g.edits->CleanOutsideSchema(); g.status = "clean dropped " + std::to_string(n) + " (fields outside the schema)"; Refresh(); }
     ImGui::SameLine(); ImGui::SetNextItemWidth(220); ImGui::InputTextWithHint("##imp", "mod file to merge in", g.import_path, sizeof g.import_path);
     ImGui::SameLine();
     if (ImGui::Button("Merge")) {
@@ -187,8 +241,9 @@ void Draw() {
         if (errors) g.status = "not saved: fix the errors listed below";
         else {
             std::filesystem::create_directories("temp_/md_mods");
-            std::string err; md::fcsdef::ModInfo info; info.description = "made with the md editor";
-            if (md::fcsdef::WriteMod("temp_/md_mods/md_test.mod", *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved temp_/md_mods/md_test.mod"; else g.status = "save failed: " + err;
+            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps;
+            const std::string path = std::string("temp_/md_mods/") + g.mod_name + ".mod";
+            if (md::fcsdef::WriteMod(path, *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved " + path; else g.status = "save failed: " + err;
         }
     }
     if (g.node && !g.node->type.empty()) {
@@ -203,7 +258,49 @@ void Draw() {
         const std::string owner = g.edits->OwnerOf(g.selected);
         if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); }
     }
-    for (const auto& pr : g.problems) ImGui::TextColored(pr.level == md::fcsdef::Problem::Error ? ImVec4(1, 0.3f, 0.3f, 1) : ImVec4(1, 0.8f, 0.3f, 1), "%s  %s.%s: %s", pr.level == md::fcsdef::Problem::Error ? "error" : "warning", g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
+    if (ImGui::CollapsingHeader("Mod info / new mod")) {
+        ImGui::SetNextItemWidth(160); ImGui::InputText("name##mi", g.mod_name, sizeof g.mod_name); ImGui::SameLine();
+        ImGui::SetNextItemWidth(120); ImGui::InputText("author##mi", g.mod_author, sizeof g.mod_author);
+        ImGui::SetNextItemWidth(500); ImGui::InputText("description##mi", g.mod_desc, sizeof g.mod_desc);
+        ImGui::SetNextItemWidth(500); ImGui::InputText("dependencies##mi", g.mod_deps, sizeof g.mod_deps);
+        if (ImGui::Button("New mod (discard edits)")) NewMod();
+        ImGui::SameLine(); ImGui::TextDisabled("saves to temp_/md_mods/%s.mod", g.mod_name);
+    }
+    if (ImGui::CollapsingHeader("Changes of the mod")) {
+        for (const md::fcsdef::ChangeRow& r : md::fcsdef::ChangeList(*g.edits)) {
+            if (ImGui::Selectable((r.state + "  " + r.name + "   " + r.what + "##ch" + r.string_id).c_str(), g.selected == r.string_id)) Go(r.string_id);
+        }
+    }
+    if (ImGui::CollapsingHeader("Find and replace / set in all listed items")) {
+        ImGui::SetNextItemWidth(200); ImGui::InputText("find##fr", g.repl_find, sizeof g.repl_find); ImGui::SameLine();
+        ImGui::SetNextItemWidth(200); ImGui::InputText("replace with##fr", g.repl_with, sizeof g.repl_with);
+        const std::string type = g.node ? g.node->type : "";
+        if (ImGui::Button("Preview")) g.repl_hits = md::fcsdef::FindReplace(*g.edits, g.data, g.repl_find, g.repl_with, type, false);
+        ImGui::SameLine();
+        if (ImGui::Button("Replace all")) {
+            if (!g.repl_find[0]) g.status = "find text is empty";
+            else { g.repl_hits = md::fcsdef::FindReplace(*g.edits, g.data, g.repl_find, g.repl_with, type, true); g.status = "replaced in " + std::to_string(g.repl_hits.size()) + " places"; if (g.node) g.rows = g.browser->Items(*g.node); Refresh(); }
+        }
+        ImGui::TextDisabled("limited to the type of the selected category (%s)", type.empty() ? "all" : type.c_str());
+        for (size_t i = 0; i < g.repl_hits.size() && i < 30; ++i) ImGui::BulletText("%s %s: %s -> %s", g.edits->NameOf(g.repl_hits[i].string_id).c_str(), g.repl_hits[i].field.empty() ? "name" : g.repl_hits[i].field.c_str(), g.repl_hits[i].before.substr(0, 30).c_str(), g.repl_hits[i].after.substr(0, 30).c_str());
+        ImGui::Separator();
+        ImGui::SetNextItemWidth(160); ImGui::InputText("field##bk", g.bulk_field, sizeof g.bulk_field); ImGui::SameLine();
+        ImGui::SetNextItemWidth(160); ImGui::InputText("value##bk", g.bulk_value, sizeof g.bulk_value); ImGui::SameLine();
+        if (ImGui::Button("Set in all listed")) {
+            std::vector<std::string> ids; for (const md::fcsdef::ItemRow& r : g.rows) if (!g.filter[0] || r.name.find(g.filter) != std::string::npos) ids.push_back(r.string_id);
+            std::string err; const size_t n = md::fcsdef::SetMany(*g.edits, ids, g.bulk_field, g.bulk_value, err);
+            g.status = "set in " + std::to_string(n) + " of " + std::to_string(ids.size()) + (err.empty() ? "" : "; " + err); Refresh();
+        }
+    }
+    if (!g.selected.empty() && ImGui::CollapsingHeader("Referenced by")) {
+        for (const md::fcsdef::RefHit& r : md::fcsdef::Referencing(*g.edits, g.data, g.selected)) if (ImGui::Selectable((r.name + "   (" + r.category + ")##rb" + r.string_id + r.category).c_str())) Go(r.string_id);
+    }
+    for (const auto& pr : g.problems) {
+        ImGui::PushID(&pr);
+        ImGui::TextColored(pr.level == md::fcsdef::Problem::Error ? ImVec4(1, 0.3f, 0.3f, 1) : ImVec4(1, 0.8f, 0.3f, 1), "%s  %s.%s: %s", pr.level == md::fcsdef::Problem::Error ? "error" : "warning", g.edits->NameOf(pr.record).c_str(), pr.field.c_str(), pr.what.c_str());
+        if (pr.fix != md::fcsdef::Problem::None) { ImGui::SameLine(); if (ImGui::SmallButton(pr.fix == md::fcsdef::Problem::RemoveLink ? "remove link" : "name it")) { md::fcsdef::ApplyFix(*g.edits, pr); g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); ImGui::PopID(); Refresh(); break; } }
+        ImGui::PopID();
+    }
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     std::string cat;
     for (const md::fcsdef::CardField& c : g.card) {
@@ -213,7 +310,7 @@ void Draw() {
         const ImVec4 col = c.edited ? ImVec4(0.5f, 1, 0.5f, 1) : c.changed ? ImVec4(1, 0.85f, 0.4f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);   // green MODIFIED here, yellow set by the data, grey default
         ImGui::TextColored(col, "%s", c.name.c_str());
         ImGui::SameLine(200);
-        const bool editable = c.type == "bool" || c.type == "float" || c.type == "int" || c.type == "string" || c.type == "colour" || c.type == "enum" || c.type == "file";
+        const bool editable = !c.readonly && (c.type == "bool" || c.type == "float" || c.type == "int" || c.type == "string" || c.type == "colour" || c.type == "enum" || c.type == "file");
         ImGui::PushID(c.name.c_str());
         if (editable) {
             static char buf[256]; std::snprintf(buf, sizeof buf, "%s", c.value.c_str());
@@ -263,8 +360,16 @@ void Draw() {
             }
         }
     }
-    if (!g.insts.empty()) {
+    if (!g.selected.empty()) {
+        static char itgt[96] = ""; static float ipos[3] = {0, 0, 0};
         ImGui::SeparatorText("Instances");
+        ImGui::SetNextItemWidth(220); ImGui::InputText("target id##in", itgt, sizeof itgt); ImGui::SameLine(); ImGui::SetNextItemWidth(220); ImGui::InputFloat3("pos##in", ipos); ImGui::SameLine();
+        if (ImGui::Button("Add instance")) {
+            if (!g.edits->Exists(itgt)) g.status = std::string("no record ") + itgt;
+            else { md::fcs::Instance in; in.id = "md" + std::to_string(g.edits->Instances(g.selected).size() + 1) + "_" + std::to_string(g.edits->LastId()); in.target = itgt; for (int k = 0; k < 3; ++k) in.position[k] = ipos[k]; in.rotation[0] = 1; g.edits->SetInstance(g.selected, in); Refresh(); }
+        }
+    }
+    if (!g.insts.empty()) {
         for (const md::fcsdef::CardInstance& c : g.insts) {
             ImGui::PushID(c.id.c_str());
             ImGui::Text("%s  ->  %s   (%.1f, %.1f, %.1f)%s", c.id.c_str(), c.target_name.c_str(), c.pos[0], c.pos[1], c.pos[2], c.states.empty() ? "" : "  [states]");

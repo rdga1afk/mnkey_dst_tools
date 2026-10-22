@@ -12,6 +12,7 @@ namespace md::fcsdef {
 
 struct CardField {
     std::string category, name, type, value, def, description;   // type: bool / float / int / string / colour / enum / file / refs ...
+    bool readonly = false;                                                       // a field outside the schema (shown, kept on save, not editable)
     bool visible = true;                                                         // false when the field's `condition` is not met by the other fields' values
     bool changed = false, edited = false;                                        // the record sets it (differs from the schema default)
 };

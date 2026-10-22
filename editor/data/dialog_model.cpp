@@ -9,7 +9,7 @@ namespace md::fcsdef {
 
 namespace {
 
-constexpr int kMaxTextVariants = 16;
+constexpr int kMaxTextVariants = 64;   // text0..text33 exist in the shipped data
 
 Section* FindSectionFor(Schema& s, const char* type) {
     for (Section& sec : s.sections) for (const std::string& t : sec.types) if (t == type) return &sec;
@@ -58,12 +58,6 @@ void AddDialogActionFields(Schema& s) {
     for (const char* n : {"condition name", "action name", "compare by", "who", "tag", "action value"})
         if (!HasField(s, "DIALOG_ACTION", n)) a->fields.push_back(IntField(n, "Base"));
     if (!HasField(s, "DIALOG_ACTION", "stringvar")) { Field f; f.name = "stringvar"; f.category = "Base"; f.kind = FieldKind::String; a->fields.push_back(f); }
-    if (Section* l = FindSectionFor(s, "DIALOGUE_LINE"))   // text0 is described and `looped`; the variants after it are not
-        for (int i = 1; i < kMaxTextVariants; ++i) {
-            std::string n = "text" + std::to_string(i);
-            if (HasField(s, "DIALOGUE_LINE", n)) continue;
-            Field f; f.name = n; f.category = "text"; f.kind = FieldKind::String; f.multiline = true; l->fields.push_back(f);
-        }
 }
 
 int AddCodeEnums(Schema& s, const std::string& path_in) {
@@ -110,13 +104,21 @@ bool DialogModel::StrOf(const std::string& sid, const std::string& field, std::s
     return false;
 }
 
+// `compare by`: a number, or in old files the text `==` / `<` / `>` (FCS_SCHEMA section 8)
+int DialogModel::CompareOf(const std::string& sid) const {
+    std::string s;
+    if (!ed_.Edited(sid, "compare by") && StrOf(sid, "compare by", s)) return s == "<" ? 1 : s == ">" ? 2 : 0;
+    return IntOf(sid, "compare by");
+}
+
 DialogAction DialogModel::Describe(const std::string& sid) const {
     DialogAction a; a.sid = sid;
     const int cond = IntOf(sid, "condition name"), act = IntOf(sid, "action name");
+    const int cmp = CompareOf(sid);
     if (cond) {
         a.what = EnumName("DialogConditionEnum", cond);
         std::string sv; StrOf(sid, "stringvar", sv);
-        a.detail = EnumName("TalkerEnum", IntOf(sid, "who")) + " " + EnumName("ComparisonEnum", IntOf(sid, "compare by")) + " " + std::to_string(IntOf(sid, "tag"));
+        a.detail = EnumName("TalkerEnum", IntOf(sid, "who")) + " " + EnumName("ComparisonEnum", cmp) + " " + std::to_string(IntOf(sid, "tag"));
         if (!sv.empty()) a.detail += " \"" + sv + "\"";
     } else {
         a.what = EnumName("DialogActionEnum", act);

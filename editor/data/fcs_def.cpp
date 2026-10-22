@@ -161,6 +161,16 @@ std::vector<const Field*> Schema::FieldsOf(const std::string& item_type) const {
     return r;
 }
 
+const Field* Schema::FindField(const std::string& item_type, const std::string& name) const {
+    const auto fields = FieldsOf(item_type);
+    for (const Field* f : fields) if (f->name == name) return f;
+    size_t e = name.size(); while (e > 0 && isdigit((unsigned char)name[e - 1])) --e;
+    if (e == name.size() || e == 0) return nullptr;
+    const std::string first = name.substr(0, e) + "0";
+    for (const Field* f : fields) if (f->name == first && f->looped) return f;
+    return nullptr;
+}
+
 bool ParseText(const std::string& text, Schema& out, std::string& err) {
     std::istringstream in(text);
     std::string raw;

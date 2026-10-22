@@ -69,6 +69,8 @@ public:
     // Drops what a mod does not need: new records that are also removed, links to records that do not exist any more (new links only; a base link is removed with a marker),
     // and empty layer entries. Returns the number of things dropped. One undo step.
     size_t Cleanup();
+    // FCS «Clean»: drops from the layer the fields and link categories the schema does not describe (a looped variant is described by its stem0). One undo step.
+    size_t CleanOutsideSchema();
     std::vector<std::string> NewRecords() const;
     std::vector<std::string> RemovedRecords() const;
     std::vector<std::string> TouchedRecords() const;                                 // every record with any change, for the writer

@@ -1,4 +1,6 @@
 #include "data_browser.h"
+#include <map>
+#include <type_traits>
 #include <algorithm>
 #include <cstdio>
 #include <sstream>
@@ -18,8 +20,7 @@ const char* TypeName(FieldKind k) {
 std::string Num(float f) { char b[32]; std::snprintf(b, sizeof b, "%g", f); return b; }
 
 const Field* FindField(const Schema& s, const std::string& type_name, const std::string& name) {
-    for (const Field* f : s.FieldsOf(type_name)) if (f->name == name) return f;
-    return nullptr;
+    return s.FindField(type_name, name);
 }
 
 // the integer an enum value name stands for; false when the enum or the name is unknown
@@ -168,6 +169,42 @@ std::vector<CardField> DataBrowser::Card(const std::string& string_id) const {
     }
     size_t i = 0;
     for (const Field* f : schema_.FieldsOf(md::fcs::ItemTypeName(rec->kind))) { if (!f->condition.empty()) card[i].visible = EvalCondition(f->condition, card); ++i; }
+    // looped variants (text1, text2 ...: FCS_SCHEMA section 8) right after their stem, and what the schema does not describe at the end, read-only
+    const char* type = md::fcs::ItemTypeName(rec->kind);
+    std::map<std::string, std::vector<std::string>> variants;   // stem0 -> variant names
+    std::vector<CardField> outside;
+    auto scan = [&](const auto& m, const char* vt) {
+        for (const auto& kv : m) {
+            const Field* f = schema_.FindField(type, kv.first);
+            if (f && f->name != kv.first) { variants[f->name].push_back(kv.first); continue; }
+            if (f) continue;
+            CardField c; c.category = "Other fields (outside schema)"; c.name = kv.first; c.type = vt; c.readonly = true; c.changed = true;
+            if constexpr (std::is_same_v<std::decay_t<decltype(kv.second)>, bool>) c.value = kv.second ? "true" : "false";
+            else if constexpr (std::is_same_v<std::decay_t<decltype(kv.second)>, float>) c.value = Num(kv.second);
+            else if constexpr (std::is_same_v<std::decay_t<decltype(kv.second)>, int32_t>) c.value = std::to_string(kv.second);
+            else if constexpr (std::is_same_v<std::decay_t<decltype(kv.second)>, std::string>) c.value = kv.second;
+            else { char b[96]; std::snprintf(b, sizeof b, "%g %g %g", (double)kv.second[0], (double)kv.second[1], (double)kv.second[2]); c.value = b; }
+            outside.push_back(std::move(c));
+        }
+    };
+    scan(rec->bools, "bool"); scan(rec->floats, "float"); scan(rec->ints, "int"); scan(rec->strings, "string"); scan(rec->files, "file"); scan(rec->vec3s, "vec3"); scan(rec->vec4s, "vec4");
+    if (edits_) for (const auto& kv : edits_->FieldLayer(string_id)) { const Field* f = schema_.FindField(type, kv.first); if (f && f->name != kv.first && !rec->strings.count(kv.first) && !rec->ints.count(kv.first) && !rec->floats.count(kv.first) && !rec->bools.count(kv.first) && !rec->files.count(kv.first)) variants[f->name].push_back(kv.first); }
+    for (const auto& r : rec->references) if (!schema_.FindField(type, r.first)) { CardField c; c.category = "Other fields (outside schema)"; c.name = r.first; c.type = "refs"; c.readonly = true; c.changed = true; c.value = std::to_string(r.second.size()) + " links"; outside.push_back(std::move(c)); }
+    if (!variants.empty()) {
+        std::vector<CardField> out;
+        for (CardField& c : card) {
+            out.push_back(c);
+            auto v = variants.find(c.name); if (v == variants.end()) continue;
+            std::sort(v->second.begin(), v->second.end(), [](const std::string& a, const std::string& b) { return a.size() != b.size() ? a.size() < b.size() : a < b; });
+            for (const std::string& name : v->second) {
+                CardField x = c; x.name = name; x.value.clear(); FieldText(*rec, name, x.value);
+                x.edited = edits_ && edits_->StateOf(string_id, name) == FieldState::Modified; x.changed = true; x.def.clear();
+                out.push_back(std::move(x));
+            }
+        }
+        card = std::move(out);
+    }
+    for (CardField& c : outside) card.push_back(std::move(c));
     return card;
 }
 

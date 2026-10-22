@@ -7,8 +7,7 @@ namespace md::fcsdef {
 namespace {
 
 const Field* FieldOf(const Schema& s, int32_t kind, const std::string& name) {
-    for (const Field* f : s.FieldsOf(md::fcs::ItemTypeName(kind))) if (f->name == name) return f;
-    return nullptr;
+    return s.FindField(md::fcs::ItemTypeName(kind), name);
 }
 
 }  // namespace
