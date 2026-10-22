@@ -411,6 +411,11 @@ void DrawItemWin() {
     if (!g.selected.empty() && g.edits->StateOfRecord(g.selected) == md::fcsdef::RecordState::Removed) { if (ImGui::Button("Restore")) { g.edits->Restore(g.selected); RefreshRows(); } }
     ImGui::Checkbox("only fields set by the data", &g.only_changed); ImGui::SameLine(); ImGui::Checkbox("hidden by conditions", &g.show_hidden);
     if (!g.selected.empty()) { const std::string owner = g.edits->OwnerOf(g.selected); if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); } }
+    constexpr float kSplit1 = 498, kSplit2 = 297;   // itemproperties: horizontal split (top | description), vertical split (grid | reference lists)
+    Dump("split|Item|split1|" + std::to_string((int)kSplit1)); Dump("split|Item|split2|" + std::to_string((int)kSplit2));
+    static std::string s_field;   // the field shown in the bottom pane
+    ImGui::BeginChild("kd_item_top", ImVec2(0, kSplit1 - ImGui::GetCursorPosY()), false);
+    ImGui::BeginChild("kd_grid", ImVec2(kSplit2, 0), true);
     if (!g.selected.empty()) {
         const md::fcs::GameData* rec = g.data.Get(g.selected);
         if (rec && rec->source < g.data.files.size()) ImGui::TextDisabled("defined in %s%s", g.data.files[rec->source].c_str(), g.data.files[rec->source] == "gamedata.base" || rec->source + 1 < g.data.files.size() ? "  (LOCKED: edits go to your mod as changes)" : "");
@@ -423,12 +428,13 @@ void DrawItemWin() {
         if (c.category != cat) { cat = c.category; ImGui::SeparatorText(cat.c_str()); }
         const ImVec4 col = c.edited ? ImVec4(0.5f, 1, 0.5f, 1) : c.changed ? ImVec4(1, 0.85f, 0.4f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);   // green MODIFIED here, yellow set by the data, grey default
         ImGui::TextColored(col, "%s", c.name.c_str());
-        ImGui::SameLine(200);
+        if (ImGui::IsItemHovered() || ImGui::IsItemClicked()) s_field = c.name;
+        ImGui::SameLine(110);
         const bool editable = !c.readonly && (c.type == "bool" || c.type == "float" || c.type == "int" || c.type == "string" || c.type == "colour" || c.type == "enum" || c.type == "file");
         ImGui::PushID(c.name.c_str());
         if (editable) {
             static char buf[256]; std::snprintf(buf, sizeof buf, "%s", c.value.c_str());
-            ImGui::SetNextItemWidth(340);
+            ImGui::SetNextItemWidth(-1);
             if (ImGui::InputText("##v", buf, sizeof buf, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
                 std::string err;
                 if (g.edits->Set(g.selected, c.name, buf, err)) g.status.clear(); else g.status = c.name + ": " + err;
@@ -451,8 +457,6 @@ void DrawItemWin() {
             if (c.value.size() > 60 && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", c.value.c_str());
         }
         ImGui::PopID();
-        ImGui::SameLine(640); ImGui::TextDisabled("%s  (default %s)", c.type.c_str(), c.def.c_str());
-        if (ImGui::IsItemHovered() && !c.description.empty()) ImGui::SetTooltip("%s", c.description.c_str());
     }
     {   // links of the reference fields that have any: remove, change v0..v2, add by target id
         static char tgt[96] = ""; static int vals[3] = {0, 0, 0}; static int add_field = 0;
@@ -509,9 +513,18 @@ void DrawItemWin() {
         }
     }
     if (!g.selected.empty()) { const int k = g.edits->KindOf(g.selected); if (k == md::fcsdef::kItemDialogue || k == md::fcsdef::kItemDialogueLine || k == md::fcsdef::kItemDialoguePackage) DrawDialogue(k); }
-    if (g.show_refs && !g.selected.empty() && ImGui::CollapsingHeader("Referenced by")) {
+    ImGui::EndChild();   // kd_grid
+    ImGui::SameLine(0, 0);
+    ImGui::BeginChild("kd_refs", ImVec2(0, 0), true);
+    if (g.show_refs && !g.selected.empty()) {
         for (const md::fcsdef::RefHit& r : md::fcsdef::Referencing(*g.edits, g.data, g.selected)) if (ImGui::Selectable((r.name + "   (" + r.category + ")##rb" + r.string_id + r.category).c_str())) Go(r.string_id);
     }
+    ImGui::EndChild();
+    ImGui::EndChild();   // kd_item_top
+    ImGui::BeginChild("kd_item_desc", ImVec2(0, 0), false);
+    ImGui::TextUnformatted("Selected Item");
+    for (const md::fcsdef::CardField& c : g.card) if (c.name == s_field) { ImGui::SameLine(); ImGui::TextDisabled("%s  (%s, default %s)", c.name.c_str(), c.type.c_str(), c.def.c_str()); ImGui::TextWrapped("%s", c.description.c_str()); break; }
+    ImGui::EndChild();
     ImGui::End();
 }
 
