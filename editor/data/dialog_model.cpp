@@ -68,8 +68,11 @@ void AddDialogActionFields(Schema& s) {
 
 int AddCodeEnums(Schema& s, const std::string& path_in) {
     std::string path = path_in;
-    if (path.empty()) { const char* e = getenv("MD_FCS_CODE_ENUMS"); path = e ? e : "docs/research/kenshi_specs/fcs_code_enums.json"; }
-    std::ifstream in(path); if (!in) return 0;
+    std::ifstream in;
+    if (!path.empty()) in.open(path);
+    else if (const char* e = getenv("MD_FCS_ENUMS")) in.open(e);
+    else for (const char* d : {"../docs/research/kenshi_specs/fcs_code_enums.json", "docs/research/kenshi_specs/fcs_code_enums.json"}) { in.open(d); if (in) break; in.clear(); }   // next to the private main repo, when tools is built inside it
+    if (!in) return 0;
     std::stringstream ss; ss << in.rdbuf();
     std::vector<EnumDef> defs; if (!ParseCodeEnums(ss.str(), defs)) return 0;
     int n = 0;

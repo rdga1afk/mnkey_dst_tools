@@ -16,8 +16,7 @@ constexpr int kItemDialogue = 18, kItemDialogueLine = 19, kItemDialogAction = 31
 
 // Fields the .def files do not describe for DIALOG_ACTION (they live in code): added to the schema so the edit layer can set them. No-op when the schema has them.
 void AddDialogActionFields(Schema& s);
-// The enums that live in the FCS code (not in fcs_enums.def): values from a JSON map {"Enum": [["NAME", value], ...]}, found by MD_FCS_CODE_ENUMS or
-// docs/research/kenshi_specs/fcs_code_enums.json; they also complete `enum shared` ones. Returns the number of enums added / completed (0 when no file).
+// The enums that live in the FCS code (not in fcs_enums.def): values from a JSON map {"Enum": [["NAME", value], ...]}, found by MD_FCS_ENUMS, else ../docs/research/kenshi_specs/fcs_code_enums.json (tools built inside the private main repo); they also complete `enum shared` ones. Returns the number of enums added / completed (0 when no file).
 int AddCodeEnums(Schema& s, const std::string& path = "");
 
 struct DialogAction { std::string sid; std::string what; std::string detail; };   // `what`: the condition / action enum name; detail: who, compare, value

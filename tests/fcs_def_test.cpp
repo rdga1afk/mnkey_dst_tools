@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <functional>
+#include <map>
+#include <tuple>
 #include <set>
 #include <monkey_dust/io/fcs.h>
 #include <cstdint>
@@ -205,6 +207,33 @@ static void RealDialogTest(const std::string& kd, Schema& schema) {
     CHECK(found);
     std::printf("F6 real: edited dialogue round-trips through the mod (%lld bytes, %zu records)\n", (long long)std::filesystem::file_size(path), back.records.size());
     std::filesystem::remove(path);
+}
+
+// MD_FCS_LIST_UNDESCRIBED=<file>: every (item type, field, value type) of gamedata.base that the schema does not describe, with a count and an example
+static void ListUndescribed(const std::string& kd, const Schema& schema, const char* out_path) {
+    md::fcs::File file; md::fcs::Error e;
+    if (!md::fcs::ReadFile(kd + "/data/gamedata.base", file, e)) return;
+    struct Row { size_t n = 0; std::string example; };
+    std::map<std::tuple<std::string, std::string, std::string>, Row> rows;
+    for (const md::fcs::Record& r : file.records) {
+        const std::string type = md::fcs::ItemTypeName(r.kind);
+        std::set<std::string> known; for (const Field* f : schema.FieldsOf(type)) known.insert(f->name);
+        auto add = [&](const std::string& name, const char* vt, const std::string& ex) { if (known.count(name)) return; Row& row = rows[{type, name, vt}]; if (!row.n++) row.example = r.string_id + " = " + ex; };
+        char b[48];
+        for (const auto& kv : r.bools) add(kv.first, "bool", kv.second ? "true" : "false");
+        for (const auto& kv : r.floats) { std::snprintf(b, sizeof b, "%g", kv.second); add(kv.first, "float", b); }
+        for (const auto& kv : r.ints) add(kv.first, "int", std::to_string(kv.second));
+        for (const auto& kv : r.vec3s) { std::snprintf(b, sizeof b, "%g %g %g", kv.second[0], kv.second[1], kv.second[2]); add(kv.first, "vec3", b); }
+        for (const auto& kv : r.vec4s) { std::snprintf(b, sizeof b, "%g %g %g %g", kv.second[0], kv.second[1], kv.second[2], kv.second[3]); add(kv.first, "vec4", b); }
+        for (const auto& kv : r.strings) add(kv.first, "string", kv.second.substr(0, 40));
+        for (const auto& kv : r.files) add(kv.first, "file", kv.second.substr(0, 40));
+        for (const auto& kv : r.references) add(kv.first, "refs", kv.second.empty() ? "" : kv.second[0].target);
+    }
+    FILE* o = std::fopen(out_path, "w"); if (!o) return;
+    std::fprintf(o, "item type\tfield\tvalue type\trecords\texample\n");
+    for (const auto& [k, v] : rows) std::fprintf(o, "%s\t%s\t%s\t%zu\t%s\n", std::get<0>(k).c_str(), std::get<1>(k).c_str(), std::get<2>(k).c_str(), v.n, v.example.c_str());
+    std::fclose(o);
+    std::printf("undescribed (type, field, value type) in gamedata.base: %zu -> %s\n", rows.size(), out_path);
 }
 
 static void BrowserTest() {
@@ -437,6 +466,7 @@ int main() {
         if (LoadDir(kd, real, err)) {
             size_t nf = 0, kinds[10] = {};
             for (const Section& sec : real.sections) { nf += sec.fields.size(); for (const Field& fl : sec.fields) ++kinds[(int)fl.kind]; }
+            if (const char* lp = std::getenv("MD_FCS_LIST_UNDESCRIBED")) ListUndescribed(kd, real, lp);
             RealCardTest(kd, real); RealWriteTest(kd, real); RealDialogTest(kd, real);
             std::printf("real files: %zu sections, %zu fields (bool %zu float %zu int %zu string %zu colour %zu enum %zu null %zu file %zu reflist %zu refstring %zu), %zu enums, %zu top layout nodes\n",
                         real.sections.size(), nf, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], kinds[6], kinds[7], kinds[8], kinds[9], real.enums.size(), real.layout.size());
