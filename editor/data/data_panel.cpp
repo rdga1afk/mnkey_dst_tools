@@ -38,10 +38,11 @@ struct State {
     char import_path[512] = "";
     std::vector<md::fcsdef::Hit> hits;
     std::vector<md::fcsdef::Problem> problems;
-    char mod_name[64] = "md_test", mod_author[64] = "md", mod_desc[256] = "made with the md editor", mod_deps[256] = "gamedata.base";
+    char mod_name[64] = "md_test", mod_author[64] = "md", mod_desc[256] = "made with the md editor", mod_deps[256] = "gamedata.base", mod_refs[256] = "";
     std::vector<std::string> hist; int hpos = -1;   // navigation history (Back / Forward)
     char repl_find[128] = "", repl_with[128] = "", bulk_field[64] = "", bulk_value[128] = "", columns[128] = "";
     std::vector<md::fcsdef::ReplaceHit> repl_hits;
+    std::vector<md::fcs::LoadEntry> mods;           // the installed mods in load order (core files excluded): the «Load mod» list
 } g;
 
 void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
@@ -55,6 +56,7 @@ void Load() {
     md::fcs::Install inst(dir);
     md::fcs::LoadOrder order; md::fcs::Error err;
     if (!inst.LoadOrderFor(order, err) || !g.data.Load(order, err)) { g.error = err.Message(); return; }
+    for (const md::fcs::LoadEntry& e : order.files) if (!e.core) g.mods.push_back(e);
     g.browser = std::make_unique<md::fcsdef::DataBrowser>(g.schema, g.data);
     g.edits = std::make_unique<md::fcsdef::EditSession>(g.schema, g.data);
     g.browser->SetEdits(g.edits.get());
@@ -225,6 +227,8 @@ void Draw() {
         if (o) { const std::string t = md::fcsdef::MakePot(ex); std::fwrite(t.data(), 1, t.size(), o); std::fclose(o); g.status = "wrote temp_/md_mods/gamedata.pot (" + std::to_string(ex.size()) + " strings)"; } else g.status = "cannot write the .pot";
     }
     ImGui::SameLine(); if (ImGui::Button("Clean")) { const size_t n = g.edits->CleanOutsideSchema(); g.status = "clean dropped " + std::to_string(n) + " (fields outside the schema)"; Refresh(); }
+    ImGui::SameLine(); ImGui::SetNextItemWidth(140);
+    if (ImGui::BeginCombo("##loadmod", "Load mod")) { for (const md::fcs::LoadEntry& m : g.mods) if (ImGui::Selectable(m.name.c_str())) std::snprintf(g.import_path, sizeof g.import_path, "%s", m.path.c_str()); ImGui::EndCombo(); }
     ImGui::SameLine(); ImGui::SetNextItemWidth(220); ImGui::InputTextWithHint("##imp", "mod file to merge in", g.import_path, sizeof g.import_path);
     ImGui::SameLine();
     if (ImGui::Button("Merge")) {
@@ -241,7 +245,7 @@ void Draw() {
         if (errors) g.status = "not saved: fix the errors listed below";
         else {
             std::filesystem::create_directories("temp_/md_mods");
-            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps;
+            std::string err; md::fcsdef::ModInfo info; info.author = g.mod_author; info.description = g.mod_desc; info.dependencies = g.mod_deps; info.references = g.mod_refs;
             const std::string path = std::string("temp_/md_mods/") + g.mod_name + ".mod";
             if (md::fcsdef::WriteMod(path, *g.edits, g.schema, info, err, md::KenshiDir() + "/data")) g.status = "saved " + path; else g.status = "save failed: " + err;
         }
@@ -263,6 +267,7 @@ void Draw() {
         ImGui::SetNextItemWidth(120); ImGui::InputText("author##mi", g.mod_author, sizeof g.mod_author);
         ImGui::SetNextItemWidth(500); ImGui::InputText("description##mi", g.mod_desc, sizeof g.mod_desc);
         ImGui::SetNextItemWidth(500); ImGui::InputText("dependencies##mi", g.mod_deps, sizeof g.mod_deps);
+        ImGui::SetNextItemWidth(500); ImGui::InputText("referenced (not required)##mi", g.mod_refs, sizeof g.mod_refs);
         if (ImGui::Button("New mod (discard edits)")) NewMod();
         ImGui::SameLine(); ImGui::TextDisabled("saves to temp_/md_mods/%s.mod", g.mod_name);
     }
@@ -302,6 +307,11 @@ void Draw() {
         ImGui::PopID();
     }
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
+    if (!g.selected.empty()) {
+        const md::fcs::GameData* rec = g.data.Get(g.selected);
+        if (rec && rec->source < g.data.files.size()) ImGui::TextDisabled("defined in %s%s", g.data.files[rec->source].c_str(), g.data.files[rec->source] == "gamedata.base" || rec->source + 1 < g.data.files.size() ? "  (LOCKED: edits go to your mod as changes)" : "");
+        else if (g.edits->StateOfRecord(g.selected) == md::fcsdef::RecordState::New) ImGui::TextDisabled("new record of your mod");
+    }
     std::string cat;
     for (const md::fcsdef::CardField& c : g.card) {
         if (g.only_changed && !c.changed && !c.edited) continue;
@@ -372,7 +382,13 @@ void Draw() {
     if (!g.insts.empty()) {
         for (const md::fcsdef::CardInstance& c : g.insts) {
             ImGui::PushID(c.id.c_str());
-            ImGui::Text("%s  ->  %s   (%.1f, %.1f, %.1f)%s", c.id.c_str(), c.target_name.c_str(), c.pos[0], c.pos[1], c.pos[2], c.states.empty() ? "" : "  [states]");
+            ImGui::Text("%s  ->  %s%s", c.id.c_str(), c.target_name.c_str(), c.states.empty() ? "" : "  [states]");
+            float pos[3] = { c.pos[0], c.pos[1], c.pos[2] };
+            ImGui::SameLine(300); ImGui::SetNextItemWidth(260);
+            if (ImGui::InputFloat3("##ip", pos, "%.1f", ImGuiInputTextFlags_EnterReturnsTrue)) {
+                for (md::fcs::Instance in : g.edits->Instances(g.selected)) if (in.id == c.id) { for (int k = 0; k < 3; ++k) in.position[k] = pos[k]; g.edits->SetInstance(g.selected, in); break; }
+                Refresh();
+            }
             ImGui::SameLine(); if (ImGui::SmallButton("x")) { g.edits->RemoveInstance(g.selected, c.id); Refresh(); }
             ImGui::PopID();
         }

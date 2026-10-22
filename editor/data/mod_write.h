@@ -8,6 +8,7 @@ namespace md::fcsdef {
 
 struct ModInfo {
     std::string author = "md", description, dependencies = "gamedata.base";   // dependencies: comma separated file names this mod builds on
+    std::string references;   // comma separated file names referenced but not required (header `references`)
     int32_t version = 1;
 };
 

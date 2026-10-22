@@ -15,7 +15,7 @@ const Field* FieldOf(const Schema& s, int32_t kind, const std::string& name) {
 md::fcs::File BuildMod(const EditSession& ed, const Schema& schema, const ModInfo& info) {
     md::fcs::File f;
     md::fcs::Header& h = f.header;
-    h.filetype = md::fcs::FILETYPE_V17; h.version = info.version; h.author = info.author; h.description = info.description; h.dependencies = info.dependencies;
+    h.filetype = md::fcs::FILETYPE_V17; h.version = info.version; h.author = info.author; h.description = info.description; h.dependencies = info.dependencies; h.references = info.references;
     h.tail = { 1, 0, 0, 0, 0, 0, 0, 0, 0 };   // SaveCounter 1, last merge 0, no merge info (as Dialogue.mod)
     h.id_counter = ed.LastId();
     const std::vector<std::string> created = ed.NewRecords();   // sorted (a std::map's keys)
