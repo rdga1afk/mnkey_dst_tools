@@ -19,6 +19,15 @@ target_link_libraries(md_session_synthetic_test PRIVATE md_character)
 set_target_properties(md_session_synthetic_test PROPERTIES CXX_STANDARD 17)
 add_test(NAME session_synthetic COMMAND md_session_synthetic_test)
 
+# #196: reader of the FCS .def files (editor/data/fcs_def.*), tested on synthetic mini files: ninja md_fcs_def_test && ctest -R fcs_def (KENSHI_DIR set: also parses the install's real files)
+add_library(md_fcs_def STATIC editor/data/fcs_def.cpp)
+target_include_directories(md_fcs_def PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor/data)
+set_target_properties(md_fcs_def PROPERTIES CXX_STANDARD 17)
+add_executable(md_fcs_def_test tests/fcs_def_test.cpp)
+target_link_libraries(md_fcs_def_test PRIVATE md_fcs_def)
+set_target_properties(md_fcs_def_test PROPERTIES CXX_STANDARD 17)
+add_test(NAME fcs_def COMMAND md_fcs_def_test)
+
 # ── #189 B: libraries shared by the game and the editor ───────────────────────────────────────────────────────────────────────────────────────────
 # Built here (or prebuilt by this repo's CI as a package, MonkeyDustTools): the game (private main repo) links them instead of compiling ~30 ImGui / panel
 # translation units itself. md_ui_third_party = Dear ImGui + backends + its extensions; md_game_panels = the editor panels as the game embeds them
