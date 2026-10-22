@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <string>
@@ -34,7 +35,9 @@ using namespace md::character;
 struct Vtx { float px, py, pz, nx, ny, nz, u, v; uint8_t ji[4]; float wt[4]; };
 struct VU { float mvp[16]; };
 struct VU2 { float mv[16]; };
-bool g_kenshi_light = false;   // view * model of the body: view-space lighting
+bool g_kenshi_light = false;
+GpuTexture g_mask_body, g_mask_head, g_nrm_body, g_nrm_head, g_tex_white;   // skin-tone masks and tangent-space normal maps next to the diffuse textures (Character_FP maskMap / normalMap / headMaskMap / headNormalMap)
+bool g_have_nrm_body = false, g_have_nrm_head = false;   // view * model of the body: view-space lighting
 
 Session* g_session = nullptr;
 std::unique_ptr<md::render_backend::SdlGpuBackend> g_backend;
@@ -107,7 +110,7 @@ bool CreatePipelines() {
     pd.layout.attribs[0] = {0, 0, GpuAttribFmt::F3}; pd.layout.attribs[1] = {1, 12, GpuAttribFmt::F3}; pd.layout.attribs[2] = {2, 24, GpuAttribFmt::F2};
     pd.layout.attribs[3] = {3, 32, GpuAttribFmt::U8x4}; pd.layout.attribs[4] = {4, 36, GpuAttribFmt::F4};
     pd.raster.depth_test = true; pd.raster.depth_write = true; pd.raster.cull_back = true;
-    pd.vert_uniform_bufs = 3; pd.vert_samplers = 0; pd.frag_samplers = 6; pd.frag_uniform_bufs = 1;
+    pd.vert_uniform_bufs = 3; pd.vert_samplers = 0; pd.frag_samplers = 10; pd.frag_uniform_bufs = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; pd.has_depth_target = true;
     if (!g_body_pipe.Create(pd)) { fprintf(stderr, "[CharPreview] body pipeline create failed\n"); return false; }
     { const std::string kd = md::KenshiDir(); if (!g_irr_cube.InitFromDDSCube((kd + "/data/materials/mp_irradiance.dds").c_str()) || !g_spec_cube.InitFromDDSCube((kd + "/data/materials/mp_specularity.dds").c_str())) fprintf(stderr, "[CharPreview] environment cubes missing under %s/data/materials\n", kd.c_str()); }
@@ -238,7 +241,17 @@ bool Rebuild() {
     const char* bp = body_tex.c_str(); const char* hp = head_tex.c_str();
     if (body_tex.empty() || !g_tex.InitFromDDSArray(&bp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; g_tex.InitFromMemory(fb, 1, 1, sd); g_error = "body texture not found: " + FileOf(race.id, female ? "body texture female" : "body texture male"); fprintf(stderr, "[CharPreview] %s\n", g_error.c_str()); }
     if (head_tex.empty() || !g_tex_head.InitFromDDSArray(&hp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; g_tex_head.InitFromMemory(fb, 1, 1, sd); g_error = "head texture not found: " + head_tex; fprintf(stderr, "[CharPreview] %s\n", g_error.c_str()); }
-    { GpuSamplerDesc nd; uint8_t z[4] = {0, 0, 0, 0}; if (!g_tex_none.SDLTexture()) g_tex_none.InitFromMemory(z, 1, 1, nd); }
+    { GpuSamplerDesc nd; uint8_t z[4] = {0, 0, 0, 0}; if (!g_tex_none.SDLTexture()) g_tex_none.InitFromMemory(z, 1, 1, nd); uint8_t w[4] = {255, 255, 255, 255}; if (!g_tex_white.SDLTexture()) g_tex_white.InitFromMemory(w, 1, 1, nd); }
+    {   // the textures that go with the diffuse ones are named after them: body_diffuse -> body_mask_HI / body_normal, head_diffuse_HI -> head_mask / head_normal_HI (the head variants share the mask)
+        auto sibling = [](const std::string& path, const char* from, const char* to) { const size_t i = path.find(from); return i == std::string::npos ? std::string() : path.substr(0, i) + to + path.substr(i + strlen(from)); };
+        auto load = [&](GpuTexture& t, std::string path, bool& ok) { const char* p = path.c_str(); ok = !path.empty() && std::filesystem::exists(path) && t.InitFromDDSArray(&p, 1, sd); };
+        bool ok = false;
+        load(g_mask_body, sibling(body_tex, "_diffuse", "_mask_HI"), ok);
+        load(g_nrm_body, sibling(body_tex, "_diffuse", "_normal"), g_have_nrm_body);
+        std::string hm = sibling(head_tex, "_diffuse_HI", "_mask"); if (!std::filesystem::exists(hm)) { const size_t h = head_tex.find("_head_"); hm = h == std::string::npos ? std::string() : head_tex.substr(0, h) + "_head_mask.dds"; }
+        load(g_mask_head, hm, ok);
+        load(g_nrm_head, sibling(head_tex, "_diffuse_HI", "_normal_HI"), g_have_nrm_head);
+    }
     g_vbo.Init(0x8892u, g_base.data(), uint32_t(g_base.size() * sizeof(Vtx)));
     g_ibo.Init(0x8893u, g_body.indices.data(), uint32_t(g_body.indices.size() * sizeof(uint32_t)));
     g_ni = int(g_body.indices.size());
@@ -426,7 +439,7 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         const Attach& ha = g_hair; const Attach& be = g_beard;
         const bool hh = ha.head_ok, bh = be.head_ok;
         struct { float tint[4], colour[4], hair_mult[4], hair_alpha[4], beard_alpha[4], mode[4]; } bu;
-        bu.mode[0] = g_kenshi_light ? 1.f : 0.f; bu.mode[1] = bu.mode[2] = bu.mode[3] = 0.f;
+        bu.mode[0] = g_kenshi_light ? 1.f : 0.f; bu.mode[1] = g_have_nrm_body ? 1.f : 0.f; bu.mode[2] = g_have_nrm_head ? 1.f : 0.f; bu.mode[3] = 0.f;
         memcpy(bu.tint, g_tint, 16);
         bu.colour[0] = hrgb[0]; bu.colour[1] = hrgb[1]; bu.colour[2] = hrgb[2]; bu.colour[3] = 1.f;
         for (int k = 0; k < 4; ++k) { bu.hair_mult[k] = hh ? ha.head_mult[k] : 0.f; bu.hair_alpha[k] = hh ? ha.head_alpha[k] : 0.f; bu.beard_alpha[k] = bh ? be.head_alpha[k] : 0.f; }
@@ -435,8 +448,10 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         SDL_GPUTextureSamplerBinding t[4] = {{g_tex.SDLTexture(), g_tex.SDLSampler()}, {g_tex_head.SDLTexture(), g_tex_head.SDLSampler()},
                                              {hh ? ha.head_tex.SDLTexture() : none, hh ? ha.head_tex.SDLSampler() : nsm},
                                              {bh ? be.head_tex.SDLTexture() : none, bh ? be.head_tex.SDLSampler() : nsm}};
-        SDL_GPUTextureSamplerBinding tb[6] = {t[0], t[1], t[2], t[3], {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}, {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()}};
-        pv.BindFragmentSamplers(0, tb, 6);
+        auto tx = [&](GpuTexture& a, GpuTexture& fallback) { GpuTexture& u = a.SDLTexture() ? a : fallback; return SDL_GPUTextureSamplerBinding{u.SDLTexture(), u.SDLSampler()}; };
+        SDL_GPUTextureSamplerBinding tb[10] = {t[0], t[1], t[2], t[3], {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}, {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()},
+                                               tx(g_mask_body, g_tex_white), tx(g_mask_head, g_tex_white), tx(g_nrm_body, g_tex_none), tx(g_nrm_head, g_tex_none)};
+        pv.BindFragmentSamplers(0, tb, 10);
         pv.DrawIndexed(uint32_t(g_ni), 1, 0, 0, 0);
     }
     if (g_hair_pipe.SDLPipeline()) {
