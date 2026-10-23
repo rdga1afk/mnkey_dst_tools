@@ -63,7 +63,7 @@ def run_logged(cmd, cwd=None, timeout=None, tag=None, env=None):
     try:
         proc = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT),
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               timeout=timeout, text=True, env=env)
+                               timeout=timeout, text=True, errors="replace", env=env)
         log_path.write_text(proc.stdout or "")
         tail = "\n".join((proc.stdout or "").splitlines()[-15:])
         return proc.returncode, log_path, tail
