@@ -24,7 +24,7 @@ inline FILE* Open(const char* label, char* out_path = nullptr, int out_sz = 0) {
         snprintf(out_path, (size_t)out_sz, "%s", path);
     FILE* f = fopen(path, "w");
     if (!f) { fprintf(stderr, "[BugCapture] Cannot create %s\n", path); return nullptr; }
-    fprintf(f, "# monkey_dust BugCapture — %s\n", label);
+    fprintf(f, "# monkeydust BugCapture — %s\n", label);
     fprintf(f, "# %04d-%02d-%02d %02d:%02d:%02d\n\n",
         lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
         lt->tm_hour, lt->tm_min, lt->tm_sec);
