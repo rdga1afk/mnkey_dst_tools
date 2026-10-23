@@ -452,7 +452,7 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         s_props.Init("game/data/props/rock_01.glb", 0.f); // no-op if missing; 0=rock diffuse
         s_terrain.InitKenshiOverlay(op);
         s_terrain.InitGroundTextureArray();
-        s_terrain.InitDetailArray("game/data/terrain_detail_baked"); // КРОК 3, 2026-09-17
+        s_terrain.InitDetailArray("game/data/terrain_detail_baked", 1); // a 1-layer stub, as in the game: no shader reads the array (#138)
         // task #158c: editor's 3D World viewport never called these three —
         // scene_render.cpp (game) does, so terrain_pom.slang's tex_overlay_
         // mask/tex_biome_blend samplers (and, via BakeAlbedo below, the baked
