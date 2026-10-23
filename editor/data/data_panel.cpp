@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <imgui.h>
+#include <monkey_dust/platform/font_loader.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <cstdio>
 #include <cstdlib>
@@ -218,6 +219,29 @@ void Dump(const std::string& line) { s_dump += line + "\n"; }
 
 ImVec2 s_origin;   // top-left of the area below the toolbar: the child windows open relative to it
 
+// WinForms-like look of the original FCS (FCS_UI.md "Global"): light grey chrome, white grids, Microsoft Sans Serif 8.25 pt ~ 11 px -> embedded Arimo at 11 px
+int PushFcsTheme() {
+    struct C { ImGuiCol i; ImVec4 c; };
+    const ImVec4 chrome(0.941f, 0.941f, 0.941f, 1), white(1, 1, 1, 1), black(0, 0, 0, 1), btn(0.882f, 0.882f, 0.882f, 1), hov(0.898f, 0.945f, 0.984f, 1), act(0.800f, 0.894f, 0.969f, 1), line(0.678f, 0.678f, 0.678f, 1);
+    const C cols[] = {
+        { ImGuiCol_Text, black }, { ImGuiCol_TextDisabled, ImVec4(0.427f, 0.427f, 0.427f, 1) },
+        { ImGuiCol_WindowBg, chrome }, { ImGuiCol_ChildBg, white }, { ImGuiCol_PopupBg, white },
+        { ImGuiCol_Border, line }, { ImGuiCol_FrameBg, white }, { ImGuiCol_FrameBgHovered, hov }, { ImGuiCol_FrameBgActive, act },
+        { ImGuiCol_TitleBg, ImVec4(0.600f, 0.706f, 0.843f, 1) }, { ImGuiCol_TitleBgActive, ImVec4(0.000f, 0.471f, 0.843f, 1) }, { ImGuiCol_TitleBgCollapsed, chrome },
+        { ImGuiCol_MenuBarBg, chrome }, { ImGuiCol_ScrollbarBg, ImVec4(0.941f, 0.941f, 0.941f, 1) }, { ImGuiCol_ScrollbarGrab, ImVec4(0.769f, 0.769f, 0.769f, 1) },
+        { ImGuiCol_CheckMark, black }, { ImGuiCol_Button, btn }, { ImGuiCol_ButtonHovered, hov }, { ImGuiCol_ButtonActive, act },
+        { ImGuiCol_Header, ImVec4(0.800f, 0.894f, 0.969f, 1) }, { ImGuiCol_HeaderHovered, hov }, { ImGuiCol_HeaderActive, act },
+        { ImGuiCol_Separator, line }, { ImGuiCol_Tab, chrome }, { ImGuiCol_TabHovered, hov }, { ImGuiCol_TableHeaderBg, chrome },
+        { ImGuiCol_TableBorderStrong, line }, { ImGuiCol_TableBorderLight, ImVec4(0.867f, 0.867f, 0.867f, 1) }, { ImGuiCol_TableRowBgAlt, ImVec4(0.973f, 0.973f, 0.973f, 1) },
+    };
+    for (const C& c : cols) ImGui::PushStyleColor(c.i, c.c);
+    if (MdFonts::regular) ImGui::PushFont(MdFonts::regular, 11.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0); ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 0); ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
+    return (int)(sizeof(cols) / sizeof(cols[0]));
+}
+void PopFcsTheme(int n) { ImGui::PopStyleVar(4); if (MdFonts::regular) ImGui::PopFont(); ImGui::PopStyleColor(n); }
+
 bool BeginWin(bool& open, const char* title, float w, float h, float dx = 40) {
     if (!open) return false;
     Dump(std::string("window|") + title + "|" + std::to_string((int)w) + "|" + std::to_string((int)h));
@@ -344,7 +368,7 @@ void DrawGameWorld() {
             const md::fcsdef::RecordState st = g.edits->StateOfRecord(r.string_id);
             ImGui::TableNextRow(); ImGui::TableNextColumn();
             const bool tint = st != md::fcsdef::RecordState::Original;
-            if (tint) ImGui::PushStyleColor(ImGuiCol_Text, st == md::fcsdef::RecordState::Removed ? ImVec4(0.65f, 0.65f, 0.65f, 1) : st == md::fcsdef::RecordState::New ? ImVec4(0.2f, 0.7f, 0.2f, 1) : ImVec4(0.3f, 0.45f, 1, 1));
+            if (tint) ImGui::PushStyleColor(ImGuiCol_Text, st == md::fcsdef::RecordState::Removed ? ImVec4(0.827f, 0.827f, 0.827f, 1) : st == md::fcsdef::RecordState::New ? ImVec4(0, 0.502f, 0, 1) : ImVec4(0, 0, 1, 1));
             if (ImGui::Selectable((r.name + "##" + r.string_id).c_str(), g.selected == r.string_id, ImGuiSelectableFlags_SpanAllColumns)) Go(r.string_id);
             if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) Go(r.string_id);
             if (ImGui::BeginPopupContextItem()) {
@@ -643,10 +667,12 @@ void Draw() {
     static const char* const dump_path = std::getenv("MD_FCS_LAYOUT_DUMP"); static int dump_frames = 0;
     if (dump_path && dump_frames == 0) g.w_info = g.w_changes = g.w_find = g.w_settings = g.w_assets = g.w_errors = true;
     s_dump.clear();
+    const int theme_n = PushFcsTheme();
     DrawToolbar();
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     s_origin = ImGui::GetCursorScreenPos();
     DrawGameWorld(); DrawItemWin(); DrawInfoWin(); DrawChangesWin(); DrawFindWin(); DrawSettingsWin(); DrawAssetsWin(); DrawErrorsWin();
+    PopFcsTheme(theme_n);
     if (dump_path && ++dump_frames == 5) { if (FILE* o = std::fopen(dump_path, "wb")) { std::fwrite(s_dump.data(), 1, s_dump.size(), o); std::fclose(o); } }
 }
 
