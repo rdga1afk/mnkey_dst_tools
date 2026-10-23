@@ -35,7 +35,7 @@ using namespace md::character;
 struct Vtx { float px, py, pz, nx, ny, nz, u, v; uint8_t ji[4]; float wt[4]; float tx, ty, tz, bx, by, bz; };
 struct VU { float mvp[16]; };
 struct VU2 { float mv[16]; };
-bool g_kenshi_light = false;
+bool g_kenshi_light = true;   // default ON (owner 23.10, #201 R3e option A): Kenshi character-screen lighting + SandyGround.dds
 GpuTexture g_bg_sandy;   // gui/gfx/SandyGround.dds
 GpuTexture g_mask_body, g_mask_head, g_nrm_body, g_nrm_head, g_tex_white;   // skin-tone masks and tangent-space normal maps next to the diffuse textures (Character_FP maskMap / normalMap / headMaskMap / headNormalMap)
 bool g_have_nrm_body = false, g_have_nrm_head = false;   // view * model of the body: view-space lighting
