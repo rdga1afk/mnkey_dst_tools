@@ -50,8 +50,10 @@ void EditorW3D_UploadTerrainHeightmap(const float* hmap, int W, int H,
     WorldEditor3D_SDLGPU::UploadTerrainHeightmap(hmap, W, H, world_size_m, chunk_x, chunk_z);
 }
 
+extern const char* const md_tools_build_title;   // generated at build time: cmake/build_info.cmake (tools repo hash)
+
 // ──────────────────────────────────────────────────────────────────────────────
-// monkey_dust EDITOR v1.0 — SDL_GPU (Vulkan) backend.
+// monkeydust tools — SDL_GPU (Vulkan) backend.
 // Tabs: Items | Factions | NPCs | World | 3D World | Characters | Settings
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -104,7 +106,8 @@ int main(int argc, char** argv) {
     if (ov) s_overlay_top = (float)atof(ov);
 
     // ── Window ────────────────────────────────────────────────────────────────
-    window_init(0, 0, "monkey_dust EDITOR v1.0");
+    fprintf(stderr, "[monkeydust] %s\n", md_tools_build_title);
+    window_init(0, 0, md_tools_build_title);
     input_init();
     {
         int ww, wh;

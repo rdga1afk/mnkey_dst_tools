@@ -122,7 +122,17 @@ set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/fonts_embed.cpp PROPERTI
     COMPILE_DEFINITIONS "MD_FONT_DIR=\"${MD_FONT_DIR}\""
     OBJECT_DEPENDS "${MD_FONT_TTFS}")
 
+# The editor has its own version, independent of the game: "monkeydust tools v<MAJOR.MINOR> · <dd.mm> · <tools hash>[-dirty]" (generated at build time like the game title, cmake/build_info.cmake).
+# Milestones: v0.8 F8 visual parity of the FCS tab, v0.9 character editor 1:1 (#192), v1.0 FCS 1:1 complete.
+set(MD_TOOLS_VERSION 0.7)
+set(MD_TOOLS_BUILD_INFO_CPP ${CMAKE_BINARY_DIR}/generated/tools_build_info.cpp)
+add_custom_target(md_tools_build_info
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/tools -DOUT=${MD_TOOLS_BUILD_INFO_CPP} -DVER=${MD_TOOLS_VERSION} "-DNAME=monkeydust tools" -DSYM=md_tools_build -P ${CMAKE_SOURCE_DIR}/cmake/build_info.cmake
+    BYPRODUCTS ${MD_TOOLS_BUILD_INFO_CPP}
+    COMMENT "tools build info")
+
 add_executable(monkey_dust_editor
+    ${MD_TOOLS_BUILD_INFO_CPP}
     editor/main.cpp
     fonts_embed.cpp
     # Header-only files: listed here so ninja tracks them and rebuilds on change
@@ -143,6 +153,7 @@ add_executable(monkey_dust_editor
     ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_canvas.cpp
     ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/crude_json.cpp
 )
+add_dependencies(monkey_dust_editor md_tools_build_info)
 target_compile_definitions(monkey_dust_editor PRIVATE
     MONKEY_DUST_STANDALONE_EDITOR
     MONKEY_DUST_EDITOR
