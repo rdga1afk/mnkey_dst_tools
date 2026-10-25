@@ -48,7 +48,7 @@ struct State {
     int autosave_min = 5; double last_autosave = 0;   // FCS settings: autosave interval in minutes (0 = off)
     std::vector<md::fcsdef::AssetRow> assets; bool assets_ready = false;
     std::vector<md::fcs::LoadEntry> mods;           // the installed mods in load order (core files excluded): the «Load mod» list
-    bool w_world = true, w_item = true, w_info = false, w_changes = false, w_find = false, w_settings = false, w_assets = false, w_errors = false, show_refs = true;   // child windows of the main shell
+    bool w_world = true, w_item = true, w_info = false, w_changes = false, w_find = false, w_settings = false, w_assets = false, w_errors = false, w_conv = false, w_pkg = false, show_refs = true;   // child windows of the main shell
     bool col_sid = false, col_type = false, col_state = false;   // Game World list columns (Columns submenu)
 } g;
 
@@ -374,7 +374,7 @@ void DrawGameWorld() {
             if (ImGui::BeginPopupContextItem()) {
                 int kind = -1;
                 if (g.node && !g.node->type.empty()) for (int k = 0; k < md::fcs::ITEM_TYPE_COUNT; ++k) if (g.node->type == md::fcs::ItemTypeName(k)) { kind = k; break; }
-                if (ImGui::MenuItem("Open Item")) g.w_item = true;
+                if (ImGui::MenuItem("Open Item")) { g.w_item = true; const int k = g.edits->KindOf(g.selected); if (k == md::fcsdef::kItemDialogue) g.w_conv = true; else if (k == md::fcsdef::kItemDialoguePackage) g.w_pkg = true; }
                 if (ImGui::MenuItem("List References")) { g.w_item = true; g.show_refs = true; }
                 ImGui::MenuItem("Replace references", nullptr, false, false); ImGui::MenuItem("Add Note Item", nullptr, false, false); ImGui::MenuItem("Add Todo Item", nullptr, false, false);
                 if (ImGui::MenuItem("Copy ID")) ImGui::SetClipboardText(r.string_id.c_str());
@@ -652,6 +652,136 @@ void DrawFindWin() {
 
 }  // namespace
 
+
+// Speaker colours of the original (FCS_UI.md "Colours"): Me Black, Target Maroon, Interjector 1 / 2 / 3 Blue / Green / Salmon, whole squad DarkMagenta, Link Gray.
+ImVec4 SpeakerColour(const std::string& t) {
+    if (t == "T_TARGET" || t == "T_TARGET_IF_PLAYER" || t == "T_TARGET_WITH_RACE") return ImVec4(0.502f, 0, 0, 1);
+    if (t == "T_INTERJECTOR1") return ImVec4(0, 0, 1, 1);
+    if (t == "T_INTERJECTOR2") return ImVec4(0, 0.502f, 0, 1);
+    if (t == "T_INTERJECTOR3") return ImVec4(0.980f, 0.502f, 0.447f, 1);
+    if (t == "T_WHOLE_SQUAD") return ImVec4(0.545f, 0, 0.545f, 1);
+    return ImVec4(0, 0, 0, 1);
+}
+
+// One line of the Conversation Editor tree: the text in the speaker's colour.
+void DrawConvLine(const std::string& parent, const std::string& sid, std::vector<std::string>& path) {
+    using namespace md::fcsdef;
+    const DialogNode n = g.dialogs->Shallow(sid);
+    const bool looped = std::find(path.begin(), path.end(), sid) != path.end();
+    const auto kids = looped ? std::vector<std::string>() : g.dialogs->ChildLines(sid);
+    ImGui::PushID(sid.c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, looped ? ImVec4(0.502f, 0.502f, 0.502f, 1) : SpeakerColour(n.speaker));
+    const bool open = ImGui::TreeNodeEx("##n", ImGuiTreeNodeFlags_SpanAvailWidth | (kids.empty() ? ImGuiTreeNodeFlags_Leaf : 0) | (sid == g.line ? ImGuiTreeNodeFlags_Selected : 0),
+                                        "%s", (n.texts.empty() ? g.edits->NameOf(sid) : n.texts[0]).substr(0, 140).c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemClicked()) { g.line = sid; g.line_parent = parent; }
+    if (open) { path.push_back(sid); for (const std::string& k : kids) DrawConvLine(sid, k, path); path.pop_back(); ImGui::TreePop(); }
+    ImGui::PopID();
+}
+
+// «Conversation Editor» (conversation.cs, 1390x624): top 216 = [name / tag / final + Actions | conditions | effects | references], below the line tree (939) and the line properties.
+void DrawConversationWin() {
+    if (!g.w_conv) return;
+    using namespace md::fcsdef;
+    Dump("window|Conversation Editor|1390|624");
+    ImGui::SetNextWindowPos(ImVec2(s_origin.x + 20, s_origin.y + 20), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(1390, 624), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Conversation Editor", &g.w_conv)) { ImGui::End(); return; }
+    constexpr float kTop = 216, kTree = 939;
+    Dump("split|Conversation Editor|splitContainer1|" + std::to_string((int)kTop)); Dump("split|Conversation Editor|splitContainer2|" + std::to_string((int)kTree));
+    const bool have = !g.selected.empty() && g.edits->KindOf(g.selected) == kItemDialogue;
+    ImGui::BeginChild("cv_top", ImVec2(0, kTop), false);
+    ImGui::BeginChild("cv_head", ImVec2(310, 0), false);
+    char nm[128]; std::snprintf(nm, sizeof nm, "%s", have ? g.edits->NameOf(g.selected).c_str() : "");
+    ImGui::TextUnformatted("Name"); ImGui::SameLine(50); ImGui::SetNextItemWidth(255); ImGui::InputText("##cname", nm, sizeof nm, ImGuiInputTextFlags_ReadOnly);
+    ImGui::TextUnformatted("Tag"); ImGui::SameLine(50); ImGui::SetNextItemWidth(255); char tg[8] = ""; ImGui::InputText("##ctag", tg, sizeof tg, ImGuiInputTextFlags_ReadOnly);
+    ImGui::TextUnformatted("Final"); ImGui::SameLine(50); bool fin = false; ImGui::BeginDisabled(); ImGui::Checkbox("##cfinal", &fin); ImGui::EndDisabled();
+    ImGui::BeginChild("cv_actions", ImVec2(301, 138), true); ImGui::TextUnformatted("Actions");
+    ImGui::BeginDisabled(!have || g.line.empty());
+    if (ImGui::Button("Add Line", ImVec2(120, 24))) { if (g.dialogs->AddLine(g.line.empty() ? g.selected : g.line, "New line", "T_TARGET").empty()) g.status = "add line failed"; else Refresh(); }
+    ImGui::SameLine(); if (ImGui::Button("Add Interjection", ImVec2(120, 24))) { if (g.dialogs->AddLine(g.line, "New interjection", "T_INTERJECTOR1").empty()) g.status = "add interjection failed"; else Refresh(); }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(); ImGui::Button("Spell check", ImVec2(120, 24)); ImGui::SameLine(); ImGui::Button("Add Fail Node", ImVec2(120, 24)); ImGui::Button("Replace Text", ImVec2(120, 24)); ImGui::SameLine(); ImGui::Button("Preview Wordswaps", ImVec2(120, 24)); ImGui::EndDisabled();
+    ImGui::EndChild(); ImGui::EndChild();
+    ImGui::SameLine();
+    const DialogNode ln = (have && !g.line.empty() && g.edits->Exists(g.line)) ? g.dialogs->Shallow(g.line) : DialogNode();
+    ImGui::BeginChild("cv_cond", ImVec2(346, 0), true); ImGui::TextUnformatted("Conditions"); ImGui::Separator();
+    if (ln.has_template) ImGui::BulletText("template: %s", ln.template_name.c_str());
+    for (const DialogAction& c : ln.conditions) ImGui::BulletText("%s%s  %s", c.from_template ? "(t) " : "", c.what.c_str(), c.detail.c_str());
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("cv_eff", ImVec2(182, 0), true); ImGui::TextUnformatted("Effects"); ImGui::Separator();
+    for (const DialogAction& c : ln.effects) ImGui::BulletText("%s  %s", c.what.c_str(), c.detail.c_str());
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("cv_refs", ImVec2(0, 0), true); ImGui::TextDisabled("references");
+    if (have) for (const DialogRef& r : g.dialogs->DialoguesOf(g.selected)) ImGui::TextUnformatted(r.name.c_str());
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::BeginChild("cv_tree", ImVec2(kTree, 0), true);
+    if (have) { std::vector<std::string> path; for (const std::string& k : g.dialogs->ChildLines(g.selected)) DrawConvLine(g.selected, k, path); }
+    else ImGui::TextDisabled("select a dialogue in the Game World list and choose Open Item");
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("cv_props", ImVec2(0, 0), true);
+    if (!ln.sid.empty() || !g.line.empty()) {
+        ImGui::Text("speaker: %s", ln.speaker.c_str());
+        for (size_t i = 0; i < ln.texts.size(); ++i) {
+            ImGui::PushID((int)i);
+            static char buf[8192]; std::snprintf(buf, sizeof buf, "%s", ln.texts[i].c_str());
+            if (ImGui::InputTextMultiline("##t", buf, sizeof buf, ImVec2(-1, 60), ImGuiInputTextFlags_EnterReturnsTrue)) { if (ln.texts[i].size() >= sizeof buf - 1) g.status = "text too long to edit here (8191 bytes)"; else { g.dialogs->SetText(g.line, (int)i, buf); Refresh(); } }
+            ImGui::PopID();
+        }
+        if (!g.line_parent.empty() && g.line_parent != g.line && ImGui::Button("Delete") && g.dialogs->RemoveLine(g.line_parent, g.line)) { g.line.clear(); Refresh(); }
+    }
+    ImGui::EndChild();
+    ImGui::End();
+}
+
+// «Dialogue Package» (dialogCollection.cs, 1031x786): top 287 = [package (name, tag, references) 342 | conditions], below the events list (342) and the dialogue of the selected event.
+void DrawDialoguePackageWin() {
+    if (!g.w_pkg) return;
+    using namespace md::fcsdef;
+    Dump("window|Dialogue Package|1031|786");
+    ImGui::SetNextWindowPos(ImVec2(s_origin.x + 30, s_origin.y + 30), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(1031, 786), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Dialogue Package", &g.w_pkg)) { ImGui::End(); return; }
+    constexpr float kTop = 287, kLeft = 342;
+    Dump("split|Dialogue Package|splitContainer1|" + std::to_string((int)kTop)); Dump("split|Dialogue Package|splitContainer2|" + std::to_string((int)kLeft));
+    const bool have = !g.selected.empty() && g.edits->KindOf(g.selected) == kItemDialoguePackage;
+    ImGui::BeginChild("dp_top", ImVec2(0, kTop), false);
+    ImGui::BeginChild("dp_pkg", ImVec2(kLeft, 0), true); ImGui::TextUnformatted("Package");
+    char nm[128]; std::snprintf(nm, sizeof nm, "%s", have ? g.edits->NameOf(g.selected).c_str() : "");
+    ImGui::TextUnformatted("Name"); ImGui::SameLine(60); ImGui::SetNextItemWidth(249); ImGui::InputText("##pname", nm, sizeof nm, ImGuiInputTextFlags_ReadOnly);
+    ImGui::TextUnformatted("Tag"); ImGui::SameLine(60); ImGui::SetNextItemWidth(249); char tg[8] = ""; ImGui::InputText("##ptag", tg, sizeof tg, ImGuiInputTextFlags_ReadOnly);
+    ImGui::TextDisabled("references");
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("dp_cond", ImVec2(0, 0), true); ImGui::TextUnformatted("Conditions"); ImGui::Separator();
+    static std::string sel_dlg;
+    if (have && !sel_dlg.empty() && g.edits->Exists(sel_dlg)) for (const DialogAction& c : g.dialogs->Shallow(sel_dlg).conditions) ImGui::BulletText("%s  %s", c.what.c_str(), c.detail.c_str());
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::BeginChild("dp_events", ImVec2(kLeft, 0), true);
+    if (have) {
+        if (ImGui::BeginTable("dp_ev", 1, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Borders, ImVec2(0, -64))) {
+            ImGui::TableSetupColumn("Events"); ImGui::TableHeadersRow();
+            for (const DialogRef& d : g.dialogs->DialoguesOf(g.selected)) {
+                ImGui::TableNextRow(); ImGui::TableNextColumn();
+                if (ImGui::Selectable((d.trigger_name + "  ->  " + d.name).c_str(), d.sid == sel_dlg)) sel_dlg = d.sid;
+            }
+            ImGui::EndTable();
+        }
+        static char dn[64] = "New dialogue"; static int trig = 1;
+        ImGui::SetNextItemWidth(160); ImGui::InputText("##pdn", dn, sizeof dn); ImGui::SameLine(); ImGui::SetNextItemWidth(60); ImGui::InputInt("##pdt", &trig, 0);
+        if (ImGui::Button("Add New")) { const std::string r = g.dialogs->NewDialogue(dn, g.selected, std::to_string(trig)); if (r.empty()) g.status = "new dialogue failed"; else Refresh(); }
+    } else ImGui::TextDisabled("select a dialogue package and choose Open Item");
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("dp_sel", ImVec2(0, 0), true);
+    if (!sel_dlg.empty() && g.edits->Exists(sel_dlg)) {
+        if (ImGui::Button("Edit")) { Go(sel_dlg); g.w_conv = true; }
+        ImGui::SameLine(); ImGui::TextUnformatted(g.edits->NameOf(sel_dlg).c_str());
+    } else ImGui::TextDisabled("Selected Item");
+    ImGui::EndChild();
+    ImGui::End();
+}
+
 void Draw() {
     if (!g.tried) Load();
     if (!g.ok) { ImGui::TextWrapped("Kenshi data: %s", g.error.empty() ? "not loaded" : g.error.c_str()); return; }
@@ -665,13 +795,13 @@ void Draw() {
         }
     }
     static const char* const dump_path = std::getenv("MD_FCS_LAYOUT_DUMP"); static int dump_frames = 0;
-    if (dump_path && dump_frames == 0) g.w_info = g.w_changes = g.w_find = g.w_settings = g.w_assets = g.w_errors = true;
+    if (dump_path && dump_frames == 0) g.w_info = g.w_changes = g.w_find = g.w_settings = g.w_assets = g.w_errors = g.w_conv = g.w_pkg = true;
     s_dump.clear();
     const int theme_n = PushFcsTheme();
     DrawToolbar();
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     s_origin = ImGui::GetCursorScreenPos();
-    DrawGameWorld(); DrawItemWin(); DrawInfoWin(); DrawChangesWin(); DrawFindWin(); DrawSettingsWin(); DrawAssetsWin(); DrawErrorsWin();
+    DrawGameWorld(); DrawItemWin(); DrawInfoWin(); DrawChangesWin(); DrawFindWin(); DrawSettingsWin(); DrawAssetsWin(); DrawErrorsWin(); DrawConversationWin(); DrawDialoguePackageWin();
     PopFcsTheme(theme_n);
     if (dump_path && ++dump_frames == 5) { if (FILE* o = std::fopen(dump_path, "wb")) { std::fwrite(s_dump.data(), 1, s_dump.size(), o); std::fclose(o); } }
 }
