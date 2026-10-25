@@ -679,49 +679,87 @@ void DrawConvLine(const std::string& parent, const std::string& sid, std::vector
     ImGui::PopID();
 }
 
-// «Conversation Editor» (conversation.cs, 1390x624): top 216 = [name / tag / final + Actions | conditions | effects | references], below the line tree (939) and the line properties.
+// Fixed splitter layouts of the original (SplitterDistance of each SplitContainer, fcs_ui_layout.json): a child of the given size, dumped for the layout oracle.
+void SplitDump(const char* win, const char* name, float d) { Dump(std::string("split|") + win + "|" + name + "|" + std::to_string((int)d)); }
+
+// «Conversation Editor» (conversation.cs, 1390x624): top 216 = [name / tag / final + Actions | topSplit 528 = (splitContainer4 162 = (conditionSplit2 253 = conditions | effects) over the description) | splitContainer3 356 = (conditionSplit1 182 = condition control | effects panel) | references)],
+// below: the line tree (splitContainer2 939) and the line properties.
 void DrawConversationWin() {
     if (!g.w_conv) return;
     using namespace md::fcsdef;
+    const char* W = "Conversation Editor";
     Dump("window|Conversation Editor|1390|624");
     ImGui::SetNextWindowPos(ImVec2(s_origin.x + 20, s_origin.y + 20), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(1390, 624), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Conversation Editor", &g.w_conv)) { ImGui::End(); return; }
-    constexpr float kTop = 216, kTree = 939;
-    Dump("split|Conversation Editor|splitContainer1|" + std::to_string((int)kTop)); Dump("split|Conversation Editor|splitContainer2|" + std::to_string((int)kTree));
+    if (!ImGui::Begin(W, &g.w_conv)) { ImGui::End(); return; }
+    SplitDump(W, "splitContainer1", 216); SplitDump(W, "topSplit", 528); SplitDump(W, "splitContainer4", 162); SplitDump(W, "conditionSplit2", 253);
+    SplitDump(W, "splitContainer3", 356); SplitDump(W, "conditionSplit1", 182); SplitDump(W, "splitContainer2", 939);
     const bool have = !g.selected.empty() && g.edits->KindOf(g.selected) == kItemDialogue;
-    ImGui::BeginChild("cv_top", ImVec2(0, kTop), false);
+    const DialogNode ln = (have && !g.line.empty() && g.edits->Exists(g.line)) ? g.dialogs->Shallow(g.line) : DialogNode();
+    const bool line_ok = have && !g.line.empty() && g.edits->Exists(g.line);
+    ImGui::BeginChild("cv_top", ImVec2(0, 216), false);
     ImGui::BeginChild("cv_head", ImVec2(310, 0), false);
     char nm[128]; std::snprintf(nm, sizeof nm, "%s", have ? g.edits->NameOf(g.selected).c_str() : "");
     ImGui::TextUnformatted("Name"); ImGui::SameLine(50); ImGui::SetNextItemWidth(255); ImGui::InputText("##cname", nm, sizeof nm, ImGuiInputTextFlags_ReadOnly);
     ImGui::TextUnformatted("Tag"); ImGui::SameLine(50); ImGui::SetNextItemWidth(255); char tg[8] = ""; ImGui::InputText("##ctag", tg, sizeof tg, ImGuiInputTextFlags_ReadOnly);
     ImGui::TextUnformatted("Final"); ImGui::SameLine(50); bool fin = false; ImGui::BeginDisabled(); ImGui::Checkbox("##cfinal", &fin); ImGui::EndDisabled();
     ImGui::BeginChild("cv_actions", ImVec2(301, 138), true); ImGui::TextUnformatted("Actions");
-    ImGui::BeginDisabled(!have || g.line.empty());
-    if (ImGui::Button("Add Line", ImVec2(120, 24))) { if (g.dialogs->AddLine(g.line.empty() ? g.selected : g.line, "New line", "T_TARGET").empty()) g.status = "add line failed"; else Refresh(); }
+    ImGui::BeginDisabled(!line_ok);
+    if (ImGui::Button("Add Line", ImVec2(120, 24))) { if (g.dialogs->AddLine(g.line, "New line", "T_TARGET").empty()) g.status = "add line failed"; else Refresh(); }
     ImGui::SameLine(); if (ImGui::Button("Add Interjection", ImVec2(120, 24))) { if (g.dialogs->AddLine(g.line, "New interjection", "T_INTERJECTOR1").empty()) g.status = "add interjection failed"; else Refresh(); }
     ImGui::EndDisabled();
     ImGui::BeginDisabled(); ImGui::Button("Spell check", ImVec2(120, 24)); ImGui::SameLine(); ImGui::Button("Add Fail Node", ImVec2(120, 24)); ImGui::Button("Replace Text", ImVec2(120, 24)); ImGui::SameLine(); ImGui::Button("Preview Wordswaps", ImVec2(120, 24)); ImGui::EndDisabled();
     ImGui::EndChild(); ImGui::EndChild();
     ImGui::SameLine();
-    const DialogNode ln = (have && !g.line.empty() && g.edits->Exists(g.line)) ? g.dialogs->Shallow(g.line) : DialogNode();
-    ImGui::BeginChild("cv_cond", ImVec2(346, 0), true); ImGui::TextUnformatted("Conditions"); ImGui::Separator();
+    ImGui::BeginChild("cv_topsplit", ImVec2(0, 0), false);
+    ImGui::BeginChild("cv_s4", ImVec2(528, 0), false);   // splitContainer4: (conditionSplit2) over the description
+    ImGui::BeginChild("cv_cs2", ImVec2(0, 162), false);
+    ImGui::BeginChild("cv_cond", ImVec2(253, 0), true); ImGui::TextUnformatted("Conditions"); ImGui::Separator();
     if (ln.has_template) ImGui::BulletText("template: %s", ln.template_name.c_str());
-    for (const DialogAction& c : ln.conditions) ImGui::BulletText("%s%s  %s", c.from_template ? "(t) " : "", c.what.c_str(), c.detail.c_str());
+    for (const DialogAction& c : ln.conditions) { ImGui::PushID(c.sid.c_str()); ImGui::BulletText("%s%s  %s", c.from_template ? "(t) " : "", c.what.c_str(), c.detail.c_str()); ImGui::PopID(); }
     ImGui::EndChild(); ImGui::SameLine();
-    ImGui::BeginChild("cv_eff", ImVec2(182, 0), true); ImGui::TextUnformatted("Effects"); ImGui::Separator();
-    for (const DialogAction& c : ln.effects) ImGui::BulletText("%s  %s", c.what.c_str(), c.detail.c_str());
+    ImGui::BeginChild("cv_eff", ImVec2(0, 0), true); ImGui::TextUnformatted("Effects"); ImGui::Separator();
+    for (const DialogAction& c : ln.effects) { ImGui::PushID(c.sid.c_str()); ImGui::BulletText("%s  %s", c.what.c_str(), c.detail.c_str()); ImGui::PopID(); }
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::BeginChild("cv_desc", ImVec2(0, 0), false);
+    if (MdFonts::bold) ImGui::PushFont(MdFonts::bold, 11.0f);
+    ImGui::TextUnformatted("Selected Item");
+    if (MdFonts::bold) ImGui::PopFont();
+    if (line_ok) ImGui::TextWrapped("speaker: %s", ln.speaker.c_str());
+    ImGui::EndChild();
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("cv_s3", ImVec2(0, 0), false);   // splitContainer3: (conditionSplit1) | references
+    ImGui::BeginChild("cv_cs1", ImVec2(356, 0), false);
+    ImGui::BeginChild("cv_condctl", ImVec2(182, 0), true);   // condition control: add a condition
+    static int ci = 1, who = 0, cmp = 0, cval = 0, ai = 1, aval = 0;
+    EnumCombo("##cond", "DialogConditionEnum", ci, -1); EnumCombo("##who", "TalkerEnum", who, -1); EnumCombo("##cmp", "ComparisonEnum", cmp, -1);
+    ImGui::SetNextItemWidth(-1); ImGui::InputInt("##cv", &cval, 0);
+    ImGui::BeginDisabled(!line_ok);
+    if (ImGui::Button("Add condition")) { if (g.dialogs->AddCondition(g.line, EnumPick("DialogConditionEnum", ci), EnumPick("TalkerEnum", who), EnumPick("ComparisonEnum", cmp), cval).empty()) g.status = "add condition failed (code enums not loaded?)"; else Refresh(); }
+    ImGui::SameLine(); if (ImGui::Button("Remove##c") && !ln.conditions.empty()) { if (g.dialogs->RemoveAction(g.line, "conditions", ln.conditions.back().sid)) Refresh(); }
+    ImGui::EndDisabled();
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("cv_effpanel", ImVec2(0, 0), true); ImGui::TextUnformatted("Effects");   // effects panel: possible effects + value + Add / Remove
+    EnumCombo("##act", "DialogActionEnum", ai, -1); ImGui::SetNextItemWidth(-1); ImGui::InputInt("##av", &aval, 0);
+    ImGui::BeginDisabled(!line_ok);
+    if (ImGui::Button("Add")) { if (g.dialogs->AddEffect(g.line, EnumPick("DialogActionEnum", ai), aval).empty()) g.status = "add effect failed (code enums not loaded?)"; else Refresh(); }
+    ImGui::SameLine(); if (ImGui::Button("Remove##e") && !ln.effects.empty()) { if (g.dialogs->RemoveAction(g.line, "effects", ln.effects.back().sid)) Refresh(); }
+    ImGui::EndDisabled();
+    ImGui::EndChild();
     ImGui::EndChild(); ImGui::SameLine();
     ImGui::BeginChild("cv_refs", ImVec2(0, 0), true); ImGui::TextDisabled("references");
     if (have) for (const DialogRef& r : g.dialogs->DialoguesOf(g.selected)) ImGui::TextUnformatted(r.name.c_str());
     ImGui::EndChild();
     ImGui::EndChild();
-    ImGui::BeginChild("cv_tree", ImVec2(kTree, 0), true);
+    ImGui::EndChild();
+    ImGui::EndChild();   // cv_top
+    ImGui::BeginChild("cv_tree", ImVec2(939, 0), true);
     if (have) { std::vector<std::string> path; for (const std::string& k : g.dialogs->ChildLines(g.selected)) DrawConvLine(g.selected, k, path); }
     else ImGui::TextDisabled("select a dialogue in the Game World list and choose Open Item");
     ImGui::EndChild(); ImGui::SameLine();
     ImGui::BeginChild("cv_props", ImVec2(0, 0), true);
-    if (!ln.sid.empty() || !g.line.empty()) {
+    if (line_ok) {
         ImGui::Text("speaker: %s", ln.speaker.c_str());
         for (size_t i = 0; i < ln.texts.size(); ++i) {
             ImGui::PushID((int)i);
@@ -735,30 +773,39 @@ void DrawConversationWin() {
     ImGui::End();
 }
 
-// «Dialogue Package» (dialogCollection.cs, 1031x786): top 287 = [package (name, tag, references) 342 | conditions], below the events list (342) and the dialogue of the selected event.
+// «Dialogue Package» (dialogCollection.cs, 1031x786): splitContainer1 287 = top (splitContainer4 342 = package | conditionSplit 346 = conditions | condition control) over splitInfo 437 =
+// (splitContainer2 342 = events list | splitSelectedItem 436 = selected dialogue | property box) over the description.
 void DrawDialoguePackageWin() {
     if (!g.w_pkg) return;
     using namespace md::fcsdef;
+    const char* W = "Dialogue Package";
     Dump("window|Dialogue Package|1031|786");
     ImGui::SetNextWindowPos(ImVec2(s_origin.x + 30, s_origin.y + 30), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(1031, 786), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Dialogue Package", &g.w_pkg)) { ImGui::End(); return; }
-    constexpr float kTop = 287, kLeft = 342;
-    Dump("split|Dialogue Package|splitContainer1|" + std::to_string((int)kTop)); Dump("split|Dialogue Package|splitContainer2|" + std::to_string((int)kLeft));
+    if (!ImGui::Begin(W, &g.w_pkg)) { ImGui::End(); return; }
+    SplitDump(W, "splitContainer1", 287); SplitDump(W, "splitContainer4", 342); SplitDump(W, "conditionSplit", 346); SplitDump(W, "splitInfo", 437);
+    SplitDump(W, "splitContainer2", 342); SplitDump(W, "splitSelectedItem", 436);
     const bool have = !g.selected.empty() && g.edits->KindOf(g.selected) == kItemDialoguePackage;
-    ImGui::BeginChild("dp_top", ImVec2(0, kTop), false);
-    ImGui::BeginChild("dp_pkg", ImVec2(kLeft, 0), true); ImGui::TextUnformatted("Package");
+    static std::string sel_dlg;
+    const bool dlg_ok = have && !sel_dlg.empty() && g.edits->Exists(sel_dlg);
+    ImGui::BeginChild("dp_top", ImVec2(0, 287), false);
+    ImGui::BeginChild("dp_pkg", ImVec2(342, 0), true); ImGui::TextUnformatted("Package");
     char nm[128]; std::snprintf(nm, sizeof nm, "%s", have ? g.edits->NameOf(g.selected).c_str() : "");
     ImGui::TextUnformatted("Name"); ImGui::SameLine(60); ImGui::SetNextItemWidth(249); ImGui::InputText("##pname", nm, sizeof nm, ImGuiInputTextFlags_ReadOnly);
     ImGui::TextUnformatted("Tag"); ImGui::SameLine(60); ImGui::SetNextItemWidth(249); char tg[8] = ""; ImGui::InputText("##ptag", tg, sizeof tg, ImGuiInputTextFlags_ReadOnly);
     ImGui::TextDisabled("references");
     ImGui::EndChild(); ImGui::SameLine();
-    ImGui::BeginChild("dp_cond", ImVec2(0, 0), true); ImGui::TextUnformatted("Conditions"); ImGui::Separator();
-    static std::string sel_dlg;
-    if (have && !sel_dlg.empty() && g.edits->Exists(sel_dlg)) for (const DialogAction& c : g.dialogs->Shallow(sel_dlg).conditions) ImGui::BulletText("%s  %s", c.what.c_str(), c.detail.c_str());
+    ImGui::BeginChild("dp_cs", ImVec2(0, 0), false);
+    ImGui::BeginChild("dp_cond", ImVec2(346, 0), true); ImGui::TextUnformatted("Conditions"); ImGui::Separator();
+    if (dlg_ok) for (const DialogAction& c : g.dialogs->Shallow(sel_dlg).conditions) ImGui::BulletText("%s  %s", c.what.c_str(), c.detail.c_str());
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("dp_condctl", ImVec2(0, 0), true); ImGui::TextDisabled("condition control");
     ImGui::EndChild();
     ImGui::EndChild();
-    ImGui::BeginChild("dp_events", ImVec2(kLeft, 0), true);
+    ImGui::EndChild();
+    ImGui::BeginChild("dp_info", ImVec2(0, -1), false);
+    ImGui::BeginChild("dp_upper", ImVec2(0, 437), false);
+    ImGui::BeginChild("dp_events", ImVec2(342, 0), true);
     if (have) {
         if (ImGui::BeginTable("dp_ev", 1, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Borders, ImVec2(0, -64))) {
             ImGui::TableSetupColumn("Events"); ImGui::TableHeadersRow();
@@ -773,11 +820,20 @@ void DrawDialoguePackageWin() {
         if (ImGui::Button("Add New")) { const std::string r = g.dialogs->NewDialogue(dn, g.selected, std::to_string(trig)); if (r.empty()) g.status = "new dialogue failed"; else Refresh(); }
     } else ImGui::TextDisabled("select a dialogue package and choose Open Item");
     ImGui::EndChild(); ImGui::SameLine();
-    ImGui::BeginChild("dp_sel", ImVec2(0, 0), true);
-    if (!sel_dlg.empty() && g.edits->Exists(sel_dlg)) {
-        if (ImGui::Button("Edit")) { Go(sel_dlg); g.w_conv = true; }
-        ImGui::SameLine(); ImGui::TextUnformatted(g.edits->NameOf(sel_dlg).c_str());
-    } else ImGui::TextDisabled("Selected Item");
+    ImGui::BeginChild("dp_selsplit", ImVec2(0, 0), false);
+    ImGui::BeginChild("dp_sel", ImVec2(436, 0), true);
+    if (dlg_ok) { if (ImGui::Button("Edit")) { Go(sel_dlg); g.w_conv = true; } ImGui::SameLine(); ImGui::TextUnformatted(g.edits->NameOf(sel_dlg).c_str()); }
+    else ImGui::TextDisabled("no dialogue selected");
+    ImGui::EndChild(); ImGui::SameLine();
+    ImGui::BeginChild("dp_props", ImVec2(0, 0), true); ImGui::TextDisabled("properties");
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::BeginChild("dp_desc", ImVec2(0, 0), false);
+    if (MdFonts::bold) ImGui::PushFont(MdFonts::bold, 11.0f);
+    ImGui::TextUnformatted("Selected Item");
+    if (MdFonts::bold) ImGui::PopFont();
+    ImGui::EndChild();
     ImGui::EndChild();
     ImGui::End();
 }
