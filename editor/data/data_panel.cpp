@@ -48,7 +48,7 @@ struct State {
     int autosave_min = 5; double last_autosave = 0;   // FCS settings: autosave interval in minutes (0 = off)
     std::vector<md::fcsdef::AssetRow> assets; bool assets_ready = false;
     std::vector<md::fcs::LoadEntry> mods;           // the installed mods in load order (core files excluded): the «Load mod» list
-    bool w_world = true, w_item = true, w_info = false, w_changes = false, w_find = false, w_settings = false, w_assets = false, w_errors = false, w_conv = false, w_pkg = false, show_refs = true;   // child windows of the main shell
+    bool w_world = true, w_item = true, w_info = false, w_changes = false, w_find = false, w_settings = false, w_assets = false, w_errors = false, w_conv = false, w_pkg = false, w_merge = false, w_setfield = false, show_refs = true;   // child windows of the main shell
     bool col_sid = false, col_type = false, col_state = false;   // Game World list columns (Columns submenu)
 } g;
 
@@ -319,7 +319,7 @@ void DrawToolbar() {
     B("Notes", nullptr, false);
     if (B("Errors", "Check the mod")) { g.problems = md::fcsdef::CheckMod(*g.edits, g.schema, g.data); g.w_errors = true; }
     S();
-    if (B("Merge Mod", "Merge the file picked with Load", g.import_path[0] != 0)) MergeMod();
+    if (B("Merge Mod", "Merge a mod into the loaded data")) g.w_merge = true;
     if (B("Export Mods file", nullptr)) ExportModsFile();
     S();
     if (B("Find and replace", nullptr)) g.w_find = true;
@@ -384,7 +384,7 @@ void DrawGameWorld() {
                 ImGui::Separator();
                 ImGui::MenuItem("Clean Item", nullptr, false, false); ImGui::MenuItem("Spell check", nullptr, false, false);
                 if (ImGui::MenuItem("Show Mod Info")) g.w_info = true;
-                if (ImGui::MenuItem("Set Field")) g.w_find = true;
+                if (ImGui::MenuItem("Set Field")) g.w_setfield = true;
                 if (ImGui::MenuItem("Find / Replace Values")) g.w_find = true;
                 ImGui::MenuItem("Revert Changes", nullptr, false, false);
                 if (st == md::fcsdef::RecordState::Removed) { if (ImGui::MenuItem("Restore Item")) { g.edits->Restore(r.string_id); RefreshRows(); } }
@@ -650,6 +650,39 @@ void DrawFindWin() {
     ImGui::End();
 }
 
+// «Set Field Value» (SetFieldValue.cs, 554x69): field name, method, value, [Cancel] [Set Value]; the method list of the original is not known, only «Set» exists here.
+void DrawSetFieldWin() {
+    if (!BeginWin(g.w_setfield, "Set Field Value", 554, 69)) return;
+    ImGui::SetNextItemWidth(150); ImGui::InputText("##sfn", g.bulk_field, sizeof g.bulk_field); ImGui::SameLine();
+    ImGui::SetNextItemWidth(80); if (ImGui::BeginCombo("##sfm", "Set")) { ImGui::Selectable("Set", true); ImGui::EndCombo(); } ImGui::SameLine();
+    ImGui::SetNextItemWidth(180); ImGui::InputText("##sfv", g.bulk_value, sizeof g.bulk_value);
+    if (ImGui::Button("Cancel")) g.w_setfield = false; ImGui::SameLine();
+    if (ImGui::Button("Set Value")) {
+        std::vector<std::string> ids; for (const md::fcsdef::ItemRow& r : g.rows) if (!g.filter[0] || r.name.find(g.filter) != std::string::npos) ids.push_back(r.string_id);
+        std::string err; const size_t n = md::fcsdef::SetMany(*g.edits, ids, g.bulk_field, g.bulk_value, err);
+        g.status = "set in " + std::to_string(n) + " of " + std::to_string(ids.size()) + (err.empty() ? "" : "; " + err); Refresh(); g.w_setfield = false;
+    }
+    ImGui::End();
+}
+
+// «Merge Mod» (MergeDialog.cs, 523x263): mod box + «*», the change tree, [Show Discarded Changes] [Merge Level Data] [Next Conflict] [Cancel] [Merge]. The per-change tree is not built: Merge takes the whole file.
+void DrawMergeWin() {
+    if (!BeginWin(g.w_merge, "Merge Mod", 523, 263)) return;
+    ImGui::TextUnformatted("Add changes from mod"); ImGui::SameLine();
+    ImGui::SetNextItemWidth(-30);
+    if (ImGui::BeginCombo("##mm", g.import_path[0] ? std::filesystem::path(g.import_path).filename().string().c_str() : "")) {
+        for (const md::fcs::LoadEntry& m : g.mods) if (ImGui::Selectable(m.name.c_str())) std::snprintf(g.import_path, sizeof g.import_path, "%s", m.path.c_str());
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine(); ImGui::Button("*");
+    ImGui::BeginChild("##mtree", ImVec2(0, -34), true); ImGui::TextDisabled("per-change tree: not implemented (the whole file is merged)"); ImGui::EndChild();
+    static bool show_ign = false, lvl = false;
+    ImGui::BeginDisabled(); ImGui::Checkbox("Merge Level Data", &lvl); ImGui::SameLine(); ImGui::Checkbox("Show Discarded Changes", &show_ign); ImGui::SameLine(); ImGui::Button("Next Conflict"); ImGui::EndDisabled();
+    ImGui::SameLine(); if (ImGui::Button("Cancel")) g.w_merge = false;
+    ImGui::SameLine(); ImGui::BeginDisabled(g.import_path[0] == 0); if (ImGui::Button("Merge")) { MergeMod(); g.w_merge = false; } ImGui::EndDisabled();
+    ImGui::End();
+}
+
 }  // namespace
 
 
@@ -851,13 +884,13 @@ void Draw() {
         }
     }
     static const char* const dump_path = std::getenv("MD_FCS_LAYOUT_DUMP"); static int dump_frames = 0;
-    if (dump_path && dump_frames == 0) g.w_info = g.w_changes = g.w_find = g.w_settings = g.w_assets = g.w_errors = g.w_conv = g.w_pkg = true;
+    if (dump_path && dump_frames == 0) g.w_info = g.w_changes = g.w_find = g.w_settings = g.w_assets = g.w_errors = g.w_conv = g.w_pkg = g.w_merge = g.w_setfield = true;
     s_dump.clear();
     const int theme_n = PushFcsTheme();
     DrawToolbar();
     if (!g.status.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", g.status.c_str());
     s_origin = ImGui::GetCursorScreenPos();
-    DrawGameWorld(); DrawItemWin(); DrawInfoWin(); DrawChangesWin(); DrawFindWin(); DrawSettingsWin(); DrawAssetsWin(); DrawErrorsWin(); DrawConversationWin(); DrawDialoguePackageWin();
+    DrawGameWorld(); DrawItemWin(); DrawInfoWin(); DrawChangesWin(); DrawFindWin(); DrawSetFieldWin(); DrawMergeWin(); DrawSettingsWin(); DrawAssetsWin(); DrawErrorsWin(); DrawConversationWin(); DrawDialoguePackageWin();
     PopFcsTheme(theme_n);
     if (dump_path && ++dump_frames == 5) { if (FILE* o = std::fopen(dump_path, "wb")) { std::fwrite(s_dump.data(), 1, s_dump.size(), o); std::fclose(o); } }
 }
