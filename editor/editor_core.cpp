@@ -44,6 +44,8 @@ extern bool  md_settings_get_ground_reuse();
 extern void  md_settings_set_ground_reuse(bool on);
 extern int   md_settings_get_ground_reuse_period();
 extern void  md_settings_set_ground_reuse_period(int p);   // #191: 4 / 8 / 16
+extern int   md_settings_get_ground_reuse_chain();
+extern void  md_settings_set_ground_reuse_chain(int c);   // #207: 0 standard / 3 / 5
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
 extern void  md_settings_set_fxaa(bool on);   // #180: FXAA 3.11 (Kenshi's parameters), default off (owner 16.10)
@@ -86,6 +88,7 @@ static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
 static const int kAnisoLv[3] = { 1, 4, 16 };
 static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
 static float s_set_vdist     = 5000.f; // "vd": View Distance, Kenshi 5000 (1500...12000)
+static int   s_set_chain     = 5;      // "grc": ground reuse chain (#207, owner 27.10): 0 Standard, 3, 5 (default)
 static int   s_set_gp        = 0;      // "gp": Ground quality preset (#193, owner 22.10): 0 dyn075_a1 (default, #194), 1 dyn075, 2 reuse05, 3 Custom
 static int   s_set_wres      = -1;     // "wres": index in kWinRes, -1 = the window as it is
 static const int kWinRes[][2] = { {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080} };
@@ -170,6 +173,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"tbld\"")) s_set_tbld = f3_parse_f(buf, "\"tbld\"") != 0.f;
         if (strstr(buf, "\"ovr\"")) { s_set_ovr = f3_parse_f(buf, "\"ovr\""); if (s_set_ovr < 100.f || s_set_ovr > 800.f) s_set_ovr = 300.f; }
         if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); s_set_gp = s_set_gp < 0 ? 0 : (s_set_gp > 3 ? 3 : s_set_gp); }   // the old numbering had aniso1 at 0 (= dyn075_a1 now) and Custom at 4
+        if (strstr(buf, "\"grc\"")) { s_set_chain = (int)f3_parse_f(buf, "\"grc\""); if (s_set_chain != 0 && s_set_chain != 3) s_set_chain = 5; }
         if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0 && s_set_fcap != 60) s_set_fcap = -1; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
         if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 2) s_set_ga = 0; }
@@ -205,7 +209,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f}\n",
+        "\"rm\":%d,\"rs\":%.2f,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fs\":%.2f,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -216,7 +220,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
         s_set_res_mode, s_set_res_scale, s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fsr1_sharp, s_set_fif, s_set_dyn,
-        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr);
+        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr, s_set_chain);
     fclose(f);
 }
 
@@ -240,6 +244,7 @@ void EditorCore::Init() {
             if (s_set_gp >= 0 && s_set_gp <= 2) ground_preset_apply(s_set_gp);
             if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
         else { ground_preset_apply(s_set_gp); s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_reuse_period = md_settings_get_ground_reuse_period(); s_set_light = md_settings_get_lighting(); }
+        md_settings_set_ground_reuse_chain(s_set_chain);
         if (const char* ge = getenv("MD_GROUND_PRESET")) if (*ge) { const int n = atoi(ge); if (n >= 0 && n <= 2) { ground_preset_apply(n); s_set_gp = n; } }   // #193: a run can pick the preset without the saved layout
     }
 #endif
@@ -575,6 +580,11 @@ void EditorCore::Update(float dt) {
                         static const char* kGrp[] = { "every 4 frames (sharpest)", "every 8 frames", "every 16 frames (default, fastest)" };
                         int gi = s_set_reuse_period == 4 ? 0 : (s_set_reuse_period == 8 ? 1 : 2);
                         if (ImGui::Combo("Ground refresh##grp", &gi, kGrp, 3)) { s_set_reuse_period = gi == 0 ? 4 : (gi == 1 ? 8 : 16); md_settings_set_ground_reuse_period(s_set_reuse_period); }
+                    }
+                    {
+                        static const char* kGrc[] = { "Standard", "Chain 3", "Chain 5 (default)" };
+                        int ci = s_set_chain == 0 ? 0 : (s_set_chain == 3 ? 1 : 2);
+                        if (ImGui::Combo("Ground reuse chain##grc", &ci, kGrc, 3)) { s_set_chain = ci == 0 ? 0 : (ci == 1 ? 3 : 5); md_settings_set_ground_reuse_chain(s_set_chain); }
                     }
                     {
                         static const char* kFif[] = { "1 (lowest latency)", "2 (default)", "3" };
