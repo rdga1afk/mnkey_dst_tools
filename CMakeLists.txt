@@ -243,3 +243,14 @@ target_compile_options(kenshi_navmesh_extract PRIVATE -include "${CMAKE_CURRENT_
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(kenshi_navmesh_extract PRIVATE -O2)
 endif()
+
+# ── navtile_probe (#A5 prep) ──────────────────────────────
+# Kenshi navtiles (.hkt) -> sections + a Detour navmesh of the ground section + a path query. Standalone: own tagfile reader (navtile/hkt.*),
+# the Detour sources of the vendored recastnavigation (no engine link). ninja navtile_probe && build/tools/navtile_probe $KENSHI_DIR 20 32 [x0 z0 x1 z1]
+set(MD_DETOUR_DIR ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Detour)
+add_executable(navtile_probe
+    navtile/navtile_probe.cpp navtile/navtile.cpp navtile/hkt.cpp
+    ${MD_DETOUR_DIR}/Source/DetourAlloc.cpp ${MD_DETOUR_DIR}/Source/DetourAssert.cpp ${MD_DETOUR_DIR}/Source/DetourCommon.cpp
+    ${MD_DETOUR_DIR}/Source/DetourNavMesh.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshBuilder.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshQuery.cpp ${MD_DETOUR_DIR}/Source/DetourNode.cpp
+)
+target_include_directories(navtile_probe PRIVATE ${MD_DETOUR_DIR}/Include navtile)
