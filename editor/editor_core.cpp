@@ -83,7 +83,7 @@ static float s_set_grange    = 50.f;   // Kenshi CLOSE range, metres
 static float s_set_gdens     = 1.f;    // grass density x
 static float s_set_fvr       = 100.f;  // Kenshi MEDIUM foliage range, metres (default 100 = 1000 units)
 static float s_set_ovr       = 300.f;  // "ovr": Kenshi `objects view range`, metres (default 300 = 3000 units)
-static int   s_set_fcap      = -1;     // "fcap": frame cap -1 = auto (30 idle / 60 moving, default), 60, 30, 0 = unlimited (#191)
+static int   s_set_fcap      = -1;     // "fcap": frame cap -1 = auto (30 idle / 60 moving, default), 60, 40, 30, 0 = unlimited (#191, #207)
 static bool  s_set_vsync     = false;  // "vsy": VSync, Kenshi (kenshi.cfg) No
 static const int kAnisoLv[3] = { 1, 4, 16 };
 static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
@@ -174,7 +174,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"ovr\"")) { s_set_ovr = f3_parse_f(buf, "\"ovr\""); if (s_set_ovr < 100.f || s_set_ovr > 800.f) s_set_ovr = 300.f; }
         if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); s_set_gp = s_set_gp < 0 ? 0 : (s_set_gp > 3 ? 3 : s_set_gp); }   // the old numbering had aniso1 at 0 (= dyn075_a1 now) and Custom at 4
         if (strstr(buf, "\"grc\"")) { s_set_chain = (int)f3_parse_f(buf, "\"grc\""); if (s_set_chain != 0 && s_set_chain != 3) s_set_chain = 5; }
-        if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0 && s_set_fcap != 60) s_set_fcap = -1; }
+        if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 40 && s_set_fcap != 0 && s_set_fcap != 60) s_set_fcap = -1; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
         if (strstr(buf, "\"ga\"")) { s_set_ga = (int)f3_parse_f(buf, "\"ga\""); if (s_set_ga < 0 || s_set_ga > 2) s_set_ga = 0; }
         if (strstr(buf, "\"vd\"")) { s_set_vdist = f3_parse_f(buf, "\"vd\""); if (s_set_vdist < 1500.f || s_set_vdist > 12000.f) s_set_vdist = 5000.f; }
@@ -244,7 +244,13 @@ void EditorCore::Init() {
             if (s_set_gp >= 0 && s_set_gp <= 2) ground_preset_apply(s_set_gp);
             if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
         else { ground_preset_apply(s_set_gp); s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_reuse_period = md_settings_get_ground_reuse_period(); s_set_light = md_settings_get_lighting(); }
-        md_settings_set_ground_reuse_chain(s_set_chain);
+        {   // #207 precedence: env MD_GROUND_CHAIN > saved Settings ("grc") > default 5; a Lua md.set_ground_reuse_chain call wins afterwards
+            const char* ce = getenv("MD_GROUND_CHAIN"); const char* src = "default";
+            if (ce && *ce) { const int c = atoi(ce); s_set_chain = c == 3 ? 3 : (c == 0 ? 0 : 5); src = "env"; }
+            else if (strstr(sb, "\"grc\"")) src = "saved";
+            md_settings_set_ground_reuse_chain(s_set_chain);
+            fprintf(stderr, "[chain] ground reuse chain %d from %s (env > saved > default)\n", s_set_chain, src);
+        }
         if (const char* ge = getenv("MD_GROUND_PRESET")) if (*ge) { const int n = atoi(ge); if (n >= 0 && n <= 2) { ground_preset_apply(n); s_set_gp = n; } }   // #193: a run can pick the preset without the saved layout
     }
 #endif
@@ -552,10 +558,10 @@ void EditorCore::Update(float dt) {
                         }
                     }
                     {
-                        static const char* kCapNm[] = { "Auto (30 idle / 60 moving)", "60", "30", "Unlimited" }; static const int kCapV[] = { -1, 60, 30, 0 };
-                        int ci = s_set_fcap == 60 ? 1 : (s_set_fcap == 30 ? 2 : (s_set_fcap == 0 ? 3 : 0));
+                        static const char* kCapNm[] = { "Auto (30 idle / 60 moving)", "30", "40", "60", "Unlimited" }; static const int kCapV[] = { -1, 30, 40, 60, 0 };
+                        int ci = s_set_fcap == 30 ? 1 : (s_set_fcap == 40 ? 2 : (s_set_fcap == 60 ? 3 : (s_set_fcap == 0 ? 4 : 0)));
                         ImGui::SetNextItemWidth(220.f);
-                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 4)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
+                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 5)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
                     }
                     {
                         static const char* kRes[] = { "1280x720", "1366x768", "1600x900", "1920x1080" };
