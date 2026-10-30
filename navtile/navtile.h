@@ -38,4 +38,10 @@ bool LoadTile(const std::string& kenshi_dir, int x, int y, std::vector<Section>&
 // area 1 = ground, 2 = costly (face type 4), blocked faces (type 5) and water (3) are left out. Returns null + err on failure.
 dtNavMesh* BuildDetour(const Section& s, std::string& err);
 
+struct PolyStats { long faces = 0, kept = 0, split = 0, dropped = 0, triangles = 0, polys = 0, portal_edges = 0; };
+
+// One Detour navmesh with a tile per ground section of the tiles x0..x1, y0..y1 (inclusive, navtile grid): convex polygons of <= 6 vertices (a convex face stays one polygon, the others are ear clipped and merged),
+// border edges on the tile lines get Detour portal codes so neighbouring tiles link. cs 0.05 m, ch 0.02 m, the Detour tile grid is the 460.8 m navtile grid with its origin at the world corner.
+bool BuildDetourTiles(const std::string& kenshi_dir, int x0, int y0, int x1, int y1, dtNavMesh** out, PolyStats* stats, std::string& err);
+
 }  // namespace md::navtile
