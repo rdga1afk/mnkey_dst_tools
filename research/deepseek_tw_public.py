@@ -40,6 +40,15 @@ QUERIES = [
  ("mod", "Total War battle terrain 'tile' 'blend' splat layers modding Assembly Kit terrain textures per tile"),
  ("shader", "Total War Attila Rome 2 terrain rendering splat blend layers Creative Assembly presentation"),
  ("shader", "Creative Assembly Alien Isolation Total War engine terrain shader Warscape tessellation distant terrain"),
+ # batch 3 (coordinator 6519066812): graphics options at the low end, and measured Intel iGPU performance
+ ("options", "Total War Warhammer graphics settings explained terrain quality terrain detail low setting what it changes"),
+ ("options", "Total War Warhammer preferences.script.txt gfx_terrain_quality settings"),
+ ("options", "Total War Warhammer graphics options guide grass shadows SSAO unit detail low medium difference"),
+ ("options", "Feral Interactive Total War Warhammer Linux macOS Vulkan Metal graphics settings low"),
+ ("perf", "Total War Warhammer Intel HD 4000 720p low fps battle benchmark"),
+ ("perf", "Total War Warhammer Intel HD 520 HD 620 low settings fps battle benchmark notebookcheck"),
+ ("perf", "Total War Warhammer 2 Intel HD Graphics 620 1080p low fps battle test"),
+ ("perf", "Total War Warhammer integrated graphics Intel UHD 620 battle fps youtube benchmark low preset 720p"),
 ]
 EXTRA_URLS = ["https://gpuopen.com/learn/anatomy-total-war-engine-part-1/", "https://gpuopen.com/learn/anatomy-total-war-engine-part-2/", "https://gpuopen.com/learn/anatomy-total-war-engine-part-3/"]
 
