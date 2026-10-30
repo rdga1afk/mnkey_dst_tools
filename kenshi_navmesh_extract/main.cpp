@@ -18,6 +18,8 @@
 #include <hkxparse/HKXTagfileParser.h>
 #include <hkxparse/HKXTypes.h>
 
+#include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -134,6 +136,51 @@ static bool extractNavMesh(const HKXStruct &navMesh, ExtractedMesh &out) {
     return true;
 }
 
+// #207 A5 prep: NAV_STATS=1 prints per tile the face statistics a Detour build needs (vertex count per face, convexity in the XZ plane, edge links)
+struct NavStats { long tiles = 0, verts = 0, faces = 0, edges = 0, nonConvex = 0, degenerate = 0, extEdges = 0, intEdges = 0, startMissing = 0; long hist[16] = {}, flagHist[16] = {}, extFlagHist[16] = {}, extSamples = 0; double minx = 1e30, maxx = -1e30, miny = 1e30, maxy = -1e30, minz = 1e30, maxz = -1e30; };
+static NavStats g_stats;
+static void accumulateStats(const HKXStruct &nm, const ExtractedMesh &m) {
+    ++g_stats.tiles; g_stats.verts += (long)m.vertices.size();
+    for (auto &v : m.vertices) { g_stats.minx = std::min<double>(g_stats.minx, v.x); g_stats.maxx = std::max<double>(g_stats.maxx, v.x); g_stats.miny = std::min<double>(g_stats.miny, v.y); g_stats.maxy = std::max<double>(g_stats.maxy, v.y); g_stats.minz = std::min<double>(g_stats.minz, v.z); g_stats.maxz = std::max<double>(g_stats.maxz, v.z); }
+    if (getenv("NAV_AABB")) {
+        auto ab = nm.fields.find("aabb");
+        if (ab != nm.fields.end()) if (auto *st = std::get_if<HKXStruct>(&ab->second)) {
+            std::cerr << "[aabb]";
+            for (auto &f : st->fields) if (auto *v = std::get_if<HKXVector4>(&f.second)) std::cerr << " " << f.first << "=(" << v->x << "," << v->y << "," << v->z << ")";
+            std::cerr << "\n";
+        } else std::cerr << "[aabb] not a struct\n";
+    }
+    auto ei = nm.fields.find("edges");
+    if (ei != nm.fields.end()) if (auto *ea = std::get_if<HKXArray>(&ei->second)) {
+        g_stats.edges += (long)ea->values.size();
+        for (auto &e : ea->values) if (auto *es = std::get_if<HKXStruct>(&e)) {
+            uint64_t of = 0, oe = 0; getUint(*es, "oppositeFace", of); getUint(*es, "oppositeEdge", oe);
+            uint64_t fl = 0; getUint(*es, "flags", fl); ++g_stats.flagHist[fl & 15];
+            if (oe >= ea->values.size() || (oe & 0x80000000ull) || (of & 0x80000000ull)) { ++g_stats.extEdges; ++g_stats.extFlagHist[fl & 15]; if (g_stats.extSamples < 6) { std::cerr << "[stats] external edge sample: oppositeEdge " << oe << " oppositeFace " << of << " flags " << fl << " (edges in tile " << ea->values.size() << ")\n"; ++g_stats.extSamples; } } else ++g_stats.intEdges;
+        }
+    }
+    for (auto &f : m.faces) {
+        ++g_stats.faces; ++g_stats.hist[std::min<size_t>(f.size(), 15)];
+        int pos = 0, neg = 0; double area = 0;
+        for (size_t i = 0; i < f.size(); ++i) {
+            const HKXVector4 &a = m.vertices[f[i]], &b = m.vertices[f[(i + 1) % f.size()]], &c = m.vertices[f[(i + 2) % f.size()]];
+            const double cr = (double)(b.x - a.x) * (c.z - b.z) - (double)(b.z - a.z) * (c.x - b.x);
+            if (cr > 1e-9) ++pos; else if (cr < -1e-9) ++neg;
+            area += (double)a.x * b.z - (double)b.x * a.z;
+        }
+        if (pos && neg) ++g_stats.nonConvex;
+        if (std::fabs(area) < 1e-6) ++g_stats.degenerate;
+    }
+}
+static void printStats() {
+    const NavStats &t = g_stats;
+    std::cerr << "[stats] tiles " << t.tiles << " verts " << t.verts << " faces " << t.faces << " edges " << t.edges << " (internal " << t.intEdges << ", external/unlinked " << t.extEdges << ")\n";
+    std::cerr << "[stats] edge flags (low 4 bits):"; for (int i = 0; i < 16; ++i) if (t.flagHist[i]) std::cerr << " " << i << ":" << t.flagHist[i] << "(ext " << t.extFlagHist[i] << ")"; std::cerr << "\n";
+    std::cerr << "[stats] vertices per face:"; for (int i = 3; i < 16; ++i) if (t.hist[i]) std::cerr << " " << i << (i == 15 ? "+" : "") << ":" << t.hist[i]; std::cerr << "\n";
+    std::cerr << "[stats] non-convex (XZ) faces " << t.nonConvex << ", zero-area faces " << t.degenerate << "\n";
+    std::cerr << "[stats] vertex range x " << t.minx << ".." << t.maxx << " y " << t.miny << ".." << t.maxy << " z " << t.minz << ".." << t.maxz << "\n";
+}
+
 static bool writeObj(const std::string &path, const std::vector<ExtractedMesh> &meshes) {
     std::ofstream out(path);
     if (!out) return false;
@@ -203,12 +250,32 @@ int main(int argc, char *argv[]) {
         std::set<const HKXStruct*> visitedStructs, visitedRefs;
         findNavMeshesInStruct(*root, navMeshes, visitedStructs, visitedRefs);
 
+        if (getenv("NAV_DUMP_FIELDS")) {   // #207 A5 prep: the field names of the navmesh, one edge and one face of the first tile that has one
+            static bool done = false;
+            for (auto *nm : navMeshes) {
+                if (done) break;
+                done = true;
+                std::cerr << "[fields] " << name << " hkaiNavMesh:";
+                for (auto &f : nm->fields) std::cerr << " " << f.first;
+                std::cerr << "\n";
+                for (const char *arr : {"edges", "faces"}) {
+                    auto it = nm->fields.find(arr);
+                    if (it == nm->fields.end()) continue;
+                    if (auto *a2 = std::get_if<HKXArray>(&it->second)) if (!a2->values.empty()) if (auto *st = std::get_if<HKXStruct>(&a2->values[0])) {
+                        std::cerr << "[fields] " << arr << "[0] (" << a2->values.size() << "):";
+                        for (auto &f : st->fields) std::cerr << " " << f.first;
+                        std::cerr << "\n";
+                    }
+                }
+            }
+        }
         std::vector<ExtractedMesh> meshes;
         for (auto *nm : navMeshes) {
             ExtractedMesh m;
             if (extractNavMesh(*nm, m) && !m.vertices.empty()) meshes.push_back(std::move(m));
         }
 
+        if (getenv("NAV_STATS")) { for (size_t mi = 0; mi < meshes.size() && mi < navMeshes.size(); ++mi) accumulateStats(*navMeshes[mi], meshes[mi]); }
         if (meshes.empty()) { emptyCount++; continue; }
 
         char outName[128];
@@ -217,6 +284,7 @@ int main(int argc, char *argv[]) {
         okCount++;
     }
 
+    if (getenv("NAV_STATS")) printStats();
     std::cerr << "Extracted: " << okCount << "  Empty(no geometry): " << emptyCount
               << "  Failed: " << failCount << "\n";
     if (!failedFiles.empty()) {
