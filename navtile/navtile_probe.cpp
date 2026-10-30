@@ -1,5 +1,5 @@
 // navtile_probe <kenshi_dir> <tileX> <tileY> [x0 z0 x1 z1]: sections of a tile, then (with 4 coordinates, engine metres) a Detour path between two points of the ground section.
-#include "navtile.h"
+#include <monkey_dust/nav/navtile.h>
 #include <DetourNavMesh.h>
 #include <DetourNavMeshQuery.h>
 #include <cstdio>

@@ -245,12 +245,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 # ── navtile_probe (#A5 prep) ──────────────────────────────
-# Kenshi navtiles (.hkt) -> sections + a Detour navmesh of the ground section + a path query. Standalone: own tagfile reader (navtile/hkt.*),
+# Kenshi navtiles (.hkt) -> sections + a Detour navmesh of the ground section + a path query. The reader and the Detour build live in engine/src/nav (compiled here directly),
 # the Detour sources of the vendored recastnavigation (no engine link). ninja navtile_probe && build/tools/navtile_probe $KENSHI_DIR 20 32 [x0 z0 x1 z1]
 set(MD_DETOUR_DIR ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Detour)
 add_executable(navtile_probe
-    navtile/navtile_probe.cpp navtile/navtile.cpp navtile/hkt.cpp
+    navtile/navtile_probe.cpp ${CMAKE_SOURCE_DIR}/engine/src/nav/navtile.cpp ${CMAKE_SOURCE_DIR}/engine/src/nav/hkt.cpp
     ${MD_DETOUR_DIR}/Source/DetourAlloc.cpp ${MD_DETOUR_DIR}/Source/DetourAssert.cpp ${MD_DETOUR_DIR}/Source/DetourCommon.cpp
     ${MD_DETOUR_DIR}/Source/DetourNavMesh.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshBuilder.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshQuery.cpp ${MD_DETOUR_DIR}/Source/DetourNode.cpp
 )
-target_include_directories(navtile_probe PRIVATE ${MD_DETOUR_DIR}/Include navtile)
+target_include_directories(navtile_probe PRIVATE ${MD_DETOUR_DIR}/Include ${CMAKE_SOURCE_DIR}/engine/include ${CMAKE_SOURCE_DIR}/engine/src/nav)
