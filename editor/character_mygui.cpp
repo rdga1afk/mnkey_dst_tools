@@ -406,7 +406,7 @@ bool DebugSetSlider(const char* caption, int value) {
     if (!g.content) return false;
     for (size_t i = 0; i < g.content->getChildCount(); ++i)
         if (auto* sl = g.content->getChildAt(i)->castType<mdui::Slider>(false))
-            if (sl->getUserString("slider") == caption) { sl->setScrollPosition(value); sl->eventScrollChangePosition(sl, value); return true; }   // the slider's own handler runs (generic or Idle stance)
+            if (sl->getUserString("slider") == caption) { sl->setScrollPosition(value); sl->eventScrollChangePosition(sl, (int)sl->getScrollPosition()); return true; }   // the slider's own handler runs with the CLAMPED position as a real drag gives it (31.10: the raw value 1 put Head size 1 into the session = a headless character on screen during the gate) (generic or Idle stance)
     return false;
 }
 
