@@ -80,6 +80,9 @@ Attach g_hair, g_beard;
 std::string g_att_key;
 
 float g_yaw = 0.f, g_pit = -0.35f, g_dist = 3.8f, g_lookat_y = 0.85f;
+// FACE / HAIR view: frames the posed head of the current mesh (Kenshi tracks the head bone live, exe 1405e9490), re-framed on a tab or character change
+bool g_head_cam = false, g_frame_pending = false;
+std::vector<float> g_head_pts;             // posed positions (x, y, z, file units) of the vertices in the top 28 units of the body: head and neck
 
 M4 RotY(float a) { M4 r = Identity(); r[0] = cosf(a); r[2] = sinf(a); r[8] = -sinf(a); r[10] = cosf(a); return r; }
 M4 RotX(float a) { M4 r = Identity(); r[5] = cosf(a); r[6] = -sinf(a); r[9] = sinf(a); r[10] = cosf(a); return r; }
@@ -261,7 +264,7 @@ bool Rebuild() {
     g_ni = int(g_body.indices.size());
     g_error.clear();
     g_key = race.id + (female ? "|f" : "|m") + std::to_string(ss.head()); g_dirty = true;
-    g_refit = true;
+    g_refit = true; g_frame_pending = g_head_cam;
     fprintf(stdout, "[CharPreview] %s %s: %zu vertices, %zu bones, %zu poses, mesh %s\n", race.name.c_str(), female ? "female" : "male", g_base.size(), g_body.bone_name.size(), g_body.poses.size(), rel.c_str());
     return true;
 }
@@ -349,7 +352,18 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
         miny = std::min(miny, y); maxy = std::max(maxy, y);
     }
     g_ground = miny;
+    g_head_pts.clear();
+    for (const SkinnedVertex& v : g_body.vertices) {
+        float p[3] = {0.f, 0.f, 0.f};
+        for (int k = 0; k < 4; ++k) { if (v.weight[k] <= 0.f) continue; const M4& a = skin[v.joint[k]]; for (int c = 0; c < 3; ++c) p[c] += v.weight[k] * (a[c] * v.pos[0] + a[4 + c] * v.pos[1] + a[8 + c] * v.pos[2] + a[12 + c]); }
+        if (p[1] > maxy - 2.8f) g_head_pts.insert(g_head_pts.end(), p, p + 3);
+    }
     if (g_refit) { g_refit = false; { const float r = (maxy - miny) / kHumanHeight; g_fit = r > 1.04f ? r : 1.f; } }
+    if (g_head_cam && g_frame_pending) {   // the window of the head: centred 0.14 s below the top of the skull, half-height 0.25 s (s = body height / the male Greenlander's); hair above that is cut
+        g_frame_pending = false;
+        const float top_m = (maxy - miny) * 0.1f, s = top_m / (kHumanHeight * 0.1f);
+        g_lookat_y = (top_m - 0.14f * s) / g_fit; g_dist = 0.62f * s / g_fit; g_pit = 0.f;
+    }
     for (size_t i = 0; i < 30; ++i) {
         if (i < skin.size()) memcpy(g_ws[i], skin[i].data(), 64);
         else { memset(g_ws[i], 0, 64); g_ws[i][0] = g_ws[i][5] = g_ws[i][10] = g_ws[i][15] = 1.f; }
@@ -376,13 +390,16 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
     g_dirty = false;
 }
 
+M4 CurView() { return Mul(Translate(0.f, -g_lookat_y * g_fit, -g_dist * g_fit), Mul(RotX(g_pit), RotY(g_yaw))); }
+M4 CurProj() { return Persp(0.78f, float(g_rtt_w) / float(g_rtt_h), 0.05f, 10.f); }
+
 void Draw(md::GpuCommandBufferHandle cmd) {
     Prepare(cmd);
     if (!g_active) return;
     // file units are 0.1 m; the body is lifted so that its lowest vertex is on y = 0, where the ground and the pole stand
-    M4 view = Mul(Translate(0.f, -g_lookat_y * g_fit, -g_dist * g_fit), Mul(RotX(g_pit), RotY(g_yaw)));
+    M4 view = CurView();
     float asp = float(g_rtt_w) / float(g_rtt_h);
-    M4 proj = Persp(0.78f, asp, 0.05f, 10.f);
+    M4 proj = CurProj();
     M4 scale = Identity(); scale[0] = scale[5] = scale[10] = 0.1f;
     M4 mvp = Mul(proj, view);
     M4 body_mvp = Mul(proj, Mul(view, Mul(Translate(0.f, -g_ground * 0.1f, 0.f), scale)));
@@ -513,14 +530,27 @@ void ReloadPipelines() {
 }
 
 void SetCameraForTab(int tab) {
+    g_head_cam = tab != 0; g_frame_pending = g_head_cam; g_yaw = 0.f;
     if (tab == 0) { g_dist = 3.8f; g_pit = -0.35f; g_lookat_y = 0.85f; }
-    else { g_dist = 0.55f; g_pit = 0.f; g_lookat_y = 1.62f; }
+    else { g_dist = 0.55f; g_pit = 0.f; g_lookat_y = 1.62f; g_dirty = true; }   // the numbers are used until the head is measured
+}
+bool HeadNdc(float& xmin, float& xmax, float& ymin, float& ymax) {   // the posed head vertices in normalised device coordinates (-1..1), for the behaviour tests
+    if (g_head_pts.empty() || g_rtt_w < 4) return false;
+    const M4 mvp = Mul(CurProj(), Mul(CurView(), Mul(Translate(0.f, -g_ground * 0.1f, 0.f), [] { M4 sc = Identity(); sc[0] = sc[5] = sc[10] = 0.1f; return sc; }())));
+    xmin = ymin = 1e9f; xmax = ymax = -1e9f;
+    for (size_t i = 0; i + 2 < g_head_pts.size(); i += 3) {
+        const float* q = &g_head_pts[i]; float c[4];
+        for (int r = 0; r < 4; ++r) c[r] = mvp[r] * q[0] + mvp[4 + r] * q[1] + mvp[8 + r] * q[2] + mvp[12 + r];
+        if (c[3] <= 0.f) continue;
+        xmin = std::min(xmin, c[0] / c[3]); xmax = std::max(xmax, c[0] / c[3]); ymin = std::min(ymin, c[1] / c[3]); ymax = std::max(ymax, c[1] / c[3]);
+    }
+    return xmax >= xmin;
 }
 void GetCamera(float& pitch, float& distance, float& look_at_y) { pitch = g_pit; distance = g_dist; look_at_y = g_lookat_y; }
 void SetYaw(float radians) { g_yaw = radians; }
 void SetKenshiLight(bool on) { g_kenshi_light = on; }
 
-void SetCamera(float pitch, float distance, float look_at_y) { g_pit = pitch; g_dist = distance; g_lookat_y = look_at_y; }
+void SetCamera(float pitch, float distance, float look_at_y) { g_head_cam = false; g_pit = pitch; g_dist = distance; g_lookat_y = look_at_y; }
 
 void DumpState(FILE* f) {
     fprintf(f, "[CharPreview]\n  active=%d  ni=%d  rtt=%dx%d\n  yaw=%.4f  pit=%.4f  dist=%.4f\n\n", g_active ? 1 : 0, g_ni, g_rtt_w, g_rtt_h, g_yaw, g_pit, g_dist);

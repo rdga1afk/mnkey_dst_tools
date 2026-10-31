@@ -16,6 +16,7 @@ bool Active();
 void RenderFrame(md::GpuCommandBufferHandle cmd);
 void DrawInImGui(float W, float H);
 void ReloadPipelines();
+bool HeadNdc(float& xmin, float& xmax, float& ymin, float& ymax);   // projected extent of the head vertices
 void GetCamera(float& pitch, float& distance, float& look_at_y);   // for the behaviour tests
 void SetCameraForTab(int tab);          // 0 BODY: whole body, others: head and shoulders
 void SetKenshiLight(bool on);           // Kenshi's character-screen lighting (Deferred_RTT, #192); default off until the owner approves the new look

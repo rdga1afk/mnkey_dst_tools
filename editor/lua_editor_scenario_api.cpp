@@ -86,6 +86,7 @@ static int l_md_char_file(lua_State* L) {
     if (lua_toboolean(L, 2)) std::filesystem::remove(p, ec);
     lua_pushboolean(L, std::filesystem::exists(p, ec)); return 1;
 }
+static int l_md_char_head_ndc(lua_State* L) { float a, b, c, d; if (!CharPreviewSDLGPU::HeadNdc(a, b, c, d)) return 0; lua_pushnumber(L, a); lua_pushnumber(L, b); lua_pushnumber(L, c); lua_pushnumber(L, d); return 4; }   // md.char_head_ndc() -> xmin, xmax, ymin, ymax of the head in the preview (-1..1)
 static int l_md_char_camera(lua_State* L) { float p, d, y; CharPreviewSDLGPU::GetCamera(p, d, y); lua_pushnumber(L, d); lua_pushnumber(L, y); lua_pushnumber(L, p); return 3; }   // md.char_camera() -> distance, look-at height, pitch
 static int l_md_char_ui_pointer(lua_State* L) { CharacterMyGui::DebugPointer(lua_toboolean(L, 1)); return 0; }
 bool g_editor_uncapped = false;   // read by the frame cap in main.cpp
@@ -265,6 +266,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("editor_vsync", l_md_editor_vsync);
     sys.RegisterNamespaceFunction("char_ui_pointer", l_md_char_ui_pointer);
     sys.RegisterNamespaceFunction("char_camera", l_md_char_camera);
+    sys.RegisterNamespaceFunction("char_head_ndc", l_md_char_head_ndc);
     sys.RegisterNamespaceFunction("char_file", l_md_char_file);
     sys.RegisterNamespaceFunction("char_ui_dialog", l_md_char_ui_dialog);
     sys.RegisterNamespaceFunction("char_ui_slider_key", l_md_char_ui_slider_key);
