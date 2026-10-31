@@ -126,6 +126,11 @@ std::array<float, 3> Session::HairRgb() const {
     return HsbToRgb(v("Hair Colour", 0.f), v("Hair Saturation", 0.f), v("Hair Brightness", 0.5f));
 }
 
+void Session::SetValue(const std::string& slider, float v) {
+    if (config_) for (const Category& c : config_->categories) for (const Range& g : c.ranges) if (g.name == slider) v = std::min(std::max(v, float(g.min)), float(g.max));
+    values_.values[slider] = v; ++revision_;
+}
+
 float Session::Value(const Range& r) const {
     auto it = values_.values.find(r.name);
     return it == values_.values.end() ? float(RangeMid(r)) : it->second;

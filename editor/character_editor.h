@@ -11,5 +11,7 @@ md::character::Session& GetSession();
 bool EnsureLoaded();                       // loads the install (KENSHI_DIR) on the first call; false when it is missing
 bool ApplyIo(int mode, const char* path, std::string& err);   // what SAVE / OPEN of the file dialog does: 1 IMPORT, 2 EXPORT (also for the behaviour tests)
 bool& Clothes();                           // CLOTHES state
+void SetIoDir(const char* dir);            // default folder of IMPORT / EXPORT / CONFIRM (empty = the working directory); created if missing
+const std::string& IoDir();
 std::string& ConfirmMessage();             // result of the last CONFIRM     // scenarios (Lua) set slider values through it
 }

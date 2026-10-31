@@ -237,7 +237,7 @@ void DialogClose() {
 void DialogOpen(int mode) {
     if (!dlg.roots.empty()) DialogClose();
     dlg.mode = mode;
-    dlg.dir = std::filesystem::current_path();
+    dlg.dir = CharacterEditor::IoDir().empty() ? std::filesystem::current_path() : std::filesystem::absolute(CharacterEditor::IoDir());
     dlg.roots = MyGUI::LayoutManager::getInstance().loadLayout("Kenshi_OpenSaveFileDialog.layout", "Dlg_");
     if (MyGUI::Window* w = WT<MyGUI::Window>("Dlg_Root")) { w->setCaption(mode == 1 ? "IMPORT" : "EXPORT"); w->setRealCoord(0.18f, 0.15f, 0.64f, 0.7f); }
     // the layout puts the file name field at y = 1 (the exe moves it into the bottom row, level with OPEN / CANCEL)

@@ -1,3 +1,4 @@
+#include <filesystem>
 #include "character/appearance.h"
 #include "character/appearance_io.h"
 #include "character/race_stats.h"
@@ -21,12 +22,13 @@ namespace {
 Session g_session;
 bool g_clothes = true;
 char g_io_path[512] = "";
+std::string g_io_dir;             // default folder of the IMPORT / EXPORT dialogs and of CONFIRM; empty = the working directory (tests set it so they never write next to the owner's files)
 std::string g_confirm_msg;        // result of the last CONFIRM, shown in the RACE STATS panel header
 
 // CONFIRM: the editor has no game character to give the appearance to; it writes the .bod2 to the last EXPORT / IMPORT path (character.bod2 before the first one).
 bool Confirm() {
     std::string err;
-    const std::string path = g_io_path[0] ? g_io_path : "character.bod2";
+    const std::string path = g_io_path[0] ? g_io_path : (g_io_dir.empty() ? std::string("character.bod2") : g_io_dir + "/character.bod2");
     const bool ok = md::character::ExportAppearance(g_session, path, err);
     g_confirm_msg = ok ? "Saved " + path : "Not saved: " + err;
     return ok;
@@ -55,6 +57,9 @@ md::character::Session& GetSession() { return g_session; }
 bool ApplyIo(int mode, const char* path, std::string& err) {
     return mode == 1 ? md::character::ImportAppearance(g_session, path, err) : md::character::ExportAppearance(g_session, path, err);
 }
+
+void SetIoDir(const char* dir) { g_io_dir = dir ? dir : ""; if (!g_io_dir.empty()) { std::error_code ec; std::filesystem::create_directories(g_io_dir, ec); } }
+const std::string& IoDir() { return g_io_dir; }
 
 bool& Clothes() { return g_clothes; }
 std::string& ConfirmMessage() { return g_confirm_msg; }

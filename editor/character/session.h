@@ -43,7 +43,7 @@ public:
     // Selects the subrace called `name` (its group becomes the RACE); false when there is none.
     bool SelectSubraceByName(const std::string& name, bool female);
     float Value(const Range& r) const;  // current value of a slider (mid when unset)
-    void SetValue(const std::string& slider, float v) { values_.values[slider] = v; ++revision_; }
+    void SetValue(const std::string& slider, float v);   // clamped to the slider's range (a value outside it, e.g. from an imported file, made a headless preview: 31.10)
     void Reset() { if (config_) Reset(*config_, values_); stance_ = DefaultStance(); head_ = 0; ++revision_; }
     // Heads: the race's `heads male` / `heads female` HEAD records that have a `texture map` (M:docs/characters.md "Head"); index 0 is the default.
     size_t HeadCount() const { return heads_.size(); }

@@ -100,6 +100,8 @@ static int l_md_char_ui_list_step(lua_State* L) { lua_pushboolean(L, CharacterMy
 static int l_md_char_ui_type(lua_State* L) { const char* c = CharacterMyGui::DebugType(luaL_checkstring(L, 1), luaL_checkstring(L, 2)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_click(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugClick(luaL_checkstring(L, 1))); return 1; }
 static int l_md_char_ui_caption(lua_State* L) { const char* c = CharacterMyGui::DebugCaption(luaL_checkstring(L, 1)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
+// md.char_io_dir(path): default folder of the IMPORT / EXPORT dialogs and CONFIRM for this run (tests: never write next to the owner's files, 31.10)
+static int l_md_char_io_dir(lua_State* L) { CharacterEditor::SetIoDir(luaL_checkstring(L, 1)); return 0; }
 static int l_md_char_ui_slider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugSetSlider(luaL_checkstring(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
 static int l_md_char_ui_dump(lua_State* L) { CharacterMyGui::DebugDump(luaL_checkstring(L, 1)); return 0; }
 static int l_md_char_ui_visible(lua_State* L) { lua_pushboolean(L, CharacterMyGui::Visible()); return 1; }
@@ -258,6 +260,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_ui_caption", l_md_char_ui_caption);
     sys.RegisterNamespaceFunction("char_ui_slider", l_md_char_ui_slider);
     sys.RegisterNamespaceFunction("char_io", l_md_char_io);
+    sys.RegisterNamespaceFunction("char_io_dir", l_md_char_io_dir);
     sys.RegisterNamespaceFunction("char_ui_draw", l_md_char_ui_draw);
     sys.RegisterNamespaceFunction("editor_vsync", l_md_editor_vsync);
     sys.RegisterNamespaceFunction("char_ui_pointer", l_md_char_ui_pointer);
