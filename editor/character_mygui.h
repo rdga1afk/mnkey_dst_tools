@@ -18,6 +18,7 @@ bool Visible();                            // DrawTab ran this frame
 // scenarios / tests (no ImGui): widget caption by name, click a button by name, slider position
 const char* DebugCaption(const char* widget);
 bool DebugClick(const char* widget);
+bool DebugWidgetCentre(const char* widget, float& x, float& y);   // screen px of a widget centre, for real-input clicks
 bool DebugSetSlider(const char* slider_caption, int value);
 const char* DebugFirstSlider();
 void DebugDraw(bool on);               // measurement: the window is (not) drawn

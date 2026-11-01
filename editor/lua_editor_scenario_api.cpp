@@ -10,6 +10,7 @@
 #include "character_mygui.h"
 #include "character/appearance_io.h"
 #include "character/session.h"
+#include "imgui.h"
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -99,6 +100,14 @@ static int l_md_char_io(lua_State* L) {
 static int l_md_char_ui_first_slider(lua_State* L) { const char* k = CharacterMyGui::DebugFirstSlider(); if (k) lua_pushstring(L, k); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_list_step(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugListStep((int)luaL_checkinteger(L, 1))); return 1; }
 static int l_md_char_ui_type(lua_State* L) { const char* c = CharacterMyGui::DebugType(luaL_checkstring(L, 1), luaL_checkstring(L, 2)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
+// md.char_ui_real_click(widget): moves the ImGui mouse onto the widget centre, presses and releases (events trickle over 3 frames: the path of a real mouse, hit test and clipping included); returns false when the widget is missing/hidden
+static int l_md_char_ui_real_click(lua_State* L) {
+    float x, y;
+    if (!CharacterMyGui::DebugWidgetCentre(luaL_checkstring(L, 1), x, y)) { lua_pushboolean(L, 0); return 1; }
+    ImGuiIO& io = ImGui::GetIO(); io.AddMousePosEvent(x, y); io.AddMouseButtonEvent(0, true); io.AddMouseButtonEvent(0, false);
+    lua_pushboolean(L, 1); return 1;
+}
+static int l_md_editor_window_size(lua_State* L) { window_set_size((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2)); return 0; }   // QA at 1366x768 / 1920x1080
 static int l_md_char_ui_click(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugClick(luaL_checkstring(L, 1))); return 1; }
 static int l_md_char_ui_caption(lua_State* L) { const char* c = CharacterMyGui::DebugCaption(luaL_checkstring(L, 1)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
 // md.char_io_dir(path): default folder of the IMPORT / EXPORT dialogs and CONFIRM for this run (tests: never write next to the owner's files, 31.10)
@@ -264,6 +273,8 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_io_dir", l_md_char_io_dir);
     sys.RegisterNamespaceFunction("char_ui_draw", l_md_char_ui_draw);
     sys.RegisterNamespaceFunction("editor_vsync", l_md_editor_vsync);
+    sys.RegisterNamespaceFunction("editor_window_size", l_md_editor_window_size);
+    sys.RegisterNamespaceFunction("char_ui_real_click", l_md_char_ui_real_click);
     sys.RegisterNamespaceFunction("char_ui_pointer", l_md_char_ui_pointer);
     sys.RegisterNamespaceFunction("char_camera", l_md_char_camera);
     sys.RegisterNamespaceFunction("char_head_ndc", l_md_char_head_ndc);

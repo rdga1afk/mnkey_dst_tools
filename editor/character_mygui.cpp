@@ -382,6 +382,14 @@ bool DebugClick(const char* name) {
     return true;
 }
 
+bool DebugWidgetCentre(const char* name, float& x, float& y) {   // screen px of the widget centre (the real-input test clicks there); false: missing or hidden
+    MyGUI::Widget* w = W(name);
+    if (!w || !w->getVisible() || !g.visible) return false;
+    const MyGUI::IntCoord c = w->getAbsoluteCoord();
+    x = g.x + c.left + c.width * 0.5f; y = g.y + c.top + c.height * 0.5f;
+    return true;
+}
+
 const char* DebugSliderKey(int n) {   // key of the n-th (1-based) value slider of the open tab, nil past the end
     static std::string key;
     if (!g.content) return nullptr;
@@ -458,6 +466,7 @@ void Draw(SDL_GPURenderPass*, md::GpuCommandBufferHandle) {}
 bool Visible() { return false; }
 const char* DebugCaption(const char*) { return nullptr; }
 bool DebugClick(const char*) { return false; }
+bool DebugWidgetCentre(const char*, float&, float&) { return false; }
 const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
