@@ -270,7 +270,9 @@ void DialogOpen(int mode) {
 }
 
 // ── button handlers (the exe's handlers of docs/spec/ui/character_editor.md §2) ──
+int g_click_count = 0;   // handler invocations (dead-click diagnosis)
 void Click(MyGUI::Widget* w) {
+    ++g_click_count;
     Session& s = *g.s;
     const std::string& n = w->getName();
     auto step = [](size_t cur, size_t count, int d) { return (cur + count + size_t(d + int(count))) % count; };
@@ -390,6 +392,7 @@ bool DebugWidgetCentre(const char* name, float& x, float& y) {   // screen px of
     return true;
 }
 
+int DebugClickCount() { return g_click_count; }
 int DebugTab() { return g.tab; }   // open tab 0 BODY / 1 FACE / 2 HAIR
 
 const char* DebugFocus() {   // name of the MyGUI widget under the mouse right now (dead-click diagnosis)
@@ -477,6 +480,7 @@ bool DebugClick(const char*) { return false; }
 bool DebugWidgetCentre(const char*, float&, float&) { return false; }
 const char* DebugFocus() { return nullptr; }
 int DebugTab() { return -1; }
+int DebugClickCount() { return 0; }
 const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }

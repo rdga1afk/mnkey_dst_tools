@@ -60,9 +60,12 @@ public:
     void RandomiseCategory(const std::string& category) {
         if (config_) md::character::RandomiseCategory(*config_, category, values_, rng_);
         if (category == "Body" && !stances_.empty()) stance_ = size_t(rng_.Next() * float(stances_.size())) % stances_.size();
+        if (category == "Face") RandomiseHead();
         ++revision_;
     }
-    void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); RandomiseHair(); }
+    // FACE picks a random head of the gender's list (exe 14007b310 -> 14006e1a0): the visible part of FACE RANDOMISE, the sliders vary only by the data's random_variation; RANDOMISE ALL calls it too
+    void RandomiseHead() { if (!heads_.empty()) head_ = size_t(rng_.Next() * float(heads_.size())) % heads_.size(); }
+    void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); RandomiseHair(); RandomiseHead(); ++revision_; }
     // Hair tab (exe 0x14007adc0): a weighted pick of the hair, of the beard (not for women) and of the hair colour; no colours in the race: brightness 100, saturation 0.
     void RandomiseHair();
     void Seed(uint32_t s) { rng_ = Rng(s); }

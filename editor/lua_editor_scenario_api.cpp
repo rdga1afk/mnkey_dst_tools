@@ -104,9 +104,12 @@ static int l_md_char_ui_type(lua_State* L) { const char* c = CharacterMyGui::Deb
 static int l_md_char_ui_real_click(lua_State* L) {
     float x, y;
     if (!CharacterMyGui::DebugWidgetCentre(luaL_checkstring(L, 1), x, y)) { lua_pushboolean(L, 0); return 1; }
-    ImGuiIO& io = ImGui::GetIO(); io.AddMousePosEvent(x, y); io.AddMouseButtonEvent(0, true); io.AddMouseButtonEvent(0, false);
+    ImGuiIO& io = ImGui::GetIO(); io.AddMousePosEvent(x, y);
+    if (lua_toboolean(L, 2)) { lua_pushboolean(L, 1); return 1; }   // hover only: a real mouse moves for several frames before it presses
+    io.AddMouseButtonEvent(0, true); io.AddMouseButtonEvent(0, false);
     lua_pushboolean(L, 1); return 1;
 }
+static int l_md_char_ui_clicks(lua_State* L) { lua_pushinteger(L, CharacterMyGui::DebugClickCount()); return 1; }
 static int l_md_char_ui_tab(lua_State* L) { lua_pushinteger(L, CharacterMyGui::DebugTab()); return 1; }
 static int l_md_char_ui_focus(lua_State* L) { const char* n = CharacterMyGui::DebugFocus(); if (n) lua_pushstring(L, n); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_widget_pos(lua_State* L) { float x, y; if (!CharacterMyGui::DebugWidgetCentre(luaL_checkstring(L, 1), x, y)) return 0; lua_pushnumber(L, x); lua_pushnumber(L, y); return 2; }
@@ -276,6 +279,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_io_dir", l_md_char_io_dir);
     sys.RegisterNamespaceFunction("char_ui_draw", l_md_char_ui_draw);
     sys.RegisterNamespaceFunction("editor_vsync", l_md_editor_vsync);
+    sys.RegisterNamespaceFunction("char_ui_clicks", l_md_char_ui_clicks);
     sys.RegisterNamespaceFunction("char_ui_tab", l_md_char_ui_tab);
     sys.RegisterNamespaceFunction("char_ui_focus", l_md_char_ui_focus);
     sys.RegisterNamespaceFunction("char_ui_widget_pos", l_md_char_ui_widget_pos);
