@@ -16,7 +16,7 @@ bool Bind(md::character::Session* session);
 bool Active();
 void RenderFrame(md::GpuCommandBufferHandle cmd);
 void DrawInImGui(float W, float H);
-bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh, std::string& loaded_tex, std::string& expected_tex, bool& drawn, std::string& loaded_head, std::string& expected_head);   // sweep (D-007)
+bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh, std::string& loaded_tex, std::string& expected_tex, bool& drawn, std::string& loaded_head, std::string& expected_head, int& subs_loaded, int& subs_expected);   // sweep (D-007)
 void ReloadPipelines();
 bool HeadNdc(float& xmin, float& xmax, float& ymin, float& ymax);   // projected extent of the head vertices
 void GetCamera(float& pitch, float& distance, float& look_at_y);   // for the behaviour tests

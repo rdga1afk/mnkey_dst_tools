@@ -74,6 +74,7 @@ struct Attach {
     bool head_ok = false;
     int ni = 0;
     bool ok = false;
+    int subs = 0;                          // submeshes merged into the buffer (one draw call draws all of them)
     std::string mesh_loaded, tex_loaded, head_loaded;   // what the slot holds (the sweep compares it with the record)
     float diffuse[4] = {1, 0, 0, 0}, alpha[4] = {0, 0, 0, 1}, threshold = 0.5f;
 };
@@ -271,7 +272,7 @@ bool Rebuild() {
 }
 
 void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
-    a.ok = false; a.ni = 0; a.head_ok = false; a.mesh_loaded.clear(); a.tex_loaded.clear(); a.head_loaded.clear();
+    a.ok = false; a.ni = 0; a.subs = 0; a.head_ok = false; a.mesh_loaded.clear(); a.tex_loaded.clear(); a.head_loaded.clear();
     if (!info) return;
     const Session& ss = *g_session;
     GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
@@ -306,7 +307,7 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     if (tp.empty() || !a.tex.InitFromDDSArray(&tpc, 1, sd)) { fprintf(stderr, "[CharPreview] hair texture not found: %s\n", info->Texture(female).c_str()); return; }
     a.vbo.Init(0x8892u, vtx.data(), uint32_t(vtx.size() * sizeof(Vtx)));
     a.ibo.Init(0x8893u, sb.indices.data(), uint32_t(sb.indices.size() * sizeof(uint32_t)));
-    a.ni = int(sb.indices.size()); a.mesh_loaded = info->Mesh(female); a.tex_loaded = info->Texture(female);
+    a.ni = int(sb.indices.size()); a.subs = int(mesh.submeshes.size()); a.mesh_loaded = info->Mesh(female); a.tex_loaded = info->Texture(female);
     for (int k = 0; k < 4; ++k) { a.diffuse[k] = k == info->diffuse_channel ? 1.f : 0.f; a.alpha[k] = k == info->alpha_channel ? 1.f : 0.f; }
     a.threshold = float(info->alpha_rejection) / 255.f;
     a.ok = true;
@@ -603,7 +604,7 @@ void DrawInImGui(float W, float H) {
 
 namespace CharPreviewSDLGPU {
 // sweep (D-007): the hair / beard slot (0 hair, 1 beard) against the record the session selected: loaded names, expected names, whether the mesh is drawn
-bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh, std::string& loaded_tex, std::string& expected_tex, bool& drawn, std::string& loaded_head, std::string& expected_head) {
+bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh, std::string& loaded_tex, std::string& expected_tex, bool& drawn, std::string& loaded_head, std::string& expected_head, int& subs_loaded, int& subs_expected) {
     if (!g_session) return false;
     const Attach& a = slot == 0 ? g_hair : g_beard;
     const bool fem = g_session->gender() == Gender::Female;
@@ -613,6 +614,8 @@ bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh,
     loaded_mesh = a.mesh_loaded; loaded_tex = a.tex_loaded; loaded_head = a.head_loaded; drawn = a.ok;
     expected_mesh = info && info->HasMesh(fem) ? info->Mesh(fem) : ""; expected_tex = info && info->HasMesh(fem) ? info->Texture(fem) : "";
     expected_head = info ? info->HeadTexture(fem) : "";
+    subs_loaded = a.ok ? a.subs : 0; subs_expected = 0;
+    if (info && info->HasMesh(fem)) { md::ogre::Mesh m; md::ogre::Error oe; if (md::ogre::ReadMesh(g_session->Resources().Path(info->Mesh(fem)), m, oe)) subs_expected = int(m.submeshes.size()); }
     return true;
 }
 }
