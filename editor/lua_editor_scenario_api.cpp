@@ -11,6 +11,7 @@
 #include "character/appearance_io.h"
 #include "character/session.h"
 #include "imgui.h"
+#include <SDL3/SDL.h>
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -114,6 +115,20 @@ static int l_md_char_ui_tab(lua_State* L) { lua_pushinteger(L, CharacterMyGui::D
 static int l_md_char_ui_focus(lua_State* L) { const char* n = CharacterMyGui::DebugFocus(); if (n) lua_pushstring(L, n); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_widget_pos(lua_State* L) { float x, y; if (!CharacterMyGui::DebugWidgetCentre(luaL_checkstring(L, 1), x, y)) return 0; lua_pushnumber(L, x); lua_pushnumber(L, y); return 2; }
 static int l_md_editor_window_size(lua_State* L) { window_set_size((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2)); return 0; }   // QA at 1366x768 / 1920x1080
+// md.char_ui_sdl_click(widget): the same click as an SDL event sequence (MOUSE_MOTION, BUTTON_DOWN, BUTTON_UP at the widget centre in window coordinates) pushed to the SDL queue:
+// it goes through the editor's event loop -> ImGui SDL3 backend -> io.MousePos, i.e. the path of a real mouse minus the OS
+static int l_md_char_ui_sdl_click(lua_State* L) {
+    float x, y;
+    if (!CharacterMyGui::DebugWidgetCentre(luaL_checkstring(L, 1), x, y)) { lua_pushboolean(L, 0); return 1; }
+    SDL_Window* win = SDL_GetMouseFocus(); if (!win) win = SDL_GetKeyboardFocus(); if (!win) win = SDL_GetWindows(nullptr) ? SDL_GetWindows(nullptr)[0] : nullptr;
+    const SDL_WindowID id = win ? SDL_GetWindowID(win) : 0;
+    SDL_Event e; SDL_zero(e);
+    e.type = SDL_EVENT_MOUSE_MOTION; e.motion.windowID = id; e.motion.x = x; e.motion.y = y; SDL_PushEvent(&e);
+    if (lua_toboolean(L, 2)) { lua_pushboolean(L, 1); return 1; }   // hover only
+    SDL_zero(e); e.type = SDL_EVENT_MOUSE_BUTTON_DOWN; e.button.windowID = id; e.button.button = SDL_BUTTON_LEFT; e.button.down = true; e.button.clicks = 1; e.button.x = x; e.button.y = y; SDL_PushEvent(&e);
+    SDL_zero(e); e.type = SDL_EVENT_MOUSE_BUTTON_UP; e.button.windowID = id; e.button.button = SDL_BUTTON_LEFT; e.button.down = false; e.button.clicks = 1; e.button.x = x; e.button.y = y; SDL_PushEvent(&e);
+    lua_pushboolean(L, 1); return 1;
+}
 static int l_md_char_ui_click(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugClick(luaL_checkstring(L, 1))); return 1; }
 static int l_md_char_ui_caption(lua_State* L) { const char* c = CharacterMyGui::DebugCaption(luaL_checkstring(L, 1)); if (c) lua_pushstring(L, c); else lua_pushnil(L); return 1; }
 // md.char_io_dir(path): default folder of the IMPORT / EXPORT dialogs and CONFIRM for this run (tests: never write next to the owner's files, 31.10)
@@ -279,6 +294,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_io_dir", l_md_char_io_dir);
     sys.RegisterNamespaceFunction("char_ui_draw", l_md_char_ui_draw);
     sys.RegisterNamespaceFunction("editor_vsync", l_md_editor_vsync);
+    sys.RegisterNamespaceFunction("char_ui_sdl_click", l_md_char_ui_sdl_click);
     sys.RegisterNamespaceFunction("char_ui_clicks", l_md_char_ui_clicks);
     sys.RegisterNamespaceFunction("char_ui_tab", l_md_char_ui_tab);
     sys.RegisterNamespaceFunction("char_ui_focus", l_md_char_ui_focus);
