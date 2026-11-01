@@ -136,6 +136,12 @@ static int l_md_char_io_dir(lua_State* L) { CharacterEditor::SetIoDir(luaL_check
 static int l_md_char_ui_slider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugSetSlider(luaL_checkstring(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
 static int l_md_char_ui_dump(lua_State* L) { CharacterMyGui::DebugDump(luaL_checkstring(L, 1)); return 0; }
 static int l_md_char_ui_text_fit(lua_State* L) { int c, f; std::string l; if (!CharacterMyGui::DebugTextFit(c, f, l)) return 0; lua_pushinteger(L, c); lua_pushinteger(L, f); lua_pushstring(L, l.c_str()); return 3; }   // md.char_ui_text_fit() -> checked, failed, list (D-006 sweep)
+static int l_md_char_attach(lua_State* L) {   // md.char_attach(0 hair | 1 beard) -> loaded mesh, expected mesh, loaded texture, expected texture, drawn, loaded head overlay, expected head overlay (D-007 sweep)
+    std::string a, b, c, d, e, f; bool drawn = false;
+    if (!CharPreviewSDLGPU::DebugAttach((int)luaL_checkinteger(L, 1), a, b, c, d, drawn, e, f)) return 0;
+    lua_pushstring(L, a.c_str()); lua_pushstring(L, b.c_str()); lua_pushstring(L, c.c_str()); lua_pushstring(L, d.c_str()); lua_pushboolean(L, drawn); lua_pushstring(L, e.c_str()); lua_pushstring(L, f.c_str()); return 7;
+}
+static int l_md_char_attach_count(lua_State* L) { const auto& ss = CharacterEditor::GetSession(); const bool beard = luaL_checkinteger(L, 1) == 1; lua_pushinteger(L, (lua_Integer)(beard ? ss.BeardCount() : ss.HairCount())); lua_pushinteger(L, (lua_Integer)(beard ? ss.beard_index() : ss.hair_index())); return 2; }   // md.char_attach_count(0 hair | 1 beard) -> records of the race, selected index
 static int l_md_char_ui_visible(lua_State* L) { lua_pushboolean(L, CharacterMyGui::Visible()); return 1; }
 static int l_md_char_editor_import(lua_State* L) {
     std::string err;
@@ -301,6 +307,8 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_ui_focus", l_md_char_ui_focus);
     sys.RegisterNamespaceFunction("char_ui_widget_pos", l_md_char_ui_widget_pos);
     sys.RegisterNamespaceFunction("char_ui_text_fit", l_md_char_ui_text_fit);
+    sys.RegisterNamespaceFunction("char_attach", l_md_char_attach);
+    sys.RegisterNamespaceFunction("char_attach_count", l_md_char_attach_count);
     sys.RegisterNamespaceFunction("editor_window_size", l_md_editor_window_size);
     sys.RegisterNamespaceFunction("char_ui_real_click", l_md_char_ui_real_click);
     sys.RegisterNamespaceFunction("char_ui_pointer", l_md_char_ui_pointer);

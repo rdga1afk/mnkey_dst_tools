@@ -8,7 +8,7 @@
 namespace md::character {
 bool BuildSkinnedBody(const md::ogre::Mesh& mesh, const md::ogre::Skeleton& sk, SkinnedBody& out, std::string& error) {
     out = SkinnedBody();
-    if (mesh.submeshes.size() != 1 || mesh.submeshes[0].use_shared || !mesh.submeshes[0].has_geometry) { error = "expected one submesh with its own geometry"; return false; }
+    if (mesh.submeshes.size() != 1 || mesh.submeshes[0].use_shared || !mesh.submeshes[0].has_geometry) { error = "expected one submesh with its own geometry (submeshes " + std::to_string(mesh.submeshes.size()) + (mesh.submeshes.empty() ? "" : std::string(", first uses shared ") + (mesh.submeshes[0].use_shared ? "yes" : "no") + ", shared geometry " + (mesh.has_shared ? "yes" : "no")) + ")"; return false; }
     const md::ogre::SubMesh& sm = mesh.submeshes[0];
     const md::ogre::Geometry& g = sm.geometry;
     if (sk.bones.empty() || sk.bones.size() > 255) { error = "skeleton bone count"; return false; }

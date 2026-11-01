@@ -74,6 +74,7 @@ struct Attach {
     bool head_ok = false;
     int ni = 0;
     bool ok = false;
+    std::string mesh_loaded, tex_loaded, head_loaded;   // what the slot holds (the sweep compares it with the record)
     float diffuse[4] = {1, 0, 0, 0}, alpha[4] = {0, 0, 0, 1}, threshold = 0.5f;
 };
 Attach g_hair, g_beard;
@@ -270,20 +271,30 @@ bool Rebuild() {
 }
 
 void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
-    a.ok = false; a.ni = 0; a.head_ok = false;
+    a.ok = false; a.ni = 0; a.head_ok = false; a.mesh_loaded.clear(); a.tex_loaded.clear(); a.head_loaded.clear();
     if (!info) return;
     const Session& ss = *g_session;
     GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
     // the overlay on the head skin: also for an attachment without a mesh (Beard01 / 04 / 06 are only that)
     const std::string hp = ss.Resources().Path(info->HeadTexture(female)); const char* hpc = hp.c_str();
     if (!hp.empty() && a.head_tex.InitFromDDSArray(&hpc, 1, sd)) {
-        a.head_ok = true;
+        a.head_ok = true; a.head_loaded = info->HeadTexture(female);
         for (int k = 0; k < 4; ++k) { a.head_mult[k] = k == info->HeadChannel(female) ? 1.f : 0.f; a.head_alpha[k] = k == info->HeadAlphaChannel(female) ? 1.f : 0.f; }
     }
     if (!info->HasMesh(female)) return;
     md::ogre::Mesh mesh; md::ogre::Error oe; SkinnedBody sb; std::string err;
     if (!md::ogre::ReadMesh(ss.Resources().Path(info->Mesh(female)), mesh, oe)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), oe.Message().c_str()); return; }
-    if (!BuildSkinnedBody(mesh, g_skeleton, sb, err)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), err.c_str()); return; }
+    // a hairstyle / beard may be several submeshes, each with its own geometry (arkhaircut04: 5): every one is skinned alone and appended to one buffer (D-008: only single-submesh meshes were drawn)
+    std::vector<SkinnedVertex> all_vertices; std::vector<uint32_t> all_indices;
+    for (const md::ogre::SubMesh& sub : mesh.submeshes) {
+        md::ogre::Mesh one = mesh; one.submeshes.assign(1, sub);
+        SkinnedBody part;
+        if (!BuildSkinnedBody(one, g_skeleton, part, err)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), err.c_str()); return; }
+        const uint32_t base = uint32_t(all_vertices.size());
+        all_vertices.insert(all_vertices.end(), part.vertices.begin(), part.vertices.end());
+        for (uint32_t ix : part.indices) all_indices.push_back(ix + base);
+    }
+    sb.vertices = std::move(all_vertices); sb.indices = std::move(all_indices);
     std::vector<Vtx> vtx(sb.vertices.size());
     for (size_t i = 0; i < vtx.size(); ++i) {
         const SkinnedVertex& sv = sb.vertices[i]; Vtx& v = vtx[i];
@@ -295,7 +306,7 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     if (tp.empty() || !a.tex.InitFromDDSArray(&tpc, 1, sd)) { fprintf(stderr, "[CharPreview] hair texture not found: %s\n", info->Texture(female).c_str()); return; }
     a.vbo.Init(0x8892u, vtx.data(), uint32_t(vtx.size() * sizeof(Vtx)));
     a.ibo.Init(0x8893u, sb.indices.data(), uint32_t(sb.indices.size() * sizeof(uint32_t)));
-    a.ni = int(sb.indices.size());
+    a.ni = int(sb.indices.size()); a.mesh_loaded = info->Mesh(female); a.tex_loaded = info->Texture(female);
     for (int k = 0; k < 4; ++k) { a.diffuse[k] = k == info->diffuse_channel ? 1.f : 0.f; a.alpha[k] = k == info->alpha_channel ? 1.f : 0.f; }
     a.threshold = float(info->alpha_rejection) / 255.f;
     a.ok = true;
@@ -589,3 +600,19 @@ void DrawInImGui(float W, float H) {
 }
 
 } // namespace CharPreviewSDLGPU
+
+namespace CharPreviewSDLGPU {
+// sweep (D-007): the hair / beard slot (0 hair, 1 beard) against the record the session selected: loaded names, expected names, whether the mesh is drawn
+bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh, std::string& loaded_tex, std::string& expected_tex, bool& drawn, std::string& loaded_head, std::string& expected_head) {
+    if (!g_session) return false;
+    const Attach& a = slot == 0 ? g_hair : g_beard;
+    const bool fem = g_session->gender() == Gender::Female;
+    const AttachmentInfo* info = nullptr;
+    if (slot == 0) { if (g_session->HairCount()) info = &g_session->Hair(g_session->hair_index()); }
+    else if (g_session->BeardCount() && !fem) info = &g_session->Beard(g_session->beard_index());
+    loaded_mesh = a.mesh_loaded; loaded_tex = a.tex_loaded; loaded_head = a.head_loaded; drawn = a.ok;
+    expected_mesh = info && info->HasMesh(fem) ? info->Mesh(fem) : ""; expected_tex = info && info->HasMesh(fem) ? info->Texture(fem) : "";
+    expected_head = info ? info->HeadTexture(fem) : "";
+    return true;
+}
+}
