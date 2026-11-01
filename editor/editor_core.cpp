@@ -36,7 +36,9 @@ struct F3SettingsState { bool det; ImVec2 pos, siz; };
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
 // Settings tab -> renderer (defined in game/src/render/npc_render_deferred.cpp; tools/ does not include game headers)
 extern void  md_settings_set_frames_in_flight(int n);   // #152: SDL_SetGPUAllowedFramesInFlight 1 / 2 / 3 (engine default 1)
-extern void  md_settings_set_up_sharp(int mode);   // #207 (owner 31.10): sharpening of the upscale while the camera moves: 0 Full (default), 1 Light, 2 Off
+extern void  md_settings_set_ground_hist_fast(int mode);   // #207 (owner 01.11): 0 Quality (Catmull-Rom), 1 Fast (one bilinear history tap)
+extern void  md_settings_set_ground_pvt(int on);           // #207 (owner 01.11): ground cache (PVT) 0 Off / 1 On
+extern void  md_settings_set_up_sharp(int mode);   // #207 (owner 31.10): sharpening of the upscale while the camera moves: 0 Quality (default), 1 Fast, 2 Off
 extern void  md_settings_render_size(int* in_w, int* in_h, int* out_w, int* out_h);
 extern bool  md_settings_get_ground_reuse();
 extern void  md_settings_set_ground_reuse(bool on);
@@ -65,7 +67,9 @@ extern void  md_settings_set_terrain_chunk(int cells);
 #endif
 // Upscaling / Terrain settings saved with the F3 layout ("rm": always 0, kept as the marker of a saved Settings block; "tcs": terrain chunk 16 or 64; "ush": upscale sharpening while moving).
 static int   s_set_fif = 1;            // "fif": GPU frames in flight (default 1: route -1.5 ms p50 / p99, #152, docs/DECISIONS.md)
-static int   s_set_ush       = 0;      // "ush": sharpening of the upscale while the camera moves (#207, owner 31.10): 0 Full (default, 5 taps + adaptive), 1 Light (3 taps), 2 Off (1 tap)
+static int   s_set_hf        = 0;      // "hf": history filter of the ground while moving (#207, owner 01.11): 0 Quality (Catmull-Rom, default), 1 Fast (one bilinear tap)
+static int   s_set_pvt       = 0;      // "pvt": ground cache (PVT) in pass A (#207, owner 01.11): 0 Off (default), 1 On
+static int   s_set_ush       = 0;      // "ush": sharpening of the upscale while the camera moves (#207, owner 31.10): 0 Quality (default, 5 taps + adaptive), 1 Fast (3 taps), 2 Off (1 tap)
 static int   s_set_chunk     = 16;
 static bool  s_set_fxaa      = false;  // "fxaa": FXAA (#180), off by default (owner 16.10)
 // Kenshi's graphics sliders (#175, docs/research/KENSHI_GRAPHICS_OPTIONS.md): names, ranges and defaults of settings.cfg
@@ -147,6 +151,8 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (v > 0.f) *out_fspd = v;
     }
     if (strstr(buf, "\"rm\"")) {   // layouts saved before 31.10 may carry the removed upscaling modes (rm / rs / fs): ignored, the scene stays native
+        if (strstr(buf, "\"hf\"")) { s_set_hf = (int)f3_parse_f(buf, "\"hf\"") != 0; }
+        if (strstr(buf, "\"pvt\"")) { s_set_pvt = (int)f3_parse_f(buf, "\"pvt\"") != 0; }
         if (strstr(buf, "\"ush\"")) { s_set_ush = (int)f3_parse_f(buf, "\"ush\""); if (s_set_ush < 0 || s_set_ush > 2) s_set_ush = 0; }
         s_set_chunk = ((int)f3_parse_f(buf, "\"tcs\"") == 64) ? 64 : 16;
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
@@ -195,7 +201,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d}\n",
+        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"fxaa\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -206,7 +212,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
         s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fif, s_set_dyn,
-        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr, s_set_chain, s_set_ush);
+        s_set_fxaa ? 1 : 0, s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr, s_set_chain, s_set_ush, s_set_hf, s_set_pvt);
     fclose(f);
 }
 
@@ -225,7 +231,7 @@ void EditorCore::Init() {
     {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
-        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { md_settings_set_up_sharp(s_set_ush); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_ground_reuse_period(s_set_reuse_period); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
+        if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { md_settings_set_up_sharp(s_set_ush); md_settings_set_ground_hist_fast(s_set_hf); md_settings_set_ground_pvt(s_set_pvt); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_ground_reuse_period(s_set_reuse_period); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
             md_settings_set_fxaa(s_set_fxaa); md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh); md_settings_set_vsync(s_set_vsync); md_settings_set_view_distance(s_set_vdist); md_settings_set_ground_aniso(kAnisoLv[s_set_ga]);
             if (s_set_gp >= 0 && s_set_gp <= 2) ground_preset_apply(s_set_gp);
             if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
@@ -482,13 +488,22 @@ void EditorCore::Update(float dt) {
                     if (ImGui::RadioButton("0.75##dyn1", s_set_dyn == 1)) { s_set_dyn = 1; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     ImGui::SameLine();
                     if (ImGui::RadioButton("0.5##dyn2", s_set_dyn == 2)) { s_set_dyn = 2; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
-                    // #207 (owner 31.10): the sharpen of the upscale, only while C15 has lowered the resolution; Full = 5 taps + adaptive (~3 ms), Light = 3 taps (~1.3 ms), Off = 1 tap (~0.75 ms)
+                    // #207 (owner 31.10): the sharpen of the upscale, only while C15 has lowered the resolution; Quality = 5 taps + adaptive (~3 ms), Fast = 3 taps (~1.3 ms), Off = 1 tap (~0.75 ms)
                     ImGui::TextUnformatted("Sharpening while moving");
-                    if (ImGui::RadioButton("Full##ush0", s_set_ush == 0)) { s_set_ush = 0; md_settings_set_up_sharp(s_set_ush); }
+                    if (ImGui::RadioButton("Quality##ush0", s_set_ush == 0)) { s_set_ush = 0; md_settings_set_up_sharp(s_set_ush); }
                     ImGui::SameLine();
-                    if (ImGui::RadioButton("Light##ush1", s_set_ush == 1)) { s_set_ush = 1; md_settings_set_up_sharp(s_set_ush); }
+                    if (ImGui::RadioButton("Fast##ush1", s_set_ush == 1)) { s_set_ush = 1; md_settings_set_up_sharp(s_set_ush); }
                     ImGui::SameLine();
                     if (ImGui::RadioButton("Off##ush2", s_set_ush == 2)) { s_set_ush = 2; md_settings_set_up_sharp(s_set_ush); }
+                    // #207 (owner 01.11): two accelerations of the ground in motion; the defaults keep today's look
+                    ImGui::TextUnformatted("History filter while moving");
+                    if (ImGui::RadioButton("Quality##hf0", s_set_hf == 0)) { s_set_hf = 0; md_settings_set_ground_hist_fast(s_set_hf); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Fast##hf1", s_set_hf == 1)) { s_set_hf = 1; md_settings_set_ground_hist_fast(s_set_hf); }
+                    ImGui::TextUnformatted("Ground cache (PVT)");
+                    if (ImGui::RadioButton("Off##pvt0", s_set_pvt == 0)) { s_set_pvt = 0; md_settings_set_ground_pvt(s_set_pvt); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("On##pvt1", s_set_pvt == 1)) { s_set_pvt = 1; md_settings_set_ground_pvt(s_set_pvt); }
                     int iw = 0, ih = 0, ow = 0, oh = 0;
                     md_settings_render_size(&iw, &ih, &ow, &oh);
                     ImGui::Text("internal %dx%d -> output %dx%d", iw, ih, ow, oh);
