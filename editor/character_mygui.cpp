@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <map>
 #include <filesystem>
 #include <string>
 
@@ -362,6 +364,68 @@ bool DebugTextFit(int& checked, int& failed, std::string& list) {
     return true;
 }
 
+// rect-equals-layout invariant (D-006 sweep): every named widget of Kenshi_CharacterEditor.layout against the FILE: position_real x the expected size of the parent (the view for the root),
+// truncated like MyGUI's CoordConverter (+-1 px); a pixel `position` is scaled by the UI scale (floor, ScaleManager). Fonts: size of the widget's font = Size of kenshi_fonts.xml x the UI scale (+-1)
+static void LayoutRectWalk(MyGUI::xml::ElementPtr node, MyGUI::Widget* actual, MyGUI::IntSize exp_parent_client, float scale, int& checked, int& failed, std::string& list) {
+    MyGUI::xml::ElementEnumerator e = node->getElementEnumerator(); size_t idx = 0;
+    while (e.next("Widget")) {
+        MyGUI::xml::ElementPtr n = e.current();
+        MyGUI::Widget* w = idx < actual->getChildCount() ? actual->getChildAt(idx) : nullptr; ++idx;
+        if (!w) { ++failed; list += "missing widget " + n->findAttribute("name") + "; "; continue; }
+        std::string pr = n->findAttribute("position_real"), pp = n->findAttribute("position");
+        float v[4] = {0, 0, 0, 0}; MyGUI::IntCoord exp;
+        if (!pr.empty() && std::sscanf(pr.c_str(), "%f %f %f %f", &v[0], &v[1], &v[2], &v[3]) == 4)
+            exp = MyGUI::IntCoord(int(v[0] * exp_parent_client.width), int(v[1] * exp_parent_client.height), int(v[2] * exp_parent_client.width), int(v[3] * exp_parent_client.height));
+        else if (!pp.empty() && std::sscanf(pp.c_str(), "%f %f %f %f", &v[0], &v[1], &v[2], &v[3]) == 4)
+            exp = MyGUI::IntCoord(int(std::floor(v[0] * scale)), int(std::floor(v[1] * scale)), int(std::floor(v[2] * scale)), int(std::floor(v[3] * scale)));
+        else { LayoutRectWalk(n, w, w->getClientCoord().size(), scale, checked, failed, list); continue; }
+        const std::string name = n->findAttribute("name");
+        const MyGUI::IntCoord got = w->getCoord();
+        if (!name.empty() || true) {
+            ++checked;
+            if (std::abs(got.left - exp.left) > 1 || std::abs(got.top - exp.top) > 1 || std::abs(got.width - exp.width) > 1 || std::abs(got.height - exp.height) > 1) {
+                ++failed; char b[240]; std::snprintf(b, sizeof b, "%s rect %d,%d %dx%d layout %d,%d %dx%d; ", name.c_str(), got.left, got.top, got.width, got.height, exp.left, exp.top, exp.width, exp.height); list += b;
+            }
+        }
+        // the children are placed against the size this widget has by the layout, minus its own client border
+        const MyGUI::IntSize border(got.width - w->getClientCoord().width, got.height - w->getClientCoord().height);
+        LayoutRectWalk(n, w, MyGUI::IntSize(std::max(0, exp.width - border.width), std::max(0, exp.height - border.height)), scale, checked, failed, list);
+    }
+}
+// getFontHeight is the line height of the rasterised font, not `Size`: the invariant is that it scales linearly with the UI scale (ResourceTrueTypeFont::deserialization: Size x applyMin);
+// the height at scale 1 (1920x1080) is the baseline, it is learned when the window has that size
+static std::map<std::string, int> s_font_h1;
+static void FontSizeWalk(MyGUI::Widget* w, float scale, int& checked, int& failed, std::string& list) {
+    if (MyGUI::TextBox* t = w->castType<MyGUI::TextBox>(false)) {
+        if (w->getVisible() && !t->getFontName().empty()) {
+            const int got = t->getFontHeight();
+            if (scale == 1.f) s_font_h1.emplace(t->getFontName(), got);
+            auto it = s_font_h1.find(t->getFontName());
+            if (it != s_font_h1.end()) {
+                ++checked; const int want = int(it->second * scale + 0.5f);
+                if (std::abs(got - want) > 1) { ++failed; char b[200]; std::snprintf(b, sizeof b, "%s font %s height %d expected %d (scale %.3f of %d); ", w->getName().c_str(), t->getFontName().c_str(), got, want, scale, it->second); list += b; }
+            }
+        }
+    }
+    for (size_t i = 0; i < w->getChildCount(); ++i) FontSizeWalk(w->getChildAt(i), scale, checked, failed, list);
+}
+bool DebugLayoutRects(int& checked, int& failed, std::string& list) {
+    checked = failed = 0; list.clear();
+    if (!g.root) return false;
+    const std::string lp = MyGUI::DataManager::getInstance().getDataPath("Kenshi_CharacterEditor.layout");
+    MyGUI::xml::Document doc; if (lp.empty() || !doc.open(lp)) return false;
+    const float scale = mdui::MyGuiUiScale();
+    const MyGUI::IntSize view = MyGUI::RenderManager::getInstance().getViewSize();
+    MyGUI::xml::ElementPtr root = doc.getRoot(); MyGUI::xml::ElementEnumerator e = root->getElementEnumerator();
+    if (e.next("Widget")) {   // the layout's root widget: position_real 0 0 1 1 of the view
+        MyGUI::IntCoord rc = g.root->getCoord();
+        ++checked; if (std::abs(rc.width - view.width) > 1 || std::abs(rc.height - view.height) > 1) { ++failed; list += "Root rect != view; "; }
+        LayoutRectWalk(e.current(), g.root, view, scale, checked, failed, list);
+    }
+    FontSizeWalk(g.root, scale, checked, failed, list);
+    return true;
+}
+
 bool Available() { return true; }
 bool Visible() { return g.visible; }
 
@@ -530,6 +594,7 @@ int DebugClickCount() { return 0; }
 const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
+bool DebugLayoutRects(int&, int&, std::string&) { return false; }
 void DebugPointer(bool) {}
 void DebugDraw(bool) {}
 bool DebugSetSlider(const char*, int) { return false; }

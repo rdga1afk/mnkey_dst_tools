@@ -136,6 +136,7 @@ static int l_md_char_io_dir(lua_State* L) { CharacterEditor::SetIoDir(luaL_check
 static int l_md_char_ui_slider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugSetSlider(luaL_checkstring(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
 static int l_md_char_ui_dump(lua_State* L) { CharacterMyGui::DebugDump(luaL_checkstring(L, 1)); return 0; }
 static int l_md_char_ui_text_fit(lua_State* L) { int c, f; std::string l; if (!CharacterMyGui::DebugTextFit(c, f, l)) return 0; lua_pushinteger(L, c); lua_pushinteger(L, f); lua_pushstring(L, l.c_str()); return 3; }   // md.char_ui_text_fit() -> checked, failed, list (D-006 sweep)
+static int l_md_char_ui_layout_rects(lua_State* L) { int c, f; std::string l; if (!CharacterMyGui::DebugLayoutRects(c, f, l)) return 0; lua_pushinteger(L, c); lua_pushinteger(L, f); lua_pushstring(L, l.c_str()); return 3; }   // md.char_ui_layout_rects() -> checked, failed, list (rect = layout file x UI scale, D-006)
 static int l_md_char_attach(lua_State* L) {   // md.char_attach(0 hair | 1 beard) -> loaded mesh, expected mesh, loaded texture, expected texture, drawn, loaded head overlay, expected head overlay, submeshes drawn, submeshes in the record's mesh (D-007 sweep)
     std::string a, b, c, d, e, f; bool drawn = false; int sl = 0, se = 0;
     if (!CharPreviewSDLGPU::DebugAttach((int)luaL_checkinteger(L, 1), a, b, c, d, drawn, e, f, sl, se)) return 0;
@@ -307,6 +308,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_ui_focus", l_md_char_ui_focus);
     sys.RegisterNamespaceFunction("char_ui_widget_pos", l_md_char_ui_widget_pos);
     sys.RegisterNamespaceFunction("char_ui_text_fit", l_md_char_ui_text_fit);
+    sys.RegisterNamespaceFunction("char_ui_layout_rects", l_md_char_ui_layout_rects);
     sys.RegisterNamespaceFunction("char_attach", l_md_char_attach);
     sys.RegisterNamespaceFunction("char_attach_count", l_md_char_attach_count);
     sys.RegisterNamespaceFunction("editor_window_size", l_md_editor_window_size);
