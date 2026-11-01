@@ -348,6 +348,11 @@ bool DrawTab(float w, float h) {
     if (int(W_) != int(MyGUI::RenderManager::getInstance().getViewSize().width) || int(H_) != int(MyGUI::RenderManager::getInstance().getViewSize().height)) mdui::MyGuiResize(int(W_), int(H_));
     if (g.s->revision() != g.seen_revision) Refresh();
     const ImGuiIO& io = ImGui::GetIO();
+    // MyGuiMouse injects a press / release on the polled EDGE of the button (its `left_prev`). On a frame this tab was not drawn (hidden tab, skipped frame) a release is lost and
+    // left_prev stays true, so the next press is swallowed: start every run of drawn frames from "button up" (a stale release is injected here, nothing otherwise)
+    static int s_last_drawn_frame = -10;
+    if (ImGui::GetFrameCount() != s_last_drawn_frame + 1) mdui::MyGuiMouse(io.MousePos.x - g.x, io.MousePos.y - g.y, false);
+    s_last_drawn_frame = ImGui::GetFrameCount();
     mdui::MyGuiMouse(io.MousePos.x - g.x, io.MousePos.y - g.y, ImGui::IsMouseDown(0));
     g.visible = true;
     return true;
