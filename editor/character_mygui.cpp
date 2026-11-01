@@ -358,6 +358,7 @@ bool DebugTextFit(int& checked, int& failed, std::string& list) {
     checked = failed = 0; list.clear();
     if (!g.root) return false;
     TextFitWalk(g.root, checked, failed, list);
+    for (MyGUI::Widget* r : dlg.roots) TextFitWalk(r, checked, failed, list);   // the IMPORT / EXPORT dialog when open (same scaled layouts and fonts)
     return true;
 }
 
