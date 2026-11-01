@@ -390,6 +390,8 @@ bool DebugWidgetCentre(const char* name, float& x, float& y) {   // screen px of
     return true;
 }
 
+int DebugTab() { return g.tab; }   // open tab 0 BODY / 1 FACE / 2 HAIR
+
 const char* DebugFocus() {   // name of the MyGUI widget under the mouse right now (dead-click diagnosis)
     static std::string s;
     MyGUI::Widget* w = MyGUI::InputManager::getInstance().getMouseFocusWidget();
@@ -474,6 +476,7 @@ const char* DebugCaption(const char*) { return nullptr; }
 bool DebugClick(const char*) { return false; }
 bool DebugWidgetCentre(const char*, float&, float&) { return false; }
 const char* DebugFocus() { return nullptr; }
+int DebugTab() { return -1; }
 const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
