@@ -5,8 +5,11 @@
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_device.h>
 
+#include <string>
 namespace CharacterMyGui {
 
+bool DebugTextFit(int& checked, int& failed, std::string& list);   // sweep: text widgets whose text (font metrics) is larger than the client rect
+bool DebugTextFit(int& checked, int& failed, std::string& list);   // sweep (D-006): text widgets whose text (font metrics) is larger than the client rect
 bool Available();                          // compiled in
 // ImGui side, inside the Characters tab: draws the 3D preview in the middle of the region and reserves it; the window is drawn over it later (Draw).
 // False when MyGUI or the install is not usable (the caller then draws the ImGui panel).

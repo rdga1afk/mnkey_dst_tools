@@ -67,10 +67,14 @@ void ShowTabButtons() {
 // ── tab content: rows built like the exe (FUN_1405ebd50): Slider / ListScrollBar / MultiSlider templates stacked in the ScrollView ──
 const int kRowGap = 5;
 
+// the row sizes (55 / 220 and the gap 5, pixels of the 1920x1080 screen) follow the UI scale like the rest of the layout (ScaleManager::apply: floor)
+int Scaled(int v) { return int(std::floor(float(v) * mdui::MyGuiUiScale())); }
+
 MyGUI::Widget* AddRow(const char* type, const char* skin, int height, int& y) {
+    height = Scaled(height);
     const int w = std::max(100, g.content->getWidth() - 24);   // the view's own width less the scroll bar (its client area is not known before the canvas has a size)
     MyGUI::Widget* r = g.content->createWidgetT(type, skin, MyGUI::IntCoord(0, y, w, height), MyGUI::Align::Left | MyGUI::Align::Top);
-    y += height + kRowGap;
+    y += height + Scaled(kRowGap);
     return r;
 }
 
@@ -298,12 +302,9 @@ void Click(MyGUI::Widget* w) {
     g.seen_revision = ~0ull;    // refresh next frame (tab change does not bump the session revision)
 }
 
-bool Init() {
-    if (g.tried) return g.ok;
-    g.tried = true;
-    if (!CharacterEditor::EnsureLoaded()) return false;
-    g.s = &CharacterEditor::GetSession();
-    if (!mdui::MyGuiInit(1920, 1080, "Kenshi_CharacterEditor.layout")) return false;
+// handlers and the helper widgets the exe adds to the layout; run after every load of the layout
+bool Bind() {
+    g.content = nullptr; g.stats_l = g.stats_r = nullptr; g.root = nullptr;
     const char* buttons[] = {"RaceLeftButton", "RaceRightButton", "SubRaceLeftButton", "SubRaceRightButton", "GenderLeftButton", "GenderRightButton", "BodyTabButton", "FaceTabButton", "HairTabButton",
                              "RandomiseAllButton", "RandomiseButton", "ResetButton", "ImportButton", "ExportButton", "ClothesButton", "ConfirmButton", "CharLeftArrow", "CharRightArrow"};
     for (const char* b : buttons) if (MyGUI::Widget* w = W(b)) w->eventMouseButtonClick += MyGUI::newDelegate(Click);
@@ -318,26 +319,66 @@ bool Init() {
         g.stats_r->setTextAlign(MyGUI::Align::Right | MyGUI::Align::Top);
         g.stats_r->setNeedMouseFocus(false); g.stats_l->setNeedMouseFocus(false);
     }
-    if (g.content) g.content->setVisibleHScroll(false);   // rows are as wide as the view
+    if (g.content) { g.content->setVisibleHScroll(false); g.content->setCanvasAlign(MyGUI::Align::Left | MyGUI::Align::Top); }   // a short tab (HAIR) starts under the tab line as in Kenshi, not centred in the view   // rows are as wide as the view
     g.ok = g.content != nullptr;
     if (!g.ok) fprintf(stderr, "[CharacterMyGui] TabsPanelContent is not a ScrollView in the layout (type %s): the ImGui panel is used\n", W("TabsPanelContent") ? W("TabsPanelContent")->getTypeName().c_str() : "missing");
     if (g.ok) CharPreviewSDLGPU::SetCameraForTab(g.tab);
+    g.seen_revision = ~0ull; g.built_tab = -1; g.built_race = g.built_sub = ~size_t(0);   // the rows are built again from the session
     return g.ok;
 }
 
+bool Init(int w, int h) {
+    if (g.tried) return g.ok;
+    g.tried = true;
+    if (!CharacterEditor::EnsureLoaded()) return false;
+    g.s = &CharacterEditor::GetSession();
+    if (!mdui::MyGuiInit(w, h, "Kenshi_CharacterEditor.layout")) return false;
+    return Bind();
+}
+
 } // namespace
+
+
+// text-fits check of the sweep (D-006): every visible text widget of the layout, the size of its text (font metrics) against the client rect of the widget
+static void TextFitWalk(MyGUI::Widget* w, int& checked, int& failed, std::string& list) {
+    if (!w->getVisible()) return;
+    if (MyGUI::TextBox* t = w->castType<MyGUI::TextBox>(false)) {
+        const std::string cap = t->getCaption().asUTF8();
+        if (!cap.empty()) {
+            ++checked;
+            const MyGUI::IntSize ts = t->getTextSize(), rc = t->getClientCoord().size();
+            if (ts.width > rc.width || ts.height > rc.height) {
+                ++failed; char b[200]; std::snprintf(b, sizeof b, "%s '%s' text %dx%d rect %dx%d; ", w->getName().c_str(), cap.substr(0, 20).c_str(), ts.width, ts.height, rc.width, rc.height); list += b;
+            }
+        }
+    }
+    for (size_t i = 0; i < w->getChildCount(); ++i) TextFitWalk(w->getChildAt(i), checked, failed, list);
+}
+bool DebugTextFit(int& checked, int& failed, std::string& list) {
+    checked = failed = 0; list.clear();
+    if (!g.root) return false;
+    TextFitWalk(g.root, checked, failed, list);
+    return true;
+}
 
 bool Available() { return true; }
 bool Visible() { return g.visible; }
 
 bool DrawTab(float w, float h) {
     g.visible = false;
-    if (!Init()) return false;
+    const float W_ = std::floor(w), H_ = std::floor(h);
+    if (!Init(int(W_), int(H_))) return false;
     if (SDL_Window* win = SDL_GetKeyboardFocus()) if (!SDL_TextInputActive(win)) SDL_StartTextInput(win);   // the name field and every EditBox take text
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const float W_ = std::floor(w), H_ = std::floor(h);
-    // centre of the window layout (spec §3a: the left column is 0.161 of the width, the right one 0.30): the preview shows through between them
-    const float left_w = std::floor(W_ * 0.161f), right_w = std::floor(W_ * 0.30f);
+    // Kenshi lays the screen out at the current resolution (position_real of the layout): a new window size loads the layout again at that size (D-006)
+    if (int(W_) != int(MyGUI::RenderManager::getInstance().getViewSize().width) || int(H_) != int(MyGUI::RenderManager::getInstance().getViewSize().height)) {
+        if (!dlg.roots.empty()) DialogClose();   // its widgets go with the old MyGUI
+        mdui::MyGuiReload(int(W_), int(H_), "Kenshi_CharacterEditor.layout");
+        Bind();
+    }
+    // the preview shows through between the two panels of the layout (their real widths: NamePanel 0.161, TabsPanel 0.30 of the window)
+    MyGUI::Widget* lp = W("NamePanel"); MyGUI::Widget* rp = W("TabsPanel");
+    const float left_w = lp ? float(lp->getWidth()) : std::floor(W_ * 0.161f), right_w = rp ? float(rp->getWidth()) : std::floor(W_ * 0.30f);
     ImGui::SetCursorScreenPos({origin.x + left_w, origin.y});
     ImGui::BeginGroup();
     CharPreviewSDLGPU::DrawInImGui(W_ - left_w - right_w, H_);
@@ -345,7 +386,6 @@ bool DrawTab(float w, float h) {
     ImGui::SetCursorScreenPos(origin);
     ImGui::Dummy({W_, H_});
     g.x = origin.x; g.y = origin.y; g.w = W_; g.h = H_;
-    if (int(W_) != int(MyGUI::RenderManager::getInstance().getViewSize().width) || int(H_) != int(MyGUI::RenderManager::getInstance().getViewSize().height)) mdui::MyGuiResize(int(W_), int(H_));
     if (g.s->revision() != g.seen_revision) Refresh();
     const ImGuiIO& io = ImGui::GetIO();
     // MyGuiMouse injects a press / release on the polled EDGE of the button (its `left_prev`). On a frame this tab was not drawn (hidden tab, skipped frame) a release is lost and
