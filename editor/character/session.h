@@ -56,7 +56,12 @@ public:
     size_t stance() const { return stance_; }
     void SelectStance(int i) { if (!stances_.empty()) { stance_ = size_t((i + int(stances_.size())) % int(stances_.size())); ++revision_; } }
     const std::string& StanceAnim() const { static const std::string d = "idle_stand_normal"; return stances_.empty() ? d : stances_[stance_]; }
-    void RandomiseCategory(const std::string& category) { if (config_) md::character::RandomiseCategory(*config_, category, values_, rng_); ++revision_; }
+    // BODY also picks a random idle stance (exe 14006f930: random entry of the idle_stand_* list, int in [0, n-1]); RANDOMISE ALL does not call it
+    void RandomiseCategory(const std::string& category) {
+        if (config_) md::character::RandomiseCategory(*config_, category, values_, rng_);
+        if (category == "Body" && !stances_.empty()) stance_ = size_t(rng_.Next() * float(stances_.size())) % stances_.size();
+        ++revision_;
+    }
     void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); RandomiseHair(); }
     // Hair tab (exe 0x14007adc0): a weighted pick of the hair, of the beard (not for women) and of the hair colour; no colours in the race: brightness 100, saturation 0.
     void RandomiseHair();

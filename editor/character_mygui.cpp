@@ -390,6 +390,12 @@ bool DebugWidgetCentre(const char* name, float& x, float& y) {   // screen px of
     return true;
 }
 
+const char* DebugFocus() {   // name of the MyGUI widget under the mouse right now (dead-click diagnosis)
+    static std::string s;
+    MyGUI::Widget* w = MyGUI::InputManager::getInstance().getMouseFocusWidget();
+    s = w ? w->getName() : std::string(); return w ? s.c_str() : nullptr;
+}
+
 const char* DebugSliderKey(int n) {   // key of the n-th (1-based) value slider of the open tab, nil past the end
     static std::string key;
     if (!g.content) return nullptr;
@@ -467,6 +473,7 @@ bool Visible() { return false; }
 const char* DebugCaption(const char*) { return nullptr; }
 bool DebugClick(const char*) { return false; }
 bool DebugWidgetCentre(const char*, float&, float&) { return false; }
+const char* DebugFocus() { return nullptr; }
 const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
