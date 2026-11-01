@@ -3,7 +3,7 @@ id: kb-tools-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-10-25
+updated: 2026-11-01
 repo: tools
 tags: [tools, readme, editor, kenshi, measurement, public-repo]
 summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character editor and a Linux-native, FCS-compatible Kenshi data / mod editor), measurement/QA drivers, read-only MCP servers (Ghidra, RenderDoc), offline Kenshi-data converters; build; licence"
@@ -64,6 +64,7 @@ python3 tools/qa/game_cmd_driver.py --screenshot /tmp/out.png
 - Tabs (from `editor/main.cpp`, the standalone window): World, 3D World, Characters, Inspector, Settings. F3 editor overlay (`editor/editor_core.cpp`): Scene, Animation, FlowGraph, Debug, Camera, Settings. The old prototype-game tabs and tools (Items, Factions, NPCs, AI, Map, Flare) were removed on 2026-10-17. Command palette: `Ctrl+P`. (Listed from the code, not by running the editor.)
 - The 3D World viewport loads biomes from FCS (`BiomeRegistry::LoadPreferFcs`) and `blendmap.png` from the Kenshi install, with offline fallbacks; terrain loads on a background thread.
 - Characters: the tab is the Kenshi character editor (layout `Kenshi_CharacterEditor.layout`): races, sliders and buttons come from the install (`md::character::Session`); the preview renders the race body read from `KENSHI_DIR` (Ogre mesh + skeleton), body sliders as bone sizes, face sliders as mesh poses. Scenarios: `md.char_editor_select`, `md.char_editor_set`, `md.char_editor_view`.
+- Character editor, 01.11: behaviour follows Kenshi's own code (face-tab camera frames the head bone; RANDOMISE per tab and RANDOMISE ALL also pick a random head, the body tab an idle stance; slider values clamped to Kenshi's ranges). Real-click tests at 1366×768 and 1920×1080: `tests/scenarios/char_real_input.lua`. Settings → Upscaling: Ground quality, Resolution while moving, Sharpening while moving (Full / Light / Off); FSR 1 / 2 and the fixed low-resolution modes were removed.
 - Game-coupled panels (Inspector) live in the game repository and are compiled into the game with `-DMONKEY_DUST_EDITOR=ON`.
 - GPU debugging: `SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor`.
 
@@ -122,6 +123,7 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 - Вкладки (з `editor/main.cpp`, окреме вікно): World, 3D World, Characters, Inspector, Settings. Оверлей F3 (`editor/editor_core.cpp`): Scene, Animation, FlowGraph, Debug, Camera, Settings. Вкладки й інструменти старого прототипу гри (Items, Factions, NPCs, AI, Map, Flare) видалено 17.10.2026. Палітра команд: `Ctrl+P`. (Перелік за кодом, редактор не запускався.)
 - 3D World бере біоми з FCS (`BiomeRegistry::LoadPreferFcs`) і `blendmap.png` з інсталяції Kenshi, із запасними офлайн-копіями; ландшафт вантажиться у фоновому потоці.
 - Characters: вкладка — редактор персонажів Kenshi (розкладка `Kenshi_CharacterEditor.layout`): раси, слайдери й кнопки з інсталяції (`md::character::Session`); перегляд малює тіло раси з `KENSHI_DIR` (меш і скелет Ogre), слайдери тіла — розміри кісток, обличчя — пози меша. Сценарії: `md.char_editor_select`, `md.char_editor_set`, `md.char_editor_view`.
+- Редактор персонажа, 01.11: поведінка за кодом самої Kenshi (камера вкладки обличчя кадрує кістку голови; RANDOMISE для вкладки й RANDOMISE ALL також вибирають випадкову голову, вкладка тіла — стійку; значення повзунків обмежено діапазонами Kenshi). Тести справжніми кліками при 1366×768 і 1920×1080: `tests/scenarios/char_real_input.lua`. Settings → Upscaling: Ground quality, Resolution while moving, Sharpening while moving (Full / Light / Off); FSR 1 / 2 і постійні режими зниженої роздільності прибрано.
 - Панелі, прив'язані до гри (Inspector), — у репозиторії гри, вмикаються `-DMONKEY_DUST_EDITOR=ON`.
 
 ### Архітектура
