@@ -5,6 +5,7 @@
 namespace md::character {
 namespace {
 std::string FileOf(const md::fcs::GameData& g, const char* k) { auto it = g.files.find(k); return it == g.files.end() ? std::string() : it->second; }
+float FloatOf(const md::fcs::GameData& g, const char* k, float d) { auto it = g.floats.find(k); return it == g.floats.end() ? d : it->second; }
 int IntOf(const md::fcs::GameData& g, const char* k, int d) { auto it = g.ints.find(k); return it == g.ints.end() ? d : it->second; }
 }
 
@@ -15,6 +16,7 @@ bool LoadAttachment(const md::fcs::GameDataContainer& data, const std::string& i
     out.id = id; out.name = g->name;
     out.mesh = FileOf(*g, "mesh"); out.mesh_female = FileOf(*g, "mesh female");
     out.texture = FileOf(*g, "texture map"); out.texture_female = FileOf(*g, "texture map female");
+    out.specular = FloatOf(*g, "specular", 1.f);
     out.slot = IntOf(*g, "attach slot", 0); out.alpha_rejection = IntOf(*g, "alpha rejection", 128);
     out.diffuse_channel = IntOf(*g, "hair diffuse channel", 0); out.alpha_channel = IntOf(*g, "hair alpha channel", 0);
     out.head_texture = FileOf(*g, "head texture"); out.head_texture_female = FileOf(*g, "head texture female");

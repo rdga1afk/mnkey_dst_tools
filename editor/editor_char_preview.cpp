@@ -77,6 +77,7 @@ struct Attach {
     int subs = 0;                          // submeshes merged into the buffer (one draw call draws all of them)
     std::string mesh_loaded, tex_loaded, head_loaded;   // what the slot holds (the sweep compares it with the record)
     float diffuse[4] = {1, 0, 0, 0}, alpha[4] = {0, 0, 0, 1}, threshold = 0.5f;
+    float specular = 1.f;                  // the record's `specular` (hair program specularMult)
     int handle_used = 0, handle_bad = 0;   // bone assignments, and those whose handle names another bone in the attachment's own skeleton than in the body skeleton
     std::vector<Vtx> cpu;                  // the merged vertices (bone handles and weights), for the skinning sweep
 };
@@ -322,7 +323,8 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     a.ibo.Init(0x8893u, sb.indices.data(), uint32_t(sb.indices.size() * sizeof(uint32_t)));
     a.ni = int(sb.indices.size()); a.subs = int(mesh.submeshes.size()); a.mesh_loaded = info->Mesh(female); a.tex_loaded = info->Texture(female);
     for (int k = 0; k < 4; ++k) { a.diffuse[k] = k == info->diffuse_channel ? 1.f : 0.f; a.alpha[k] = k == info->alpha_channel ? 1.f : 0.f; }
-    a.threshold = float(info->alpha_rejection) / 255.f;
+    a.threshold = float(info->alpha_rejection) / 255.f; a.specular = info->specular;
+    if (a.specular != 1.f) fprintf(stderr, "[CharPreview] attach %s: specular %.3f\n", info->id.c_str(), a.specular);
     a.ok = true;
 }
 
@@ -514,7 +516,7 @@ void Draw(md::GpuCommandBufferHandle cmd) {
             pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
             { M4 mvm = Mul(view, Mul(Translate(0.f, -g_ground * 0.1f, 0.f), scale)); VU2 hv2; memcpy(hv2.mv, mvm.data(), 64); pv.PushVertexUniforms(2, &hv2, sizeof(hv2)); }
             struct { float colour[4], diffuse[4], alpha[4], params[4], mode[4]; } fu = {{rgb[0], rgb[1], rgb[2], 1.f}, {a->diffuse[0], a->diffuse[1], a->diffuse[2], a->diffuse[3]},
-                                                                               {a->alpha[0], a->alpha[1], a->alpha[2], a->alpha[3]}, {a->threshold, 0.f, 0.f, 0.f}, {g_kenshi_light ? 1.f : 0.f, 0.f, 0.f, 0.f}};
+                                                                               {a->alpha[0], a->alpha[1], a->alpha[2], a->alpha[3]}, {a->threshold, 0.f, 0.f, 0.f}, {g_kenshi_light ? 1.f : 0.f, a->specular, 0.f, 0.f}};
             pv.PushFragmentUniforms(0, &fu, sizeof(fu));
             SDL_GPUTextureSamplerBinding t1[3] = {{a->tex.SDLTexture(), a->tex.SDLSampler()}, {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}, {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()}};
             pv.BindFragmentSamplers(0, t1, 3);
