@@ -77,6 +77,8 @@ struct Attach {
     int subs = 0;                          // submeshes merged into the buffer (one draw call draws all of them)
     std::string mesh_loaded, tex_loaded, head_loaded;   // what the slot holds (the sweep compares it with the record)
     float diffuse[4] = {1, 0, 0, 0}, alpha[4] = {0, 0, 0, 1}, threshold = 0.5f;
+    int handle_used = 0, handle_bad = 0;   // bone assignments, and those whose handle names another bone in the attachment's own skeleton than in the body skeleton
+    std::vector<Vtx> cpu;                  // the merged vertices (bone handles and weights), for the skinning sweep
 };
 Attach g_hair, g_beard;
 std::string g_att_key;
@@ -272,7 +274,7 @@ bool Rebuild() {
 }
 
 void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
-    a.ok = false; a.ni = 0; a.subs = 0; a.head_ok = false; a.mesh_loaded.clear(); a.tex_loaded.clear(); a.head_loaded.clear();
+    a.ok = false; a.ni = 0; a.subs = 0; a.cpu.clear(); a.head_ok = false; a.mesh_loaded.clear(); a.tex_loaded.clear(); a.head_loaded.clear();
     if (!info) return;
     const Session& ss = *g_session;
     GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
@@ -287,6 +289,16 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     if (!md::ogre::ReadMesh(ss.Resources().Path(info->Mesh(female)), mesh, oe)) { fprintf(stderr, "[CharPreview] hair mesh %s: %s\n", info->Mesh(female).c_str(), oe.Message().c_str()); return; }
     // a hairstyle / beard may be several submeshes, each with its own geometry (arkhaircut04: 5): every one is skinned alone and appended to one buffer (D-008: only single-submesh meshes were drawn)
     std::vector<SkinnedVertex> all_vertices; std::vector<uint32_t> all_indices;
+    a.handle_used = a.handle_bad = 0;
+    if (mesh.has_skeleton) {   // the mesh's own skeleton file: its handles may not be the body skeleton's
+        md::ogre::Skeleton own; md::ogre::Error se; std::map<uint16_t, std::string> own_name, body_name;
+        if (md::ogre::ReadSkeleton(ss.Resources().Path(mesh.skeleton), own, se)) for (const auto& b : own.bones) own_name[b.handle] = b.name;
+        for (const auto& b : g_skeleton.bones) body_name[b.handle] = b.name;
+        for (const md::ogre::SubMesh& sub : mesh.submeshes) for (const auto& ba : sub.bone_assignments) {
+            ++a.handle_used; auto o = own_name.find(ba.bone), bn = body_name.find(ba.bone);
+            if (o == own_name.end() || bn == body_name.end() || o->second != bn->second) ++a.handle_bad;
+        }
+    }
     for (const md::ogre::SubMesh& sub : mesh.submeshes) {
         md::ogre::Mesh one = mesh; one.submeshes.assign(1, sub);
         SkinnedBody part;
@@ -305,6 +317,7 @@ void LoadAttach(Attach& a, const AttachmentInfo* info, bool female) {
     }
     std::string tp = ss.Resources().Path(info->Texture(female)); const char* tpc = tp.c_str();
     if (tp.empty() || !a.tex.InitFromDDSArray(&tpc, 1, sd)) { fprintf(stderr, "[CharPreview] hair texture not found: %s\n", info->Texture(female).c_str()); return; }
+    a.cpu = vtx;
     a.vbo.Init(0x8892u, vtx.data(), uint32_t(vtx.size() * sizeof(Vtx)));
     a.ibo.Init(0x8893u, sb.indices.data(), uint32_t(sb.indices.size() * sizeof(uint32_t)));
     a.ni = int(sb.indices.size()); a.subs = int(mesh.submeshes.size()); a.mesh_loaded = info->Mesh(female); a.tex_loaded = info->Texture(female);
@@ -616,6 +629,30 @@ bool DebugAttach(int slot, std::string& loaded_mesh, std::string& expected_mesh,
     expected_head = info ? info->HeadTexture(fem) : "";
     subs_loaded = a.ok ? a.subs : 0; subs_expected = 0;
     if (info && info->HasMesh(fem)) { md::ogre::Mesh m; md::ogre::Error oe; if (md::ogre::ReadMesh(g_session->Resources().Path(info->Mesh(fem)), m, oe)) subs_expected = int(m.submeshes.size()); }
+    return true;
+}
+}
+
+namespace CharPreviewSDLGPU {
+// skinning sweep (D-007 b): the slot's vertices posed with the body's skin matrices against the same vertices carried rigidly by the head bone.
+// Returns the vertex count, the largest distance in centimetres, how many vertices lie more than 5 cm from the rigid position, and "bone:vertices" for every bone that carries weight.
+bool DebugAttachSkin(int slot, int& n, float& max_cm, int& over5, std::string& bones) {
+    const Attach& a = slot == 0 ? g_hair : g_beard;
+    if (a.handle_used) fprintf(stderr, "[CharPreview] skin slot %d: %d bone assignments, %d name another bone in the own skeleton than in the body skeleton\n", slot, a.handle_used, a.handle_bad);
+    n = int(a.cpu.size()); max_cm = 0.f; over5 = 0; bones.clear();
+    if (!a.ok || g_body.bone_name.empty()) return false;
+    int head = -1; for (size_t i = 0; i < g_body.bone_name.size(); ++i) if (g_body.bone_name[i] == "Bip01 Head") head = int(i);
+    if (head < 0 || head >= 30) return false;
+    std::map<int, int> used;
+    auto pos = [&](const float* m, const Vtx& v, float* o) { for (int c = 0; c < 3; ++c) o[c] = m[c] * v.px + m[4 + c] * v.py + m[8 + c] * v.pz + m[12 + c]; };
+    for (const Vtx& v : a.cpu) {
+        float ps[3] = {0, 0, 0}, ph[3];
+        for (int k = 0; k < 4; ++k) { if (v.wt[k] <= 0.f) continue; float t[3]; pos(g_ws[v.ji[k] % 30], v, t); for (int c = 0; c < 3; ++c) ps[c] += v.wt[k] * t[c]; used[v.ji[k]]++; }
+        pos(g_ws[head], v, ph);
+        const float d = 10.f * sqrtf((ps[0] - ph[0]) * (ps[0] - ph[0]) + (ps[1] - ph[1]) * (ps[1] - ph[1]) + (ps[2] - ph[2]) * (ps[2] - ph[2]));   // file units are 0.1 m
+        max_cm = std::max(max_cm, d); if (d > 5.f) ++over5;
+    }
+    for (const auto& u : used) bones += (u.first < int(g_body.bone_name.size()) ? g_body.bone_name[u.first] : "?") + ":" + std::to_string(u.second) + " ";
     return true;
 }
 }
