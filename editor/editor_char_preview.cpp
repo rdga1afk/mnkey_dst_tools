@@ -125,7 +125,7 @@ bool CreatePipelines() {
     { const std::string kd = md::KenshiDir(); if (!g_irr_cube.InitFromDDSCube((kd + "/data/materials/mp_irradiance.dds").c_str()) || !g_spec_cube.InitFromDDSCube((kd + "/data/materials/mp_specularity.dds").c_str())) fprintf(stderr, "[CharPreview] environment cubes missing under %s/data/materials\n", kd.c_str());
       GpuSamplerDesc bs; bs.min_filter = bs.mag_filter = GpuSamplerDesc::Filter::LINEAR; const std::string sg = kd + "/data/gui/gfx/SandyGround.dds"; const char* sgp = sg.c_str(); if (!g_bg_sandy.InitFromDDSArray(&sgp, 1, bs)) fprintf(stderr, "[CharPreview] SandyGround.dds missing: %s\n", sg.c_str()); }
     GpuPipeline::Desc hd = pd;
-    hd.frag_path = "shaders/char_hair.frag"; hd.frag_samplers = 1; hd.raster.cull_back = false;
+    hd.frag_path = "shaders/char_hair.frag"; hd.frag_samplers = 3; hd.raster.cull_back = false;
     if (!g_hair_pipe.Create(hd)) fprintf(stderr, "[CharPreview] hair pipeline create failed\n");
 
     GpuPipeline::Desc bg;   // sky + ground plane by ray intersection, fullscreen triangle
@@ -513,11 +513,11 @@ void Draw(md::GpuCommandBufferHandle cmd) {
             pv.PushVertexUniforms(0, &vu, sizeof(vu));
             pv.PushVertexUniforms(1, g_ws, sizeof(g_ws));
             { M4 mvm = Mul(view, Mul(Translate(0.f, -g_ground * 0.1f, 0.f), scale)); VU2 hv2; memcpy(hv2.mv, mvm.data(), 64); pv.PushVertexUniforms(2, &hv2, sizeof(hv2)); }
-            struct { float colour[4], diffuse[4], alpha[4], params[4]; } fu = {{rgb[0], rgb[1], rgb[2], 1.f}, {a->diffuse[0], a->diffuse[1], a->diffuse[2], a->diffuse[3]},
-                                                                               {a->alpha[0], a->alpha[1], a->alpha[2], a->alpha[3]}, {a->threshold, 0.f, 0.f, 0.f}};
+            struct { float colour[4], diffuse[4], alpha[4], params[4], mode[4]; } fu = {{rgb[0], rgb[1], rgb[2], 1.f}, {a->diffuse[0], a->diffuse[1], a->diffuse[2], a->diffuse[3]},
+                                                                               {a->alpha[0], a->alpha[1], a->alpha[2], a->alpha[3]}, {a->threshold, 0.f, 0.f, 0.f}, {g_kenshi_light ? 1.f : 0.f, 0.f, 0.f, 0.f}};
             pv.PushFragmentUniforms(0, &fu, sizeof(fu));
-            SDL_GPUTextureSamplerBinding t1 = {a->tex.SDLTexture(), a->tex.SDLSampler()};
-            pv.BindFragmentSamplers(0, &t1, 1);
+            SDL_GPUTextureSamplerBinding t1[3] = {{a->tex.SDLTexture(), a->tex.SDLSampler()}, {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}, {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()}};
+            pv.BindFragmentSamplers(0, t1, 3);
             pv.DrawIndexed(uint32_t(a->ni), 1, 0, 0, 0);
         }
     }
