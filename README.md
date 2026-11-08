@@ -81,7 +81,7 @@ tools/
 Dependency rule: `tools/` includes only `engine/` (`<monkey_dust/...>`) and `tools/third_party/`, never `game/`.
 
 ### Licence
-GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this project is not affiliated with Lo-Fi Games.
+MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies taken before then keep that licence). `third_party/imgui_test_engine` has its own licence (Dear ImGui Test Engine License), is used only for automated tests and is not part of release builds. Kenshi is a trademark of Lo-Fi Games; this project is not affiliated with Lo-Fi Games.
 
 ---
 
@@ -130,4 +130,4 @@ GNU GPL v3.0, see [LICENSE](LICENSE). Kenshi is a trademark of Lo-Fi Games; this
 Див. дерево вище. Правило залежностей: `tools/` включає лише `engine/` і `tools/third_party/`, ніколи `game/`.
 
 ### Ліцензія
-GNU GPL v3.0, див. [LICENSE](LICENSE). Kenshi — торгова марка Lo-Fi Games; проєкт з Lo-Fi Games не пов'язаний.
+MIT, див. [LICENSE](LICENSE) (до 08.11.2026 репозиторій був під GPL-3.0; копії, взяті раніше, лишаються під нею). `third_party/imgui_test_engine` має власну ліцензію (Dear ImGui Test Engine License), використовується лише для автоматичних тестів і не входить у релізні збірки. Kenshi — торгова марка Lo-Fi Games; проєкт з Lo-Fi Games не пов'язаний.
