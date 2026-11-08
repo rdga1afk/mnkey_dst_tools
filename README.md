@@ -80,6 +80,9 @@ tools/
 ```
 Dependency rule: `tools/` includes only `engine/` (`<monkey_dust/...>`) and `tools/third_party/`, never `game/`.
 
+### Releases
+Early Linux builds of the monkey_dust game will be published in this repository's [Releases](https://github.com/rdga1afk/mnkey_dst_tools/releases) (planned, date not set yet). The builds contain no Kenshi files: they read your own Kenshi install at startup.
+
 ### Licence
 MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies taken before then keep that licence). `third_party/imgui_test_engine` has its own licence (Dear ImGui Test Engine License), is used only for automated tests and is not part of release builds. Kenshi is a trademark of Lo-Fi Games; this project is not affiliated with Lo-Fi Games.
 
@@ -128,6 +131,9 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 
 ### Архітектура
 Див. дерево вище. Правило залежностей: `tools/` включає лише `engine/` і `tools/third_party/`, ніколи `game/`.
+
+### Релізи
+Ранні збірки гри monkey_dust для Linux публікуватимуться в [релізах](https://github.com/rdga1afk/mnkey_dst_tools/releases) цього репозиторію (заплановано, дату ще не визначено). Збірки не містять файлів Kenshi: вони читають вашу власну інсталяцію під час запуску.
 
 ### Ліцензія
 MIT, див. [LICENSE](LICENSE) (до 08.11.2026 репозиторій був під GPL-3.0; копії, взяті раніше, лишаються під нею). `third_party/imgui_test_engine` має власну ліцензію (Dear ImGui Test Engine License), використовується лише для автоматичних тестів і не входить у релізні збірки. Kenshi — торгова марка Lo-Fi Games; проєкт з Lo-Fi Games не пов'язаний.
