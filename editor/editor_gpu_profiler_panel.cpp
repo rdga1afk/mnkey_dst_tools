@@ -4,6 +4,11 @@
 #include "imgui.h"
 #include "imgui_widget_flamegraph.h"
 #include <monkey_dust/render/gpu_profiler.h>
+#include <monkey_dust/render/frame_counters.h>
+
+#ifndef MONKEY_DUST_STANDALONE_EDITOR
+extern void md_frame_counters(md::FrameCounters* out);   // game/src/render/frame_counters.cpp (G3); the standalone editor has no game systems
+#endif
 
 struct FlameEntry {
     float       start_ms;
@@ -42,6 +47,31 @@ void EditorGpuProfilerPanel::DrawContent() {
     ImGui::Text("Total frame: %.2f ms  (%.0f FPS est.)",
                 tot, tot > 0.001f ? 1000.0f / tot : 0.0f);
     ImGui::Separator();
+
+#ifndef MONKEY_DUST_STANDALONE_EDITOR
+    if (ImGui::CollapsingHeader("Counters by category", ImGuiTreeNodeFlags_DefaultOpen)) {
+        md::FrameCounters fc;
+        md_frame_counters(&fc);
+        if (ImGui::BeginTable("##fcnt", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("category"); ImGui::TableSetupColumn("draws"); ImGui::TableSetupColumn("instances");
+            ImGui::TableSetupColumn("triangles"); ImGui::TableSetupColumn("tris/inst");
+            ImGui::TableHeadersRow();
+            auto row = [](const md::FrameCounterRow& r) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn(); ImGui::TextUnformatted(r.name);
+                ImGui::TableNextColumn(); ImGui::Text("%d", r.draws);
+                ImGui::TableNextColumn(); ImGui::Text("%d", r.instances);
+                ImGui::TableNextColumn(); ImGui::Text("%lld", (long long)r.triangles);
+                ImGui::TableNextColumn(); ImGui::Text("%.1f", md::FrameCounters::TrisPerInstance(r));
+            };
+            for (int i = 0; i < fc.count; ++i) row(fc.rows[i]);
+            row(fc.Total());
+            ImGui::EndTable();
+        }
+        ImGui::TextDisabled("NPC not counted yet (no draw / triangle counter in the NPC renderer).");
+        ImGui::Separator();
+    }
+#endif
 
     if (n == 0) {
         ImGui::TextDisabled("No passes recorded.");
