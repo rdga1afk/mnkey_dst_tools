@@ -254,3 +254,5 @@ add_executable(navtile_probe
     ${MD_DETOUR_DIR}/Source/DetourNavMesh.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshBuilder.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshQuery.cpp ${MD_DETOUR_DIR}/Source/DetourNode.cpp
 )
 target_include_directories(navtile_probe PRIVATE ${MD_DETOUR_DIR}/Include ${CMAKE_SOURCE_DIR}/engine/include ${CMAKE_SOURCE_DIR}/engine/src/nav)
+
+set_tests_properties(session_synthetic fcs_def PROPERTIES LABELS "fast" TIMEOUT 120)
