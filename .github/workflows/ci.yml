@@ -40,7 +40,7 @@ jobs:
         run: |
           echo "Server = https://archive.archlinux.org/repos/${ARCH_DATE}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
           pacman -Syyuu --noconfirm
-          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache sdl3 lua54 mold freetype2 shaderc glslang python pkgconf
+          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache sdl3 lua54 mold freetype2 shaderc glslang python pkgconf gtest vulkan-headers vulkan-icd-loader
           echo "$EXPECT" | tr '|' '\n' | while read -r n v; do
             got=$(pacman -Q "$n" | cut -d' ' -f2)
             echo "$n: laptop $v, container $got"

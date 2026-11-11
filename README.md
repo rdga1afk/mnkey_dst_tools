@@ -46,7 +46,7 @@ The game itself moved into this repository (MIT): `game/` (source, CMake, our ow
 | **Repo hygiene** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Docs-vs-code drift checks, offline status dashboard, SPIR-V binding checks |
 
 ### Build
-Standalone (the engine is the submodule `engine/`; needs SDL3, Lua 5.4, shaderc / glslang, clang, CMake ≥ 3.21 and Ninja; glslang and SPIRV-Tools are fetched at the pinned release):
+Standalone (the engine is the submodule `engine/`; needs SDL3, Lua 5.4, GoogleTest, Vulkan headers and loader, shaderc / glslang, clang, CMake ≥ 3.21 and Ninja; glslang and SPIRV-Tools are fetched at the pinned release):
 ```bash
 git clone --recurse-submodules https://github.com/rdga1afk/mnkey_dst_tools.git && cd mnkey_dst_tools
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
