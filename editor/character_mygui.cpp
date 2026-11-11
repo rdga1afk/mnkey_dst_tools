@@ -595,6 +595,7 @@ const char* DebugSliderKey(int) { return nullptr; }
 int DebugCharIndex(int) { return 0; }
 bool DebugDialog(const char*) { return false; }
 bool DebugLayoutRects(int&, int&, std::string&) { return false; }
+bool DebugTextFit(int&, int&, std::string&) { return false; }
 void DebugPointer(bool) {}
 void DebugDraw(bool) {}
 bool DebugSetSlider(const char*, int) { return false; }
