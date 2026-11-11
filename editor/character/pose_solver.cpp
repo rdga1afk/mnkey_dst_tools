@@ -71,7 +71,7 @@ void SolveSkinMatrices(const SkinnedBody& body, const md::ogre::Skeleton& sk, co
                 for (int c = 0; c < 3; ++c) t[c] += kt[c];
                 float r[4]; QMul(q, kq, r); std::memcpy(q, r, sizeof q);
             }
-            if (p >= 0) {   // OldBone::updateFromParentImpl (OgreMain 0x1801e20e0; M:formats/ogre-skeleton.md "Bone maths"): offset = local position x this bone's positional size, per axis,
+            if (p >= 0) {   // OldBone::updateFromParentImpl (OgreMain; M:formats/ogre-skeleton.md "Bone maths"): offset = local position x this bone's positional size, per axis,
                             // x the Y component of the parent's size on all three axes (the parent's own scale is not inherited)
                 float py = 1.f;
                 auto ps = by_name.find(body.bone_name[p]);
@@ -85,7 +85,7 @@ void SolveSkinMatrices(const SkinnedBody& body, const md::ogre::Skeleton& sk, co
         }
     }
     out.assign(nb, Identity());
-    // OgreMain OldBone::_getOffsetTransform (0x1801e1dc0): v' = derivedPos + R_rel * (S * (v - bindPos)), R_rel = derivedOrientation * inverse(bindOrientation); the size vector is
+    // OgreMain OldBone::_getOffsetTransform: v' = derivedPos + R_rel * (S * (v - bindPos)), R_rel = derivedOrientation * inverse(bindOrientation); the size vector is
     // applied in the model axes (x left-right, y up, z front-back), not in the bone's own axes.
     for (size_t i = 0; i < nb; ++i) {
         auto s = by_name.find(body.bone_name[i]);

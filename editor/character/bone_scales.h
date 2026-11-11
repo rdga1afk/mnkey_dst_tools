@@ -1,8 +1,8 @@
 // Body sliders -> bone scales of the original editor, in the file's own units (Ogre bone space x, y, z). The formulas are the facts tabled in
-// docs/research/KENSHI_CHARACTER_EDITOR_SPEC.md §4 ("Масштаби кісток"), read from exe function 0x14052e6c0 (ghidra MCP); each constant carries its .rdata address there.
+// docs/research/KENSHI_CHARACTER_EDITOR_SPEC.md §4 ("Масштаби кісток"), read from the exe function (ghidra MCP); the constants' addresses are in the private spec.
 // setBoneSize replaces the bone's size; setBonePositionalSize scales this bone's offset from its parent per axis (pose_solver.cpp); nothing is clamped (the original does not).
-// `race_scale` is the result of a virtual call (slot 0x390) on the character object (+0xf0): Character (vtable 0x1416f9eb8) and CharacterHuman (vtable 0x1416f2848) both return the
-// constant 1.0 (thunk 0x14000193d -> 0x1405e5980); it stays 1 unless the object is another class. `skinny` / `muscle` are the character fields +0x1a8 / +0x1a0 (not editor sliders);
+// `race_scale` is the result of a virtual call (slot 0x390) on the character object (+0xf0): Character (vtable) and CharacterHuman (vtable) both return the
+// constant 1.0 (through a thunk); it stays 1 unless the object is another class. `skinny` / `muscle` are the character fields +0x1a8 / +0x1a0 (not editor sliders);
 // НЕВІДОМО (#159): robot-leg and stump cases (thigh factor 0.8, hidden limbs) and the stance float +0x190 are not ported.
 #pragma once
 #include <map>

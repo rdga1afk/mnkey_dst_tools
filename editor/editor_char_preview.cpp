@@ -85,7 +85,7 @@ Attach g_hair, g_beard;
 std::string g_att_key;
 
 float g_yaw = 0.f, g_pit = -0.35f, g_dist = 3.8f, g_lookat_y = 0.85f;
-// FACE / HAIR view: frames the posed head of the current mesh (Kenshi tracks the head bone live, exe 1405e9490), re-framed on a tab or character change
+// FACE / HAIR view: frames the posed head of the current mesh (Kenshi tracks the head bone live, exe), re-framed on a tab or character change
 bool g_head_cam = false, g_frame_pending = false;
 std::vector<float> g_head_pts;             // posed positions (x, y, z, file units) of the vertices in the top 28 units of the body: head and neck
 
@@ -363,7 +363,7 @@ void Prepare(md::GpuCommandBufferHandle cmd) {
     for (const std::string& n : g_body.bone_name) { if (n == "L Boob") in.has_breast_bones = true; if (n == "Bip01 Jaw") in.has_jaw_bone = true; }
     std::map<std::string, float> vals(g_session->Values().values.begin(), g_session->Values().values.end());
     static std::vector<M4> skin;
-    // layers (weight 1, cumulative): the idle stance, then Posture -> "postures", Neck position -> "shoulder set", Shoulder set -> "neck set" (names crossed in the original, exe 0x14084b890),
+    // layers (weight 1, cumulative): the idle stance, then Posture -> "postures", Neck position -> "shoulder set", Shoulder set -> "neck set" (names crossed in the original, exe),
     // time = animation length * slider value * 0.01
     std::vector<AnimLayer> layers = {{FindAnimation(g_skeleton, g_session->StanceAnim()), 0.f}};
     for (const auto& m : {std::make_pair("Posture", "postures"), std::make_pair("Neck position", "shoulder set"), std::make_pair("Shoulder set", "neck set")}) {

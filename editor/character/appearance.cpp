@@ -4,7 +4,7 @@
 
 namespace md::character {
 namespace {
-int RoundAway(float v) { return int(v < 0.f ? std::ceil(v - 0.5f) : std::floor(v + 0.5f)); }   // exe 0x1409b32b0
+int RoundAway(float v) { return int(v < 0.f ? std::ceil(v - 0.5f) : std::floor(v + 0.5f)); }   // exe
 }
 
 int RangeMid(const Range& r) { return r.has_mid ? r.mid : RoundAway(float(r.max - r.min) * 0.5f + float(r.min)); }

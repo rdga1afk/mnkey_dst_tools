@@ -66,7 +66,7 @@ void ShowTabButtons() {
     for (int i = 0; i < 3; ++i) if (MyGUI::Button* b = WT<MyGUI::Button>(names[i])) b->setStateSelected(i == g.tab);
 }
 
-// ── tab content: rows built like the exe (FUN_1405ebd50): Slider / ListScrollBar / MultiSlider templates stacked in the ScrollView ──
+// ── tab content: rows built like the exe: Slider / ListScrollBar / MultiSlider templates stacked in the ScrollView ──
 const int kRowGap = 5;
 
 // the row sizes (55 / 220 and the gap 5, pixels of the 1920x1080 screen) follow the UI scale like the rest of the layout (ScaleManager::apply: floor)
@@ -286,7 +286,7 @@ void Click(MyGUI::Widget* w) {
     if (n == "RaceLeftButton" || n == "RaceRightButton") { const int d = n == "RaceLeftButton" ? -1 : 1; if (s.RaceCount() > 1) s.SelectRace((s.race_index() + s.RaceCount() + size_t(d + 0)) % s.RaceCount()); }
     else if (n == "SubRaceLeftButton" || n == "SubRaceRightButton") { const int d = n == "SubRaceLeftButton" ? -1 : 1; if (s.SubraceCount() > 1) s.SelectSubrace((s.subrace_index() + s.SubraceCount() + size_t(d + 0)) % s.SubraceCount()); }
     else if (n == "GenderLeftButton" || n == "GenderRightButton") { if (!s.SingleGender()) s.SetGender(s.gender() == Gender::Female ? Gender::Male : Gender::Female); }
-    else if (n == "CharLeftArrow" || n == "CharRightArrow") {   // 1405f1600 / 1405f1650: index = (index +- 1 + count) mod count
+    else if (n == "CharLeftArrow" || n == "CharRightArrow") {   // /: index = (index +- 1 + count) mod count
         const int d = n == "CharLeftArrow" ? -1 : 1;
         g.char_index = ((g.char_index + d) % g.char_count + g.char_count) % g.char_count;
     }

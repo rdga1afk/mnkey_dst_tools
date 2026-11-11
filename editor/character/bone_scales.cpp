@@ -2,29 +2,29 @@
 
 namespace md::character {
 namespace {
-// constants of exe 0x14052e6c0 (.rdata addresses in the spec table)
-constexpr float kPercent = 0.01f;        // 0x141682ad8
-constexpr float kHipsDiv = 3.0f;         // 0x14168a254
-constexpr float kThighY = 0.95f;         // 0x1416bc15c
-constexpr float kHipsBlend = 0.6f;       // 0x141696c8c
-constexpr float kChestX = 0.45f;         // 0x1416b3c8c
-constexpr float kChestZ = 0.9f;          // 0x14168a25c
-constexpr float kBoobBelow = 0.75f;      // 0x141696c88
-constexpr float kBoobHalf = 0.5f;        // 0x14167e8d8
-constexpr float kArmZ = 1.5f;            // 0x14168ad18
-constexpr float kClavicleY = 0.3f;       // 0x14168955c
-constexpr float kHeadFrame = 0.25f;      // 0x141696c80
+// constants of exe (addresses in the private spec table)
+constexpr float kPercent = 0.01f;
+constexpr float kHipsDiv = 3.0f;
+constexpr float kThighY = 0.95f;
+constexpr float kHipsBlend = 0.6f;
+constexpr float kChestX = 0.45f;
+constexpr float kChestZ = 0.9f;
+constexpr float kBoobBelow = 0.75f;
+constexpr float kBoobHalf = 0.5f;
+constexpr float kArmZ = 1.5f;
+constexpr float kClavicleY = 0.3f;
+constexpr float kHeadFrame = 0.25f;
 
-float Lerp1(float t, float k) { return (k - 1.f) * t + 1.f; }   // exe 0x140015b63 with param_2 = 1.0
+float Lerp1(float t, float k) { return (k - 1.f) * t + 1.f; }   // exe, second argument 1.0
 }
 
 std::vector<BoneScale> ComputeBoneScales(const std::map<std::string, float>& values, const BodyScaleInputs& in) {
     auto sv = [&](const char* name) { auto it = values.find(name); return (it == values.end() ? 100.f : it->second) * kPercent; };
     auto raw = [&](const char* name) { auto it = values.find(name); return it == values.end() ? 100.f : it->second; };
     const float A = in.skinny, B = in.muscle;
-    const float p198 = Lerp1(A, 0.7f), p1b8 = Lerp1(A, 0.86f), p180 = Lerp1(A, 0.6f), p160 = Lerp1(A, 0.4f);   // 0x141696c70, 0x1416be6cc, 0x141696c8c, 0x141696c90
-    const float q188 = in.female ? Lerp1(B, 1.24f) : Lerp1(B, 1.27f);                                          // 0x1416e5f64 / 0x1416e5f6c
-    const float q1a0 = in.female ? Lerp1(B, 1.12f) : Lerp1(B, 1.13f);                                          // 0x1416e5f60 / 0x1416e5f68
+    const float p198 = Lerp1(A, 0.7f), p1b8 = Lerp1(A, 0.86f), p180 = Lerp1(A, 0.6f), p160 = Lerp1(A, 0.4f);
+    const float q188 = in.female ? Lerp1(B, 1.24f) : Lerp1(B, 1.27f);
+    const float q1a0 = in.female ? Lerp1(B, 1.12f) : Lerp1(B, 1.13f);
 
     const float h = in.race_scale * sv("Height"), m2h = 2.f - h, ll = sv("Leg length"), fr = in.race_scale * sv("Frame");
     const float y184 = h + ll - 1.f;
@@ -36,7 +36,7 @@ std::vector<BoneScale> ComputeBoneScales(const std::map<std::string, float>& val
     auto positional = [&](size_t i, float x, float y, float z) { out[i].has_positional = true; out[i].positional[0] = x; out[i].positional[1] = y; out[i].positional[2] = z; };
     auto pair = [&](const char* l, const char* r, float x, float y, float z) { size_t a = size(l, x, y, z), b = size(r, x, y, z); return std::make_pair(a, b); };
 
-    // legs (M:docs/animation.md "The formulas"; exe 0x14052e6c0)
+    // legs (M:docs/animation.md "The formulas"; exe)
     { auto t = pair("Bip01 R Thigh", "Bip01 L Thigh", base, y184 * kThighY, base); float py = fr * m2h * hp; positional(t.first, 1.f, py, 1.f); positional(t.second, 1.f, py, 1.f); }
     const float calf = (2.f - ls) * lb * fr;
     pair("Bip01 L Calf", "Bip01 R Calf", calf, y184, calf);

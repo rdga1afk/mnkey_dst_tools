@@ -1,4 +1,4 @@
-// Face (and any pose-driven) sliders -> mesh pose weights, as the original's pose randomiser / setter does (exe 0x140070010, spec §4): weight = value * 0.01 on `target`;
+// Face (and any pose-driven) sliders -> mesh pose weights, as the original's pose randomiser / setter does (exe, spec §4): weight = value * 0.01 on `target`;
 // a negative value goes to `target_opposite` with weight = -value * 0.01 when the slider has one, otherwise it stays signed on `target`. Poses of the same name add up.
 #pragma once
 #include "editor_limits.h"

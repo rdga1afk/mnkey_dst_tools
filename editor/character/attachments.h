@@ -1,6 +1,6 @@
 // Hair and beards: ATTACHMENT records (FCS type 6) worn on the body's skeleton (M:docs/formats/ogre-skeleton.md "Binding worn meshes": mode 1, the mesh's bone assignments index the body's
 // skeleton by bone handle). RACE `hairs` lists them; `attach slot` 2 = hair, 13 = beard. Colour of the hair: HSB from the appearance values Hair Colour / Hair Saturation / Hair Brightness
-// (x 0.01, Ogre ColourValue::setHSB; exe 0x140532600, M:docs/characters.md "Hair colour").
+// (x 0.01, Ogre ColourValue::setHSB; exe, M:docs/characters.md "Hair colour").
 #pragma once
 #include <monkey_dust/io/fcs_gamedata.h>
 #include <array>
@@ -14,7 +14,7 @@ struct AttachmentInfo {
     std::string id, name, mesh, mesh_female, texture, texture_female, head_texture, head_texture_female;
     int weight = 1;   // RANDOMISE: the reference's first integer clamped to 1..100 (M:docs/characters.md "Random appearance")
     int slot = 0, alpha_rejection = 128, diffuse_channel = 0, alpha_channel = 0;
-    float specular = 1.f;   // the record's float `specular`: the hair program's specularMult (exe 140532600); 1 = the material default when the record has none
+    float specular = 1.f;   // the record's float `specular`: the hair program's specularMult (exe); 1 = the material default when the record has none
     int head_channel = 0, head_alpha_channel = 1, head_channel_female = 0, head_alpha_channel_female = 1;   // the overlay on the head skin (`head texture`)
     bool HasMesh(bool female) const { return !(female && !mesh_female.empty() ? mesh_female : mesh).empty(); }
     const std::string& Mesh(bool female) const { return female && !mesh_female.empty() ? mesh_female : mesh; }

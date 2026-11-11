@@ -50,23 +50,23 @@ public:
     const std::string& HeadId(size_t i) const { return heads_[i]; }
     size_t head() const { return head_; }
     void SelectHead(int i) { if (!heads_.empty()) { head_ = size_t((i + int(heads_.size())) % int(heads_.size())); ++revision_; } }
-    // Idle stance: the ANIMATION records `idle_stand_*` of chareditor.mod, record order; default `idle_stand_normal` (exe 0x14007a490, M:docs/characters.md).
+    // Idle stance: the ANIMATION records `idle_stand_*` of chareditor.mod, record order; default `idle_stand_normal` (exe, M:docs/characters.md).
     size_t StanceCount() const { return stances_.size(); }
     const std::string& StanceName(size_t i) const { return stances_[i]; }
     size_t stance() const { return stance_; }
     void SelectStance(int i) { if (!stances_.empty()) { stance_ = size_t((i + int(stances_.size())) % int(stances_.size())); ++revision_; } }
     const std::string& StanceAnim() const { static const std::string d = "idle_stand_normal"; return stances_.empty() ? d : stances_[stance_]; }
-    // BODY also picks a random idle stance (exe 14006f930: random entry of the idle_stand_* list, int in [0, n-1]); RANDOMISE ALL does not call it
+    // BODY also picks a random idle stance (exe: random entry of the idle_stand_* list, int in [0, n-1]); RANDOMISE ALL does not call it
     void RandomiseCategory(const std::string& category) {
         if (config_) md::character::RandomiseCategory(*config_, category, values_, rng_);
         if (category == "Body" && !stances_.empty()) stance_ = size_t(rng_.Next() * float(stances_.size())) % stances_.size();
         if (category == "Face") RandomiseHead();
         ++revision_;
     }
-    // FACE picks a random head of the gender's list (exe 14007b310 -> 14006e1a0): the visible part of FACE RANDOMISE, the sliders vary only by the data's random_variation; RANDOMISE ALL calls it too
+    // FACE picks a random head of the gender's list (exe): the visible part of FACE RANDOMISE, the sliders vary only by the data's random_variation; RANDOMISE ALL calls it too
     void RandomiseHead() { if (!heads_.empty()) head_ = size_t(rng_.Next() * float(heads_.size())) % heads_.size(); }
     void RandomiseAll() { if (config_) md::character::RandomiseAll(*config_, values_, rng_); RandomiseHair(); RandomiseHead(); ++revision_; }
-    // Hair tab (exe 0x14007adc0): a weighted pick of the hair, of the beard (not for women) and of the hair colour; no colours in the race: brightness 100, saturation 0.
+    // Hair tab (exe): a weighted pick of the hair, of the beard (not for women) and of the hair colour; no colours in the race: brightness 100, saturation 0.
     void RandomiseHair();
     void Seed(uint32_t s) { rng_ = Rng(s); }
 

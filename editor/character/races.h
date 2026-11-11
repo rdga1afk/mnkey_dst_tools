@@ -1,7 +1,7 @@
 // Races and race groups of the character editor, from the merged FCS data (gamedata.base + the mods of the load order); nothing is listed in code.
 // RACE records are FCS type 7, RACE_GROUP type 100 (`races` = the group's races). The editor shows the groups as RACE and the group's playable races as SUBRACE
-// (exe 0x140079bb0 builds the group list and keeps the races whose `playable` is set; fcs.def:1497 / :1577).
-// НЕВІДОМО: whether exe also requires a non-empty `editor limits` for the SUBRACE list (it reports a missing file at 0x141683da0 when a race is chosen).
+// (exe builds the group list and keeps the races whose `playable` is set; fcs.def:1497 /:1577).
+// НЕВІДОМО: whether exe also requires a non-empty `editor limits` for the SUBRACE list (it reports a missing file when a race is chosen).
 #pragma once
 #include <monkey_dust/io/fcs_gamedata.h>
 #include <string>
