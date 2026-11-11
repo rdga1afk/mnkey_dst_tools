@@ -3,17 +3,19 @@ name: CI
 on:
   push:
     branches: [master]
-    paths:
-      - '**.py'
-      - '.github/workflows/ci.yml'
   pull_request:
-    paths:
-      - '**.py'
   workflow_dispatch: {}
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH_DATE: "2026/10/19"   # keep equal to .github/workflows/package.yml and the engine repo (bump with the laptop's pacman -Syu)
+  EXPECT: "clang 23.1.3-3|gcc-libs 16.2.1+r23+gd564253eb6c8-1|glibc 2.44+r50+g1848099f063e-1|sdl3 3.4.18-1|lua54 5.4.9-1|cmake 4.4.4-1"
+
 jobs:
-  # Public repo → free minutes. The C++ editor is built from the main repository
-  # (it needs engine/ as a sibling), so here we only check that every Python tool parses.
+  # Public repo → free minutes. This job only checks that every Python tool parses; the C++ build is the `standalone` job below.
   python-syntax:
     name: Python syntax
     runs-on: ubuntu-24.04
@@ -26,3 +28,48 @@ jobs:
         run: |
           find . -name '*.py' -not -path './third_party/*' -print0 \
             | xargs -0 python3 -m py_compile
+
+  # The repo builds on its own: engine is the submodule tools/engine; no private file, no Kenshi file, no secret. The tests that need an install (KENSHI_DIR) are not run here.
+  standalone:
+    name: Standalone build, unit tests, scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    container: archlinux:latest
+    steps:
+      - name: Toolchain (Arch Linux Archive snapshot = the laptop's package set)
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_DATE}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm
+          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache sdl3 lua54 mold freetype2 shaderc glslang python pkgconf
+          echo "$EXPECT" | tr '|' '\n' | while read -r n v; do
+            got=$(pacman -Q "$n" | cut -d' ' -f2)
+            echo "$n: laptop $v, container $got"
+            [ "$got" = "$v" ] || { echo "::error::$n differs from the laptop ($v)"; exit 1; }
+          done
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: git safe directory
+        run: git config --global --add safe.directory '*'
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-standalone-${{ github.sha }}
+          restore-keys: ccache-standalone-
+      - name: Configure
+        run: |
+          export CC=clang CXX=clang++
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMD_MARCH=skylake
+      - name: Build (game, editor, tests)
+        run: cmake --build build -j"$(nproc)"
+      - name: Unit tests that need no install
+        run: ctest --test-dir build -L fast -LE needs-install --output-on-failure --timeout 120
+      - name: Decompilation-pattern scan (counts, file:line only; 0 expected for addresses and decompiler names)
+        run: |
+          python3 scripts/migration_scan.py game shaders tests editor | tee scan.txt
+          grep -E '^(A_ghidra_id|B_exe_addr) ' scan.txt | awk '{ if ($2 != 0) bad = 1 } END { exit bad }'
+      - name: Licences (every vendored folder has a licence file and a THIRD_PARTY.md row)
+        run: python3 scripts/check_licences.py
+      - name: Release binary (no Dear ImGui Test Engine, no GPL-class libraries)
+        run: bash scripts/check_release_binary.sh build/game/monkey_dust build/tools/monkey_dust_editor

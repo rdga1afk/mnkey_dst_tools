@@ -24,7 +24,7 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 
 ### The game's source is here (since 11.11.2026)
 The game itself moved into this repository (MIT): `game/` (source, CMake, our own small data), `shaders/` (our GLSL), `tests/` (unit tests), `scripts/` (shader compile and embedding). Kenshi's own shader programs are not here: the game compiles them at run time from your install. A few shaders translated from Kenshi stay in a private repository until they are replaced by the originals; a game built from this repository alone starts and loads the world from your install, and logs one line for each feature that is off for that reason.
-**Building the game from this repository on its own is not set up yet** (today it builds as part of the private repository; a standalone build and CI here are planned). Status, measurements and goals: [engine README](https://github.com/rdga1afk/mnkey_dst_engine#readme) and the [docs site](https://rdga1afk.github.io/mnkey_dst_engine/).
+**This repository builds on its own** (the game, the editor and the unit tests; see Build below). Running the game needs a Kenshi install (`KENSHI_DIR`); the features that need the few private translated shaders stay off and each logs one `[GpuPipeline] missing shader` line. Status, measurements and goals: [engine README](https://github.com/rdga1afk/mnkey_dst_engine#readme) and the [docs site](https://rdga1afk.github.io/mnkey_dst_engine/).
 
 ### What is here
 
@@ -46,7 +46,14 @@ The game itself moved into this repository (MIT): `game/` (source, CMake, our ow
 | **Repo hygiene** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Docs-vs-code drift checks, offline status dashboard, SPIR-V binding checks |
 
 ### Build
-`tools/` is built from the game repository root (it needs the engine as a sibling submodule):
+Standalone (the engine is the submodule `engine/`; needs SDL3, Lua 5.4, shaderc / glslang, clang, CMake ≥ 3.21 and Ninja; glslang and SPIRV-Tools are fetched at the pinned release):
+```bash
+git clone --recurse-submodules https://github.com/rdga1afk/mnkey_dst_tools.git && cd mnkey_dst_tools
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build                       # game (build/game/monkey_dust), editor (build/tools/monkey_dust_editor), unit tests
+ctest --test-dir build -L fast -LE needs-install    # unit tests that need no Kenshi install
+```
+Running the game or the editor needs a Kenshi install (`KENSHI_DIR`). As a part of the private game repository, `tools/` is still built from that repository's root (it adds this directory as a subproject):
 ```bash
 cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ninja -C build monkey_dust_editor
@@ -99,7 +106,7 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 
 ### Код гри тепер тут (з 11.11.2026)
 Сама гра переїхала в цей репозиторій (MIT): `game/` (код, CMake, наші невеликі дані), `shaders/` (наш GLSL), `tests/` (модульні тести), `scripts/` (компіляція й вбудовування шейдерів). Власних шейдерних програм Kenshi тут немає: гра компілює їх під час запуску з вашої інсталяції. Кілька шейдерів, перекладених з Kenshi, лишаються в приватному репозиторії, доки їх не замінять оригінали; гра, зібрана лише з цього репозиторію, запускається й завантажує світ з вашої інсталяції, а для кожної функції, вимкненої з цієї причини, пише один рядок у журнал.
-**Самостійна збірка гри лише з цього репозиторію ще не налаштована** (зараз гра збирається як частина приватного репозиторію; самостійну збірку й CI тут заплановано). Стан, заміри й цілі — у [README рушія](https://github.com/rdga1afk/mnkey_dst_engine#readme) і на [сайті документації](https://rdga1afk.github.io/mnkey_dst_engine/).
+**Цей репозиторій збирається самостійно** (гра, редактор і модульні тести; див. «Збірка»). Для запуску гри потрібна інсталяція Kenshi (`KENSHI_DIR`); можливості, що потребують кількох приватних перекладених шейдерів, вимкнені, і кожна пише один рядок `[GpuPipeline] missing shader`. Стан, заміри й цілі — у [README рушія](https://github.com/rdga1afk/mnkey_dst_engine#readme) і на [сайті документації](https://rdga1afk.github.io/mnkey_dst_engine/).
 
 ### Що тут є
 
@@ -121,7 +128,7 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 | **Гігієна репо** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Розбіжності документації з кодом, офлайн-панель стану, перевірка прив'язок SPIR-V |
 
 ### Збірка
-Збирається з кореня репозиторію гри (потрібен рушій як сусідній підмодуль) — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
+Самостійно: `git clone --recurse-submodules …`, `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`, `cmake --build build`, `ctest --test-dir build -L fast -LE needs-install` (потрібні SDL3, Lua 5.4, shaderc / glslang, clang, CMake, Ninja; рушій — підмодуль `engine/`). Як частина приватного репозиторію гри збирається з його кореня — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
 
 **Готові збірки (з 19.10.2026):** CI (`.github/workflows/package.yml`) збирає редактор, `kenshi_navmesh_extract` і бібліотеки редактора / персонажів проти релізу рушія, закріпленого в `ci/ENGINE_SHA`, у контейнері Arch Linux з версіями тестового ноутбука, і публікує їх як GitHub Release `build-<sha12>`. Репозиторій гри завантажує їх командою `scripts/fetch_prebuilt.sh tools`.
 
