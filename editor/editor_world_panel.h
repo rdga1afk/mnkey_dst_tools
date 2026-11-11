@@ -232,6 +232,7 @@ inline void Draw(float dt) {
         if (ImGui::SmallButton(lbl)) { g_list_tab = t; g_search[0]='\0'; }
         if (active) ImGui::PopStyleColor();
     }
+    if (g_list_tab > 0 && counts[g_list_tab] == 0) ImGui::TextDisabled("needs md_world.json (private data)");
     ImGui::Separator();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputText("##wp_srch", g_search, sizeof(g_search));
@@ -431,33 +432,6 @@ inline void Draw(float dt) {
         float alpha = (g_status_t > 1.f) ? 1.f : g_status_t;
         ImGui::TextColored({0.4f,0.9f,0.5f,alpha}, "%s", g_status);
     }
-
-    // ── Kenshi tools ─────────────────────────────────────────
-    ImGui::Spacing(); ImGui::Separator();
-    ImGui::TextDisabled("Kenshi Tools");
-
-    // Import zones/factions/towns from Kenshi .mod files via Python script
-    if (ImGui::Button("Import from .mod##ki", {-1.f, 0.f})) {
-        int rc = system("python3 tools/md_mod_import.py 2>&1 | tee /tmp/ken_import.log");
-        if (rc == 0) {
-            snprintf(g_status, sizeof(g_status), "Import OK — reloading...");
-            g_status_t = 3.f;
-            Init(); LoadMapTex();
-        } else {
-            snprintf(g_status, sizeof(g_status), "Import FAILED — see /tmp/ken_import.log");
-            g_status_t = 4.f;
-        }
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run tools/md_mod_import.py\n(reads Kenshi .mod files → md_world.json)");
-
-    // Native Kenshi mod import (replaces Wine/FCS)
-    if (ImGui::Button("Import Kenshi .mod/.base##kf", {-1.f, 0.f})) {
-        int rc = system("python3 tools/md_mod_import.py 2>&1 | tee /tmp/ken_import.log");
-        snprintf(g_status, sizeof(g_status), rc == 0 ? "Kenshi data imported." : "Import FAILED — see /tmp/ken_import.log");
-        g_status_t = 3.f;
-        g_map_tried = false;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Parse gamedata.base + Newwworld.mod + rebirth.mod\n→ md_world.json (factions/towns)");
 
     // Reload button at bottom
     ImGui::Separator();
