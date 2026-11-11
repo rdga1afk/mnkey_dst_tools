@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     if (!s.Load(argv[1], err)) { std::printf("load: %s\n", err.c_str()); return 1; }
     std::map<std::string, std::string> seen;   // mesh file -> "slot name: N submeshes [material:indices ...]"
     size_t styles = 0, multi = 0, nomesh = 0;
-    std::set<std::string> counted;
+    std::set<std::string> counted, diffs;
     for (size_t r = 0; r < s.RaceCount(); ++r) {
         s.SelectRace(r);
         for (size_t sr = 0; sr < std::max<size_t>(1, s.SubraceCount()); ++sr) {
@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
                         const std::string key = std::to_string(slot) + a.id + (fem ? "f" : "m");
                         if (!counted.insert(key).second) continue;
                         ++styles;
+                        if (!diffs.count(a.id)) { diffs.insert(a.id); std::printf("REC %s | %s | %s | diffuse ch %d alpha ch %d rej %d spec %.2f | tex %s\n", a.id.c_str(), a.name.c_str(), slot ? "beard" : "hair", a.diffuse_channel, a.alpha_channel, a.alpha_rejection, a.specular, a.Texture(fem).c_str()); }
                         if (!a.HasMesh(fem)) { ++nomesh; continue; }
                         const std::string path = s.Resources().Path(a.Mesh(fem));
                         if (seen.count(path)) continue;
