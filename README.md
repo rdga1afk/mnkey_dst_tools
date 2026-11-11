@@ -53,7 +53,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build                       # game (build/game/monkey_dust), editor (build/tools/monkey_dust_editor), unit tests
 ctest --test-dir build -L fast -LE needs-install    # unit tests that need no Kenshi install
 ```
-Running the game or the editor needs a Kenshi install (`KENSHI_DIR`). As a part of the private game repository, `tools/` is still built from that repository's root (it adds this directory as a subproject):
+Running the game or the editor needs a Kenshi install (`KENSHI_DIR`). The public CI (`.github/workflows/ci.yml`) builds the game, the editor and the tests from scratch on every push, in an Arch Linux container with packages pinned to a fixed date, and runs the tests that need no Kenshi install. As a part of the private game repository, `tools/` is still built from that repository's root (it adds this directory as a subproject):
 ```bash
 cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ninja -C build monkey_dust_editor
@@ -128,7 +128,7 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 | **Гігієна репо** | `md_doctor.py`, `md_dash.py`, `spirv_reflect_check.py` | Розбіжності документації з кодом, офлайн-панель стану, перевірка прив'язок SPIR-V |
 
 ### Збірка
-Самостійно: `git clone --recurse-submodules …`, `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`, `cmake --build build`, `ctest --test-dir build -L fast -LE needs-install` (потрібні SDL3, Lua 5.4, shaderc / glslang, clang, CMake, Ninja; рушій — підмодуль `engine/`). Як частина приватного репозиторію гри збирається з його кореня — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
+Самостійно: `git clone --recurse-submodules …`, `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release`, `cmake --build build`, `ctest --test-dir build -L fast -LE needs-install` (потрібні SDL3, Lua 5.4, GoogleTest, заголовки й завантажувач Vulkan, shaderc / glslang, clang, CMake ≥ 3.21, Ninja; рушій — підмодуль `engine/`; glslang і SPIRV-Tools завантажуються закріпленим випуском). Для запуску гри чи редактора потрібна інсталяція Kenshi (`KENSHI_DIR`). Відкритий CI (`.github/workflows/ci.yml`) на кожен пуш збирає гру, редактор і тести з нуля в контейнері Arch Linux з пакетами на закріплену дату і запускає тести, яким не потрібна інсталяція Kenshi. Як частина приватного репозиторію гри збирається з його кореня — команди вище. Python-інструментам потрібні Python 3, numpy і Pillow.
 
 **Готові збірки (з 19.10.2026):** CI (`.github/workflows/package.yml`) збирає редактор, `kenshi_navmesh_extract` і бібліотеки редактора / персонажів проти релізу рушія, закріпленого в `ci/ENGINE_SHA`, у контейнері Arch Linux з версіями тестового ноутбука, і публікує їх як GitHub Release `build-<sha12>`. Репозиторій гри завантажує їх командою `scripts/fetch_prebuilt.sh tools`.
 
