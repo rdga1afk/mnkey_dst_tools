@@ -1,7 +1,7 @@
 #pragma once
 // editor_world_panel.h — World Data Editor (Zones / Factions / Towns + interactive map)
-// Loads: game/data/terrain_config.txt, game/data/md_world.json
-// Saves: game/data/terrain_config.txt, game/data/factions_override.cfg, game/data/towns.cfg
+// Zones: read-only, from WorldRegistry (the install). Loads factions / towns: game/data/md_world.json (private, stays in main; the panel shows nothing there without it).
+// Saves: game/data/factions_override.cfg, game/data/towns.cfg
 
 // MD_KENSHI_TMP: override at cmake time with -DMD_KENSHI_TMP=<path> for dev asset import.
 // Default points to repo-relative temp dir — does NOT break runtime if absent.
@@ -10,6 +10,7 @@
 #endif
 
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/world/world_registry.h>
 #include <monkey_dust/render/gpu_sampler_texture.h>
 #include "editor_ui.h"
 #include <stb_image.h>
@@ -25,10 +26,9 @@ static constexpr int WP_MAX_ZONES    = 72;   // 59 kenshi zones + buffer
 static constexpr int WP_MAX_FACTIONS = 160;  // 137 kenshi factions + buffer
 static constexpr int WP_MAX_TOWNS    = 384;  // 348 kenshi towns + buffer
 
-struct WPZone {
-    char  id[48], display_name[48], biome[24], factions_str[64];
-    float amplitude, fog_density, fog_dist;
-    int   grid_x, grid_z, danger;
+struct WPZone {   // read-only: one kind-95 weather group of the install and the cell of its areasmap region (WorldRegistry::BuildZonesFromInstall)
+    char  id[48], display_name[48], biome[48];
+    int   grid_x, grid_z;
 };
 struct WPFaction {
     char  id[32], name[64], ideology[32], attitude[48];
@@ -85,46 +85,17 @@ static bool wp_bool(const char* src, const char* key) {
 
 // ─── Load / Save ─────────────────────────────────────────────────────────────
 
-inline void LoadZones(const char* path = "game/data/terrain_config.txt") {
-    FILE* f = fopen(path, "r"); if (!f) return;
+// The zones are the game's own list, built from the install (no file of ours): nothing to save, so the panel only shows them (owner 11.11: no hand-typed zone data).
+inline void LoadZones() {
     g_zcount = 0; g_sel_zone = -1;
-    char line[256]; WPZone* cur = nullptr;
-    while (fgets(line, sizeof(line), f)) {
-        const char* p = line;
-        while (*p==' '||*p=='\t') p++;
-        if (*p=='#'||*p=='\n'||*p=='\r'||*p=='\0'||*p=='[') continue;
-        if (strncmp(p, "zone=", 5) == 0) {
-            if (g_zcount >= WP_MAX_ZONES) break;
-            cur = &g_zones[g_zcount++]; memset(cur, 0, sizeof(*cur));
-            cur->amplitude=30.f; cur->fog_density=0.3f; cur->fog_dist=800.f; cur->danger=1;
-            const char* id = p + 5; int len = 0;
-            while (id[len] && id[len]!='\n' && id[len]!='\r') len++;
-            if (len>=48) len=47; memcpy(cur->id, id, (size_t)len); cur->id[len]='\0';
-            continue;
-        }
-        if (!cur) continue;
-        const char* eq = strchr(p, '='); if (!eq) continue;
-        char key[64]; int kl = (int)(eq-p);
-        while (kl>0 && (p[kl-1]==' '||p[kl-1]=='\t')) kl--;
-        if (kl<=0||kl>=64) continue;
-        memcpy(key, p, (size_t)kl); key[kl]='\0';
-        const char* vs = eq+1; while (*vs==' '||*vs=='\t') vs++;
-        int vl = 0; while (vs[vl] && vs[vl]!='\n' && vs[vl]!='\r') vl++;
-        while (vl>0 && (vs[vl-1]==' '||vs[vl-1]=='\t')) vl--;
-        char val[128]; if (vl>=128) vl=127; memcpy(val,vs,(size_t)vl); val[vl]='\0';
-        if      (!strcmp(key,"name"))        strncpy(cur->display_name, val, 47);
-        else if (!strcmp(key,"biome"))       strncpy(cur->biome, val, 23);
-        else if (!strcmp(key,"amplitude"))   cur->amplitude   = (float)atof(val);
-        else if (!strcmp(key,"danger"))      cur->danger      = atoi(val);
-        else if (!strcmp(key,"grid_x"))      cur->grid_x      = atoi(val);
-        else if (!strcmp(key,"grid_z"))      cur->grid_z      = atoi(val);
-        else if (!strcmp(key,"fog_density")) cur->fog_density = (float)atof(val);
-        else if (!strcmp(key,"fog_dist"))    cur->fog_dist    = (float)atof(val);
-        else if (!strcmp(key,"factions"))    strncpy(cur->factions_str, val, 63);
+    int n = 0; ZoneRecord* z = WorldRegistry::Get().GetAll(n);
+    for (int i = 0; i < n && g_zcount < WP_MAX_ZONES; ++i) {
+        WPZone& d = g_zones[g_zcount++]; memset(&d, 0, sizeof(d));
+        strncpy(d.id, z[i].name, sizeof(d.id) - 1); strncpy(d.display_name, z[i].display_name, sizeof(d.display_name) - 1);
+        d.grid_x = z[i].grid_x; d.grid_z = z[i].grid_z;
+        strncpy(d.biome, WorldRegistry::Get().GetBiomeAt(d.grid_x, d.grid_z), sizeof(d.biome) - 1);
     }
-    fclose(f);
 }
-
 // Shared buffer for md_world.json (120KB+). Static: loaded once per session.
 static char  g_world_json[256*1024];
 static int   g_world_json_len = 0;
@@ -184,28 +155,6 @@ inline void LoadTowns(const char* path = "game/data/md_world.json") {
 }
 
 inline void Init() { g_world_json_len = 0; LoadZones(); LoadFactions(); LoadTowns(); }
-
-inline bool SaveZones(const char* path = "game/data/terrain_config.txt") {
-    FILE* f = fopen(path, "w"); if (!f) return false;
-    fprintf(f, "# monkey_dust terrain config — Kenshi world data\n");
-    fprintf(f, "# Format: zone=<id>, name=, biome=, amplitude=, danger=, grid_x/z= (0-63 scale), fog_*=, factions=\n\n");
-    fprintf(f, "[zones]\n");
-    for (int i = 0; i < g_zcount; ++i) {
-        WPZone& z = g_zones[i];
-        fprintf(f, "zone=%s\n", z.id);
-        fprintf(f, "  name=%s\n", z.display_name);
-        fprintf(f, "  biome=%s\n", z.biome);
-        fprintf(f, "  amplitude=%.1f\n", z.amplitude);
-        fprintf(f, "  danger=%d\n", z.danger);
-        fprintf(f, "  grid_x=%d\n", z.grid_x);
-        fprintf(f, "  grid_z=%d\n", z.grid_z);
-        fprintf(f, "  fog_density=%.2f\n", z.fog_density);
-        fprintf(f, "  fog_dist=%.0f\n", z.fog_dist);
-        if (z.factions_str[0]) fprintf(f, "  factions=%s\n", z.factions_str);
-        fprintf(f, "\n");
-    }
-    fclose(f); return true;
-}
 
 inline bool SaveFactions(const char* path = "game/data/factions_override.cfg") {
     FILE* f = fopen(path, "w"); if (!f) return false;
@@ -371,11 +320,7 @@ inline void Draw(float dt) {
         bool   sel = (sel_zid && !strcmp(z.id, sel_zid));
         float  r   = sel ? 6.f : 4.f;
 
-        // Danger-based colour: green → yellow → red
-        float  dang_t = (z.danger - 1) / 8.f;
-        ImU32  pin_col = sel
-            ? IM_COL32(255,220,60,255)
-            : IM_COL32((int)(80 + 160*dang_t), (int)(200 - 140*dang_t), 60, 210);
+        ImU32  pin_col = sel ? IM_COL32(255,220,60,255) : IM_COL32(120,200,60,210);   // one colour: the old danger tint was our own number, not Kenshi data
 
         dl->AddCircleFilled({px,py}, r, pin_col);
         dl->AddCircle({px,py}, r+1.f, IM_COL32(0,0,0,150), 12, 1.f);
@@ -389,8 +334,7 @@ inline void Draw(float dt) {
             if (sqrtf(dx*dx+dz*dz) < r+5.f) {
                 ImGui::BeginTooltip();
                 ImGui::TextUnformatted(z.display_name[0] ? z.display_name : z.id);
-                ImGui::TextDisabled("biome: %s  danger: %d  amp: %.0f", z.biome, z.danger, z.amplitude);
-                if (z.factions_str[0]) ImGui::TextDisabled("factions: %s", z.factions_str);
+                ImGui::TextDisabled("biome: %s", z.biome);
                 ImGui::EndTooltip();
                 if (ImGui::IsMouseClicked(0)) {
                     g_sel_zone=i; g_sel_type=0; g_list_tab=0; g_search[0]='\0';
@@ -416,37 +360,11 @@ inline void Draw(float dt) {
         if (EditorUI::font_mono) ImGui::PopFont();
         ImGui::Separator(); ImGui::Spacing();
 
-        ImGui::SetNextItemWidth(-1); ImGui::InputText("Display name##zdn", z.display_name, 48);
-        ImGui::SetNextItemWidth(-1); ImGui::InputText("Biome##zb",          z.biome,        24);
+        ImGui::Text("Name:  %s", z.display_name);
+        ImGui::Text("Biome: %s  (the BIOMES record of the install that owns the colour at the cell)", z.biome);
         ImGui::Separator();
-
-        ImGui::SliderFloat("Amplitude##za",    &z.amplitude,   0.f,   200.f, "%.0f m");
-        ImGui::SliderInt  ("Danger (1-9)##zd", &z.danger,      1,     9);
-        ImGui::SliderFloat("Fog density##zfd", &z.fog_density, 0.f,   1.f,   "%.2f");
-        ImGui::SliderFloat("Fog dist (m)##zff",&z.fog_dist,    50.f,  3000.f,"%.0f");
-        ImGui::Separator();
-
-        ImGui::Text("Map position (0-63 grid):");
-        ImGui::SetNextItemWidth(100); ImGui::InputInt("X##zgx", &z.grid_x, 1, 5);
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(100); ImGui::InputInt("Z##zgz", &z.grid_z, 1, 5);
-        if (z.grid_x <  0) z.grid_x =  0; if (z.grid_x > 63) z.grid_x = 63;
-        if (z.grid_z <  0) z.grid_z =  0; if (z.grid_z > 63) z.grid_z = 63;
-        ImGui::Separator();
-
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputText("Factions (csv)##zfc", z.factions_str, 64);
-        ImGui::Spacing();
-
-        ImGui::PushStyleColor(ImGuiCol_Button,        {0.14f,0.43f,0.22f,1.f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f,0.58f,0.30f,1.f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  {0.10f,0.32f,0.16f,1.f});
-        if (ImGui::Button("Save terrain_config.txt", {-1.f,0.f})) {
-            if (SaveZones()) { snprintf(g_status,sizeof(g_status),"terrain_config.txt saved!"); g_status_t=3.f; }
-            else             { snprintf(g_status,sizeof(g_status),"Save FAILED.");              g_status_t=3.f; }
-        }
-        ImGui::PopStyleColor(3);
-
+        ImGui::Text("Cell of its areasmap region (0-63 grid): X %d  Z %d", z.grid_x, z.grid_z);
+        ImGui::TextDisabled("Read-only: the list comes from the install (FCS weather groups + areasmap).");
     } else if (g_sel_type == 1 && g_sel_fac >= 0) {
         WPFaction& fa = g_facs[g_sel_fac];
         push_bold(); ImGui::Text("Faction"); pop_bold();
@@ -530,15 +448,7 @@ inline void Draw(float dt) {
             g_status_t = 4.f;
         }
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run tools/md_mod_import.py\n(reads Kenshi .mod files → terrain_config.txt, md_world.json)");
-
-    // Import biome map for all 4096 zones
-    if (ImGui::Button("Reimport biome_map##kb", {-1.f, 0.f})) {
-        int rc = system("python3 tools/md_biome_import.py 2>&1 | tee /tmp/ken_biome.log");
-        snprintf(g_status, sizeof(g_status), rc == 0 ? "biome_map.txt updated." : "Biome import FAILED.");
-        g_status_t = 3.f;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rebuild game/data/biome_map.txt from biomemap.png");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run tools/md_mod_import.py\n(reads Kenshi .mod files → md_world.json)");
 
     // Native Kenshi mod import (replaces Wine/FCS)
     if (ImGui::Button("Import Kenshi .mod/.base##kf", {-1.f, 0.f})) {
@@ -547,7 +457,7 @@ inline void Draw(float dt) {
         g_status_t = 3.f;
         g_map_tried = false;
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Parse gamedata.base + Newwworld.mod + rebirth.mod\n→ md_world.json (factions/towns) + terrain_config.txt");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Parse gamedata.base + Newwworld.mod + rebirth.mod\n→ md_world.json (factions/towns)");
 
     // Reload button at bottom
     ImGui::Separator();
