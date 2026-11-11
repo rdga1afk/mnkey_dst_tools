@@ -1,0 +1,23 @@
+# RenderQualityConfig runtime overrides — key=value, one per line, '#' = comment.
+# Loaded once at startup (RenderQualityConfig::LoadOverrides, main.cpp), AFTER
+# the hardware-tier preset (ApplyTierPreset) — any key set here wins over the
+# tier default. No recompile needed: edit this file, restart the game/editor.
+# Missing/empty file is fine (tier defaults apply everywhere).
+#
+# Available keys (see engine/include/monkey_dust/render/render_quality.h):
+#   terrain_cr_m          terrain chunk draw distance (m)
+#   mesh_lod0_cr_m        static props LOD0 radius (m)
+#   mesh_lod1_cr_m        static props LOD1 radius (m)
+#   mesh_lod2_cr_m        static props LOD2 radius (m)
+#   actor_cr_m            NPC draw distance (m)
+#   actor_anim_t2_m       NPC animation LOD2 skip-skinning radius (m)
+#   prop_rock_m           rock prop draw distance (m)
+#   prop_formation_m      rock formation draw distance (m)
+#   prop_hat_rock_m       "hat rock" draw distance (m)
+#   prop_veg_m            vegetation prop draw distance (m)
+#   prop_tree_m           tree draw distance (m)
+#   render_deco           1/0 — draw decorative vegetation pass at all
+#   tex_detail            0/1/2 — mip bias (0=full, 1=+1, 2=+2)
+#
+# Example (uncomment to use):
+# tex_detail=1

@@ -1,0 +1,53 @@
+#version 460
+// npc_cull.comp — GPU frustum culling for NPC sprites (demo mode).
+//
+// Reads NPC world-space (x, z) positions, tests against the camera frustum
+// via full MVP transform → clip-space bounds test.  Writes per-NPC uint
+// visibility mask (1=visible, 0=outside frustum).
+//
+// Dispatch: ceil(npc_count / 64) groups × 1 × 1.
+// Result:   visible[] read back to CPU to filter SetNpcSprites list.
+
+layout(local_size_x = 64) in;
+
+// set=0 binding=0: read-only NPC positions (x, z) world-space
+layout(std430, set=0, binding=0) readonly buffer NpcPosBuf {
+    vec2 positions[];  // (x, z) in world space; y assumed 0
+};
+
+// set=1 binding=0: read-write visibility output
+layout(std430, set=1, binding=0) buffer VisibleBuf {
+    uint visible[];    // 1 = inside frustum, 0 = culled
+};
+
+// set=2 binding=0: uniform with MVP + count
+layout(std140, set=2, binding=0) uniform CullUBO {
+    mat4  mvp;         // world→clip matrix (column-major)
+    int   npc_count;   // total NPCs to test
+    float npc_radius;  // world-space half-extent for conservative margin
+    vec2  _pad;
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (int(idx) >= npc_count) {
+        if (int(idx) < 64) visible[idx] = 0u;
+        return;
+    }
+
+    vec2 pos = positions[idx];
+
+    // Transform NPC centre (y=0) to clip space.
+    vec4 clip = mvp * vec4(pos.x, 0.0, pos.y, 1.0);
+
+    float w = clip.w;
+    float margin = npc_radius * w;  // conservative screen-space margin
+
+    // Frustum test: clip.xyz must be within [-w, w] × [-w, w] × [0, w].
+    bool inside = (w > 0.001) &&
+                  (clip.x >= -w - margin) && (clip.x <= w + margin) &&
+                  (clip.y >= -w - margin) && (clip.y <= w + margin) &&
+                  (clip.z >= 0.0) && (clip.z <= w);
+
+    visible[idx] = inside ? 1u : 0u;
+}

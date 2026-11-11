@@ -1,0 +1,34 @@
+#version 460 core
+// #207: the plugin's vertex normal (6 neighbours, ring (0,-1) (1,-1) (1,0) (0,1) (-1,1) (-1,0), cross products summed, negated) for every cell of a window,
+// the same taps and formula as NormalAt in terrain_quadtree_batched_lod.vert, so that the vertex shader reads one texel instead of seven heights.
+// One dispatch per window: the fine window (src = fineTex, stride 1) or one stride level of the world heightmap (src = heightTex, stride 1/2/4/..).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D srcTex;                      // R16_UNORM lattice
+layout(set = 1, binding = 0, rgba32f) uniform writeonly image2D dstImg;     // one layer / one window
+layout(std140, set = 2, binding = 0) uniform LodNormUBO {
+    ivec4 win;    // x, y = lattice cell of the window texel (0,0); z = stride in cells; w = window side (texels)
+    ivec4 lat;    // x = highest valid lattice cell (clamp); yzw unused
+    vec4  hr;     // x = heightMin, y = heightMax, z = spacing between lattice cells in metres (node spacing x stride / stride)
+} u;
+
+float CellHeight(ivec2 c) {
+    c = clamp(c, ivec2(0), ivec2(u.lat.x));
+    float frac = texelFetch(srcTex, c, 0).r;
+    return u.hr.x + frac * (u.hr.y - u.hr.x);
+}
+
+void main() {
+    ivec2 t = ivec2(gl_GlobalInvocationID.xy);
+    if (t.x >= u.win.w || t.y >= u.win.w) return;
+    const ivec2 ring[6] = ivec2[6](ivec2(0, -1), ivec2(1, -1), ivec2(1, 0), ivec2(0, 1), ivec2(-1, 1), ivec2(-1, 0));
+    const int stride = u.win.z;
+    const float spacing = u.hr.z;
+    ivec2 c = u.win.xy + t * stride;
+    float h0 = CellHeight(c);
+    vec3 r[6];
+    for (int k = 0; k < 6; ++k)
+        r[k] = vec3(float(ring[k].x) * spacing, CellHeight(c + ring[k] * stride) - h0, float(ring[k].y) * spacing);
+    vec3 sum = vec3(0.0);
+    for (int k = 0; k < 6; ++k) sum += cross(r[k], r[(k + 1) % 6]);
+    imageStore(dstImg, t, vec4(-normalize(sum), h0));   // w = the lattice height (m), read by the PVT tile bake
+}

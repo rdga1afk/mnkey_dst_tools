@@ -1,0 +1,93 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+// КРОК 7 (docs/KROK7_SKYVIS_AO_DESIGN.md): probe update for the
+// toroidal heightfield-horizon-sample sky-visibility AO. Dispatched only
+// over the regions ToroidalUpdate (engine/.../toroidal_update.h) says
+// actually left the cached window -- caller loops its up-to-4 emitted
+// regions, one dispatch per region, matching the same "small artificial
+// dispatch, not full-grid" pattern КРОК5's corner-bake window uses.
+//
+// Resource shape: samplers (heightmap) + ONE rw-storage-texture (probe
+// grid) + UBO -- the SAME known-safe compute-pipeline pattern КРОК 6's
+// validator (gpu_pipeline_safety_check.h) encodes (no storage buffer
+// mixed with samplers/textures -- task #141's crash class).
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set=0, binding=0) uniform sampler2D heightTex;
+
+layout(set=1, binding=0, r8) uniform writeonly image2D outProbes;
+
+layout(std140, set=2, binding=0) uniform SkyVisUBO {
+    // x=heightmap worldExtent_m, y=heightmap resTexels, z=heightRange_m,
+    // w=heightMin_m
+    vec4 hmParams;
+    // x=probe spacing (m), y=probe grid size (texels), z=region world_
+    // texel_from.x (probe-grid texel units, this dispatch's region
+    // origin), w=region world_texel_from.y
+    vec4 params;
+    // x=region viewport_lt.x (probe-tex texel), y=viewport_lt.y,
+    // z=sample radius (m), w=num directions (as float, converted to int)
+    vec4 params2;
+    // x=region width (texels), y=region height (texels), z/w unused
+    vec4 params3;
+} u;
+
+float SampleHeight(vec2 worldXZ) {
+    vec2 worldUV = worldXZ / u.hmParams.x;
+    vec2 texUV = (worldUV * (u.hmParams.y - 1.0) + 0.5) / u.hmParams.y;
+    float hFrac = textureLod(heightTex, texUV, 0.0).r;
+    return u.hmParams.w + hFrac * u.hmParams.z;
+}
+
+void main() {
+    ivec2 localTexel = ivec2(gl_GlobalInvocationID.xy);
+    // Bound-check against BOTH the region's own size (params3.xy -- the
+    // caller dispatches ceil(region.w/8)*8 groups, which overshoots the
+    // region on the last group) AND the full probe grid (params.y).
+    // Region-size check matters: without it, overshoot threads would
+    // write into ADJACENT, not-due-for-update grid cells belonging to a
+    // DIFFERENT toroidal region, corrupting still-valid probe data.
+    ivec2 regionSize = ivec2(u.params3.xy);
+    if (localTexel.x >= regionSize.x || localTexel.y >= regionSize.y) return;
+
+    ivec2 probeGridPos = ivec2(u.params2.xy) + localTexel;
+    int probeGridSize = int(u.params.y);
+    if (probeGridPos.x < 0 || probeGridPos.x >= probeGridSize ||
+        probeGridPos.y < 0 || probeGridPos.y >= probeGridSize) return;
+
+    // World position of this probe: world_texel_from is the region's
+    // world-texel origin (probe-grid texel units, matching КРОК 4's
+    // convention exactly -- ToroidalQuadRegion::world_texel_from), plus
+    // this texel's local offset within the region.
+    vec2 probeWorldTexel = u.params.zw + vec2(localTexel);
+    vec2 probeWorldXZ = probeWorldTexel * u.params.x; // texel units -> metres
+
+    float probeH = SampleHeight(probeWorldXZ);
+
+    float radius = u.params2.z;
+    int numDirs = int(u.params2.w);
+    float visibleCount = 0.0;
+    for (int i = 0; i < numDirs; ++i) {
+        float angle = (float(i) / float(numDirs)) * 6.28318530718;
+        vec2 dir = vec2(cos(angle), sin(angle));
+        // Two samples along the ray (near + far) -- cheap horizon-angle
+        // approximation, not a real marched raycast (SSAO-class cost
+        // budget, not voxel-GI-class). If either sample's terrain rises
+        // enough above the probe to plausibly block low sky angles,
+        // count this direction occluded.
+        vec2 pNear = probeWorldXZ + dir * (radius * 0.5);
+        vec2 pFar  = probeWorldXZ + dir * radius;
+        float hNear = SampleHeight(pNear);
+        float hFar  = SampleHeight(pFar);
+        // Occluded if nearby terrain rises more than ~45 degrees above
+        // the probe at either sample distance (tan(45)=1 -> height delta
+        // > distance means occluded at that sample's distance).
+        bool blockedNear = (hNear - probeH) > (radius * 0.5);
+        bool blockedFar  = (hFar  - probeH) > radius;
+        if (!blockedNear && !blockedFar) visibleCount += 1.0;
+    }
+    float skyVis = visibleCount / float(numDirs);
+
+    imageStore(outProbes, probeGridPos, vec4(skyVis, 0.0, 0.0, 1.0));
+}

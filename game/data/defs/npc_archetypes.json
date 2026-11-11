@@ -1,0 +1,72 @@
+{
+  "archetypes": [
+    {
+      "id": "bandit_thug",
+      "name": "Bandit Thug",
+      "faction_id": 1,
+      "bt_template": "bandit_patrol",
+      "walk_speed": 1.7,
+      "run_speed": 4.5,
+      "health": 80,
+      "toughness": 15,
+      "strength": 20,
+      "dexterity": 12,
+      "weapon_type": 0,
+      "weapon_damage": 25.0,
+      "weapon_range": 1.4,
+      "armor_type": 1,
+      "lod_level": 0
+    },
+    {
+      "id": "bandit_leader",
+      "name": "Bandit Leader",
+      "faction_id": 1,
+      "bt_template": "bandit_patrol",
+      "walk_speed": 1.7,
+      "run_speed": 4.8,
+      "health": 130,
+      "toughness": 30,
+      "strength": 35,
+      "dexterity": 20,
+      "weapon_type": 1,
+      "weapon_damage": 38.0,
+      "weapon_range": 1.6,
+      "armor_type": 2,
+      "lod_level": 0
+    },
+    {
+      "id": "trader_guard",
+      "name": "Trader Guard",
+      "faction_id": 2,
+      "bt_template": "trader_escort",
+      "walk_speed": 1.7,
+      "run_speed": 4.5,
+      "health": 90,
+      "toughness": 20,
+      "strength": 18,
+      "dexterity": 15,
+      "weapon_type": 0,
+      "weapon_damage": 22.0,
+      "weapon_range": 1.5,
+      "armor_type": 1,
+      "lod_level": 0
+    },
+    {
+      "id": "holy_enforcer",
+      "name": "Holy Enforcer",
+      "faction_id": 3,
+      "bt_template": "bandit_patrol",
+      "walk_speed": 1.7,
+      "run_speed": 4.5,
+      "health": 100,
+      "toughness": 25,
+      "strength": 25,
+      "dexterity": 18,
+      "weapon_type": 0,
+      "weapon_damage": 28.0,
+      "weapon_range": 1.4,
+      "armor_type": 2,
+      "lod_level": 0
+    }
+  ]
+}

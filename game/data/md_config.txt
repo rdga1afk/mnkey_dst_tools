@@ -1,0 +1,8 @@
+# monkey_dust engine config
+# Port of VBfA Tasks.txt pattern: thread pool configured at runtime.
+# All values have safe defaults — this file is optional.
+
+physics_threads   2     # Jolt worker threads (1-16; 2 avoids single-thread deadlock)
+physics_temp_mb   8     # Jolt TempAllocator size in MB (4-64)
+logic_hz         10     # Game logic tick rate Hz (1-60)
+max_bodies      1024    # Jolt max rigid bodies (64-65536)

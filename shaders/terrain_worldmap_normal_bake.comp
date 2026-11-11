@@ -1,0 +1,102 @@
+#version 460 core
+// Full-variant Phase 3 (serene-pondering-teapot.md): bakes ONE world-wide
+// normal texture from TerrainWorldHeightmap, ONCE at load. Same Terra-
+// style fixed-native-step forward-difference terrain_clipmap_fill.comp
+// already proved correct at clip-level scale (RenderDoc: normal delta
+// 0.0000 at every level boundary) -- applied here at world scale so the
+// Phase 5 non-indexed patch renderer samples normals that agree at EVERY
+// patch boundary, since there is no toroidal window here: this writes
+// world texel (x,z) directly, once, with no origin/strip-size indirection
+// (unlike terrain_clipmap_fill.comp's toroidal per-level cache -- there is
+// only ONE copy of this texture, covering the whole world).
+//
+// Fixed NATIVE heightmap texel step (worldExtent/(resTexels-1)), never a
+// tier-dependent step -- a tier-dependent step here would silently
+// reintroduce the exact disagreement Part A fixed, just moved from
+// clip-levels to patch tiers.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D heightTex;
+
+// RG8_SNORM: normal.xz only (2 bytes/texel); y reconstructed downstream
+// via sqrt(1-x^2-z^2), same convention Part A's per-level cache format
+// doc comment already established.
+layout(set = 1, binding = 0, rg8_snorm) uniform writeonly image2D normalImg;
+
+layout(std140, set = 2, binding = 0) uniform NormalBakeUBO {
+    vec4 world_params; // x=worldExtent_m, y=resTexels, z=heightRange_m, w=heightMin_m
+    vec4 mode_params;  // x = MD_NORMAL_BAKE mode: 0 one-sided forward difference, 1 central difference, 2 Sobel 3x3, 3 Kenshi fan (default)
+} u;
+
+float SampleHeightFrac(vec2 worldXZ, float worldExtent, float resTexels) {
+    // Same half-texel correction as terrain_clipmap_fill.comp /
+    // terrain_patch_gbuffer.vert's TH_SampleHeightNormal -- CPU atlas
+    // uses a vertex-grid convention (u=i/(N-1)), GPU sampler reads texel i
+    // centered at (i+0.5)/N.
+    vec2 worldUV = worldXZ / worldExtent;
+    vec2 texUV = (worldUV * (resTexels - 1.0) + 0.5) / resTexels;
+    return textureLod(heightTex, texUV, 0.0).r;
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    float resTexels = u.world_params.y;
+    int resTexelsI = int(resTexels);
+    if (texel.x >= resTexelsI || texel.y >= resTexelsI) return;
+
+    float worldExtent  = u.world_params.x;
+    float heightRangeM = u.world_params.z;
+    float nativeStep    = worldExtent / (resTexels - 1.0);
+
+    vec2 worldXZ = vec2(texel) * nativeStep;
+
+    float dhdx, dhdz;
+    int mode = int(u.mode_params.x + 0.5);
+    if (mode == 0) {
+        // as before: one-sided forward difference (describes the slope between this texel and its +X/+Z neighbour, i.e. shifted by half a texel)
+        float hFrac  = SampleHeightFrac(worldXZ, worldExtent, resTexels);
+        float hFracR = SampleHeightFrac(worldXZ + vec2(nativeStep, 0.0), worldExtent, resTexels);
+        float hFracU = SampleHeightFrac(worldXZ + vec2(0.0, nativeStep), worldExtent, resTexels);
+        dhdx = (hFracR - hFrac) * heightRangeM / nativeStep;
+        dhdz = (hFracU - hFrac) * heightRangeM / nativeStep;
+    } else if (mode == 1) {
+        // central difference: centred on the texel (no half-texel shift)
+        float hR = SampleHeightFrac(worldXZ + vec2(nativeStep, 0.0), worldExtent, resTexels);
+        float hL = SampleHeightFrac(worldXZ - vec2(nativeStep, 0.0), worldExtent, resTexels);
+        float hU = SampleHeightFrac(worldXZ + vec2(0.0, nativeStep), worldExtent, resTexels);
+        float hD = SampleHeightFrac(worldXZ - vec2(0.0, nativeStep), worldExtent, resTexels);
+        dhdx = (hR - hL) * heightRangeM / (2.0 * nativeStep);
+        dhdz = (hU - hD) * heightRangeM / (2.0 * nativeStep);
+    } else if (mode == 3) {
+        // Kenshi (Plugin_Terrain_x64.dll, docs/research/KENSHI_TERRAIN_NORMAL_RE.md): -normalise(sum_k e_k x e_{k+1}) over the six
+        // neighbours of the real triangulation N(0,-1) NE(1,-1) E(1,0) S(0,1) SW(-1,1) W(-1,0) (x = column, z = row, row-1 = z-s), which
+        // expands to Nx = 2(hW-hE) + (hN-hS) + (hSW-hNE), Nz = 2(hN-hS) + (hW-hE) + (hNE-hSW), N = normalise(Nx, 6s, Nz). Written as the
+        // gradient (dhdx, dhdz) so the shared  normalize(-dhdx, 1, -dhdz)  below gives exactly that vector.
+        float hN  = SampleHeightFrac(worldXZ + vec2(0.0,         -nativeStep), worldExtent, resTexels) * heightRangeM;
+        float hNE = SampleHeightFrac(worldXZ + vec2( nativeStep, -nativeStep), worldExtent, resTexels) * heightRangeM;
+        float hE  = SampleHeightFrac(worldXZ + vec2( nativeStep, 0.0),         worldExtent, resTexels) * heightRangeM;
+        float hS  = SampleHeightFrac(worldXZ + vec2(0.0,          nativeStep), worldExtent, resTexels) * heightRangeM;
+        float hSW = SampleHeightFrac(worldXZ + vec2(-nativeStep,  nativeStep), worldExtent, resTexels) * heightRangeM;
+        float hW  = SampleHeightFrac(worldXZ + vec2(-nativeStep, 0.0),         worldExtent, resTexels) * heightRangeM;
+        float Nx = 2.0 * (hW - hE) + (hN - hS) + (hSW - hNE);
+        float Nz = 2.0 * (hN - hS) + (hW - hE) + (hNE - hSW);
+        dhdx = -Nx / (6.0 * nativeStep);
+        dhdz = -Nz / (6.0 * nativeStep);
+    } else {
+        // Sobel 3x3 (smooths across the perpendicular axis as well)
+        float h00 = SampleHeightFrac(worldXZ + vec2(-nativeStep, -nativeStep), worldExtent, resTexels);
+        float h10 = SampleHeightFrac(worldXZ + vec2(0.0,         -nativeStep), worldExtent, resTexels);
+        float h20 = SampleHeightFrac(worldXZ + vec2( nativeStep, -nativeStep), worldExtent, resTexels);
+        float h01 = SampleHeightFrac(worldXZ + vec2(-nativeStep, 0.0), worldExtent, resTexels);
+        float h21 = SampleHeightFrac(worldXZ + vec2( nativeStep, 0.0), worldExtent, resTexels);
+        float h02 = SampleHeightFrac(worldXZ + vec2(-nativeStep,  nativeStep), worldExtent, resTexels);
+        float h12 = SampleHeightFrac(worldXZ + vec2(0.0,          nativeStep), worldExtent, resTexels);
+        float h22 = SampleHeightFrac(worldXZ + vec2( nativeStep,  nativeStep), worldExtent, resTexels);
+        dhdx = ((h20 + 2.0 * h21 + h22) - (h00 + 2.0 * h01 + h02)) * heightRangeM / (8.0 * nativeStep);
+        dhdz = ((h02 + 2.0 * h12 + h22) - (h00 + 2.0 * h10 + h20)) * heightRangeM / (8.0 * nativeStep);
+    }
+    vec3  N = normalize(vec3(-dhdx, 1.0, -dhdz));
+
+    imageStore(normalImg, texel, vec4(N.x, N.z, 0.0, 0.0));
+}
