@@ -3,7 +3,7 @@ id: kb-tools-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-11-01
+updated: 2026-11-11
 repo: tools
 tags: [tools, readme, editor, kenshi, measurement, public-repo]
 summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character editor and a Linux-native, FCS-compatible Kenshi data / mod editor), measurement/QA drivers, read-only MCP servers (Ghidra, RenderDoc), offline Kenshi-data converters; build; licence"
@@ -21,6 +21,10 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 
 > ### You need Kenshi
 > Tools that touch game data read them from **your own Kenshi install** and write results outside this repository. This repository contains **no Kenshi data**. Kenshi content itself is edited with Kenshi's own **Forgotten Construction Set (FCS)**, not with these tools.
+
+### The game's source is here (since 11.11.2026)
+The game itself moved into this repository (MIT): `game/` (source, CMake, our own small data), `shaders/` (our GLSL), `tests/` (unit tests), `scripts/` (shader compile and embedding). Kenshi's own shader programs are not here: the game compiles them at run time from your install. A few shaders translated from Kenshi stay in a private repository until they are replaced by the originals; a game built from this repository alone starts and loads the world from your install, and logs one line for each feature that is off for that reason.
+**Building the game from this repository on its own is not set up yet** (today it builds as part of the private repository; a standalone build and CI here are planned). Status, measurements and goals: [engine README](https://github.com/rdga1afk/mnkey_dst_engine#readme) and the [docs site](https://rdga1afk.github.io/mnkey_dst_engine/).
 
 ### What is here
 
@@ -92,6 +96,10 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 
 > ### Потрібна Kenshi
 > Інструменти, що працюють з даними гри, читають їх з **вашої власної інсталяції Kenshi** і пишуть результати поза цим репозиторієм. Тут **немає даних Kenshi**. Сам контент Kenshi редагується її власним **Forgotten Construction Set (FCS)**, а не цими інструментами.
+
+### Код гри тепер тут (з 11.11.2026)
+Сама гра переїхала в цей репозиторій (MIT): `game/` (код, CMake, наші невеликі дані), `shaders/` (наш GLSL), `tests/` (модульні тести), `scripts/` (компіляція й вбудовування шейдерів). Власних шейдерних програм Kenshi тут немає: гра компілює їх під час запуску з вашої інсталяції. Кілька шейдерів, перекладених з Kenshi, лишаються в приватному репозиторії, доки їх не замінять оригінали; гра, зібрана лише з цього репозиторію, запускається й завантажує світ з вашої інсталяції, а для кожної функції, вимкненої з цієї причини, пише один рядок у журнал.
+**Самостійна збірка гри лише з цього репозиторію ще не налаштована** (зараз гра збирається як частина приватного репозиторію; самостійну збірку й CI тут заплановано). Стан, заміри й цілі — у [README рушія](https://github.com/rdga1afk/mnkey_dst_engine#readme) і на [сайті документації](https://rdga1afk.github.io/mnkey_dst_engine/).
 
 ### Що тут є
 
