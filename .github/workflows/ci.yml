@@ -57,6 +57,11 @@ jobs:
           path: ~/.cache/ccache
           key: ccache-standalone-${{ github.sha }}
           restore-keys: ccache-standalone-
+      # renderdoc_app.h (MIT, one header; the laptop has the same file from renderdoc-bin 1.45): fetched pinned and checksummed, same as the engine's package.yml
+      - name: renderdoc_app.h
+        run: |
+          curl -sSfL -o /usr/local/include/renderdoc_app.h https://raw.githubusercontent.com/baldurk/renderdoc/v1.45/renderdoc/api/app/renderdoc_app.h
+          echo "b7005e7dc34c3635046868bbd76d81b9b055aede0f56daa0bd39fedee0639ffb  /usr/local/include/renderdoc_app.h" | sha256sum -c -
       - name: Configure
         run: |
           export CC=clang CXX=clang++
@@ -72,4 +77,4 @@ jobs:
       - name: Licences (every vendored folder has a licence file and a THIRD_PARTY.md row)
         run: python3 scripts/check_licences.py
       - name: Release binary (no Dear ImGui Test Engine, no GPL-class libraries)
-        run: bash scripts/check_release_binary.sh build/game/monkey_dust build/tools/monkey_dust_editor
+        run: bash scripts/check_release_binary.sh build/game/monkey_dust build/monkey_dust_editor
