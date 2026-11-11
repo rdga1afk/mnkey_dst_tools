@@ -3,3 +3,5 @@ qa/reports/
 re_analysis/
 __pycache__/
 *.pyc
+build/
+shaders/spirv/

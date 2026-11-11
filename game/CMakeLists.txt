@@ -5,6 +5,9 @@ project(monkey_dust_game CXX)
 # MD_SHADER_OVERLAY_DIR = the extra shader directory of the private repo (the translated shaders); empty = tools alone (those features are off or fall back).
 get_filename_component(MD_TOOLS_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(MD_ROOT "${CMAKE_SOURCE_DIR}")
+if(NOT MD_GLSLANG_INC)
+    set(MD_GLSLANG_INC "${MD_ROOT}/third_party/glslang_src")   # main: the FetchContent source dir of the root CMake; standalone: set by cmake/standalone.cmake
+endif()
 set(MD_SHADER_OVERLAY_DIR "" CACHE PATH "extra shader sources compiled together with tools/shaders (later directories override)")
 set(MD_SPIRV_OUT_DIR "${MD_ROOT}/shaders/spirv" CACHE PATH "where the SPIR-V is written (the HAL reads <cwd>/shaders/spirv in development; the release embeds it)")
 
@@ -16,7 +19,7 @@ endif()
 # the title "monkey_dust v<MAJOR.MINOR> · <dd.mm> · <git hash>[-dirty]" is generated at BUILD time (only a tiny .cpp, rewritten only when the text changes)
 set(MD_BUILD_INFO_CPP ${CMAKE_BINARY_DIR}/generated/build_info.cpp)
 add_custom_target(md_build_info
-    COMMAND ${CMAKE_COMMAND} -DSRC=${MD_ROOT} -DOUT=${MD_BUILD_INFO_CPP} -DVER=${CMAKE_PROJECT_VERSION_MAJOR}.${CMAKE_PROJECT_VERSION_MINOR} -P ${MD_ROOT}/cmake/build_info.cmake
+    COMMAND ${CMAKE_COMMAND} -DSRC=${MD_ROOT} -DOUT=${MD_BUILD_INFO_CPP} -DVER=${CMAKE_PROJECT_VERSION_MAJOR}.${CMAKE_PROJECT_VERSION_MINOR} -P ${MD_TOOLS_DIR}/cmake/build_info.cmake
     BYPRODUCTS ${MD_BUILD_INFO_CPP}
     COMMENT "build info")
 # #201 R2: the SPIR-V is compiled from shaders/ at build time (scripts/compile_shaders.sh, skips up-to-date files) and embedded in the binary;
@@ -53,7 +56,7 @@ add_custom_command(OUTPUT ${MD_EMBEDDED_DATA_CPP}
 add_executable(monkey_dust ${GAME_SOURCES} ${IMGUI_SOURCES} ${MD_BUILD_INFO_CPP} ${MD_EMBEDDED_SPIRV_CPP} ${MD_EMBEDDED_DATA_CPP})
 set_source_files_properties(${MD_EMBEDDED_DATA_CPP} PROPERTIES OBJECT_DEPENDS "${_MD_EMBED_DEPS}")
 if(MD_HLSL_RUNTIME)
-    target_include_directories(monkey_dust PRIVATE ${MD_ROOT}/third_party/glslang_src)
+    target_include_directories(monkey_dust PRIVATE ${MD_GLSLANG_INC})
     target_link_libraries(monkey_dust PRIVATE glslang SPIRV glslang-default-resource-limits SPIRV-Tools-opt SPIRV-Tools)
     target_compile_definitions(monkey_dust PRIVATE MD_HLSL_RUNTIME=1)
 endif()

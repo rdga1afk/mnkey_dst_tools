@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.21)
-project(monkey_dust_tools CXX)
+set(MD_TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+# Two modes: STANDALONE (this repo is the top project: `cmake -S . -B build`; engine is the submodule tools/engine, the third-party libraries come from the system or FetchContent) and
+# SUBPROJECT of the private main repo (add_subdirectory(tools); MD_ROOT = main). MD_ROOT = the project root that holds engine/, MD_TOOLS_DIR = this checkout.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(MD_STANDALONE ON)
+    project(monkey_dust VERSION 0.4.0 LANGUAGES CXX C)
+    set(MD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/standalone.cmake)
+else()
+    set(MD_STANDALONE OFF)
+    project(monkey_dust_tools CXX)
+    set(MD_ROOT "${CMAKE_SOURCE_DIR}")
+endif()
 
 # SDL3 required for the editor.
 option(MONKEY_DUST_TOOLS_NEED_SDL3 "Require SDL3 (editor)" ON)
@@ -14,7 +26,7 @@ target_include_directories(md_character PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/edito
 target_link_libraries(md_character PUBLIC monkey_dust::engine)
 
 # CI test of the editor logic on a synthetic install (no Kenshi files): ninja md_session_synthetic_test && ctest -R session_synthetic
-add_executable(md_session_synthetic_test tests/session_synthetic_test.cpp ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp)
+add_executable(md_session_synthetic_test tests/session_synthetic_test.cpp ${MD_ROOT}/engine/src/vendor/stb_image_impl.cpp ${MD_ROOT}/engine/src/render/cgltf_impl.cpp)
 target_link_libraries(md_session_synthetic_test PRIVATE md_character)
 set_target_properties(md_session_synthetic_test PROPERTIES CXX_STANDARD 17)
 add_test(NAME session_synthetic COMMAND md_session_synthetic_test)
@@ -23,9 +35,9 @@ add_test(NAME session_synthetic COMMAND md_session_synthetic_test)
 add_library(md_fcs_def STATIC editor/data/fcs_def.cpp editor/data/data_browser.cpp editor/data/mod_edit.cpp editor/data/mod_write.cpp editor/data/dialog_model.cpp editor/data/mod_check.cpp editor/data/translation.cpp editor/data/data_panel.cpp)
 target_include_directories(md_fcs_def PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor/data)
 target_link_libraries(md_fcs_def PUBLIC monkey_dust::engine)
-target_include_directories(md_fcs_def PRIVATE ${CMAKE_SOURCE_DIR}/tools/third_party/imgui)
+target_include_directories(md_fcs_def PRIVATE ${MD_TOOLS_DIR}/third_party/imgui)
 set_target_properties(md_fcs_def PROPERTIES CXX_STANDARD 17)
-add_executable(md_fcs_def_test tests/fcs_def_test.cpp ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp)
+add_executable(md_fcs_def_test tests/fcs_def_test.cpp ${MD_ROOT}/engine/src/vendor/stb_image_impl.cpp ${MD_ROOT}/engine/src/render/cgltf_impl.cpp)
 target_link_libraries(md_fcs_def_test PRIVATE md_fcs_def)
 set_target_properties(md_fcs_def_test PROPERTIES CXX_STANDARD 17)
 add_test(NAME fcs_def COMMAND md_fcs_def_test)
@@ -36,7 +48,7 @@ add_test(NAME fcs_def COMMAND md_fcs_def_test)
 # (MONKEY_DUST_EDITOR, no MONKEY_DUST_STANDALONE_EDITOR; the game-coupled panel game/src/editor/editor_inspector.cpp stays in the game). Link md_game_panels as a
 # whole archive: the panels register themselves through static initialisers.
 set(MD_MARCH "native" CACHE STRING "-march= for the tools libraries and the editor (CI: skylake; a native build on a runner of another CPU family crashed with SIGILL on the laptop)")
-set(MD_TP ${CMAKE_SOURCE_DIR}/tools/third_party)
+set(MD_TP ${MD_TOOLS_DIR}/third_party)
 add_library(md_ui_third_party STATIC
     ${MD_TP}/imgui/imgui.cpp ${MD_TP}/imgui/imgui_draw.cpp ${MD_TP}/imgui/imgui_tables.cpp ${MD_TP}/imgui/imgui_widgets.cpp
     ${MD_TP}/imgui/backends/imgui_impl_sdl3.cpp ${MD_TP}/imgui/backends/imgui_impl_sdlgpu3.cpp
@@ -59,7 +71,7 @@ add_library(md_game_panels STATIC
     editor/editor_console.cpp editor/editor_flowgraph_panel.cpp editor/editor_gpu_profiler_panel.cpp editor/editor_hierarchy.cpp editor/editor_sequencer_panel.cpp
     editor/editor_std_commands.cpp editor/editor_toolbar.cpp editor/editor_world_3d_sdlgpu.cpp)
 target_compile_definitions(md_game_panels PUBLIC MONKEY_DUST_EDITOR DEBUG)
-target_include_directories(md_game_panels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor ${CMAKE_SOURCE_DIR}/engine/src/render ${CMAKE_SOURCE_DIR}/engine/src/vendor)
+target_include_directories(md_game_panels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/editor ${MD_ROOT}/engine/src/render ${MD_ROOT}/engine/src/vendor)
 target_link_libraries(md_game_panels PUBLIC md_ui_third_party monkey_dust::engine)
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # the flags the game gave these sources before (-ffast-math: game/CMakeLists.txt, RE note there)
@@ -93,12 +105,12 @@ file(GLOB EDITOR_PANEL_SOURCES "editor/*.cpp")
 list(REMOVE_ITEM EDITOR_PANEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/editor/main.cpp")
 
 set(EDITOR_IMGUI_SRC
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/imgui.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/imgui_draw.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/imgui_tables.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/imgui_widgets.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/backends/imgui_impl_sdl3.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/backends/imgui_impl_sdlgpu3.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui/imgui.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui/imgui_draw.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui/imgui_tables.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui/imgui_widgets.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui/backends/imgui_impl_sdl3.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui/backends/imgui_impl_sdlgpu3.cpp
 )
 
 # RENDER-BACKEND-STAGE-6 (docs/GRANITE_IRENDERBACKEND_INTEGRATION.md §2.3):
@@ -110,7 +122,7 @@ set(EDITOR_IMGUI_SRC
 # block in this repo (root CMakeLists.txt, engine/CMakeLists.txt).
 if(USE_GRANITE)
     find_package(Vulkan REQUIRED)
-    list(APPEND EDITOR_IMGUI_SRC ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/backends/imgui_impl_vulkan.cpp)
+    list(APPEND EDITOR_IMGUI_SRC ${MD_TOOLS_DIR}/third_party/imgui/backends/imgui_impl_vulkan.cpp)
 endif()
 
 if(NOT MONKEY_DUST_TOOLS_NEED_SDL3)
@@ -127,7 +139,7 @@ set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/fonts_embed.cpp PROPERTI
 set(MD_TOOLS_VERSION 0.7)
 set(MD_TOOLS_BUILD_INFO_CPP ${CMAKE_BINARY_DIR}/generated/tools_build_info.cpp)
 add_custom_target(md_tools_build_info
-    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/tools -DOUT=${MD_TOOLS_BUILD_INFO_CPP} -DVER=${MD_TOOLS_VERSION} "-DNAME=monkeydust tools" -DSYM=md_tools_build -P ${CMAKE_SOURCE_DIR}/cmake/build_info.cmake
+    COMMAND ${CMAKE_COMMAND} -DSRC=${MD_TOOLS_DIR} -DOUT=${MD_TOOLS_BUILD_INFO_CPP} -DVER=${MD_TOOLS_VERSION} "-DNAME=monkeydust tools" -DSYM=md_tools_build -P ${MD_TOOLS_DIR}/cmake/build_info.cmake
     BYPRODUCTS ${MD_TOOLS_BUILD_INFO_CPP}
     COMMENT "tools build info")
 
@@ -140,18 +152,18 @@ add_executable(monkey_dust_editor
     editor/character_editor.h
     ${EDITOR_PANEL_SOURCES}
     ${EDITOR_IMGUI_SRC}
-    ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp
-    ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp
+    ${MD_ROOT}/engine/src/vendor/stb_image_impl.cpp
+    ${MD_ROOT}/engine/src/render/cgltf_impl.cpp
     # Third-party panels
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes/imnodes.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/ImGuiColorTextEdit/TextEditor.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-flame-graph/imgui_widget_flamegraph.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src/ImSequencer.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src/ImGradient.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor_api.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_canvas.cpp
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/crude_json.cpp
+    ${MD_TOOLS_DIR}/third_party/imnodes/imnodes.cpp
+    ${MD_TOOLS_DIR}/third_party/ImGuiColorTextEdit/TextEditor.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui-flame-graph/imgui_widget_flamegraph.cpp
+    ${MD_TOOLS_DIR}/third_party/imguizmo/src/ImSequencer.cpp
+    ${MD_TOOLS_DIR}/third_party/imguizmo/src/ImGradient.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui-node-editor/imgui_node_editor.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui-node-editor/imgui_node_editor_api.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui-node-editor/imgui_canvas.cpp
+    ${MD_TOOLS_DIR}/third_party/imgui-node-editor/crude_json.cpp
 )
 add_dependencies(monkey_dust_editor md_tools_build_info)
 target_compile_definitions(monkey_dust_editor PRIVATE
@@ -174,15 +186,15 @@ if(TARGET monkey_dust_mygui OR TARGET monkey_dust::mygui)   # in-tree engine (MD
 endif()
 target_include_directories(monkey_dust_editor PRIVATE
     editor/
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui/backends
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor
-    ${CMAKE_SOURCE_DIR}/tools/third_party/ImGuiColorTextEdit
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src
-    ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-flame-graph
-    ${CMAKE_SOURCE_DIR}/engine/src/vendor
-    ${CMAKE_SOURCE_DIR}/engine/src/render
+    ${MD_TOOLS_DIR}/third_party/imgui
+    ${MD_TOOLS_DIR}/third_party/imgui/backends
+    ${MD_TOOLS_DIR}/third_party/imgui-node-editor
+    ${MD_TOOLS_DIR}/third_party/ImGuiColorTextEdit
+    ${MD_TOOLS_DIR}/third_party/imnodes
+    ${MD_TOOLS_DIR}/third_party/imguizmo/src
+    ${MD_TOOLS_DIR}/third_party/imgui-flame-graph
+    ${MD_ROOT}/engine/src/vendor
+    ${MD_ROOT}/engine/src/render
 )
 # (third-party sources already added above)
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -205,17 +217,17 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     md_gaia_pch(monkey_dust_editor)
     # Third-party ImGui panels have conflicting macros — skip PCH for them.
     set(_EDITOR_THIRDPARTY_CPP
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imnodes/imnodes.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/ImGuiColorTextEdit/TextEditor.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-flame-graph/imgui_widget_flamegraph.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src/ImSequencer.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imguizmo/src/ImGradient.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_node_editor_api.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/imgui_canvas.cpp
-        ${CMAKE_SOURCE_DIR}/tools/third_party/imgui-node-editor/crude_json.cpp
-        ${CMAKE_SOURCE_DIR}/engine/src/vendor/stb_image_impl.cpp
-        ${CMAKE_SOURCE_DIR}/engine/src/render/cgltf_impl.cpp
+        ${MD_TOOLS_DIR}/third_party/imnodes/imnodes.cpp
+        ${MD_TOOLS_DIR}/third_party/ImGuiColorTextEdit/TextEditor.cpp
+        ${MD_TOOLS_DIR}/third_party/imgui-flame-graph/imgui_widget_flamegraph.cpp
+        ${MD_TOOLS_DIR}/third_party/imguizmo/src/ImSequencer.cpp
+        ${MD_TOOLS_DIR}/third_party/imguizmo/src/ImGradient.cpp
+        ${MD_TOOLS_DIR}/third_party/imgui-node-editor/imgui_node_editor.cpp
+        ${MD_TOOLS_DIR}/third_party/imgui-node-editor/imgui_node_editor_api.cpp
+        ${MD_TOOLS_DIR}/third_party/imgui-node-editor/imgui_canvas.cpp
+        ${MD_TOOLS_DIR}/third_party/imgui-node-editor/crude_json.cpp
+        ${MD_ROOT}/engine/src/vendor/stb_image_impl.cpp
+        ${MD_ROOT}/engine/src/render/cgltf_impl.cpp
     )
     set_source_files_properties(${_EDITOR_THIRDPARTY_CPP} PROPERTIES
         SKIP_PRECOMPILE_HEADERS ON)
@@ -247,12 +259,22 @@ endif()
 # ── navtile_probe (#A5 prep) ──────────────────────────────
 # Kenshi navtiles (.hkt) -> sections + a Detour navmesh of the ground section + a path query. The reader and the Detour build live in engine/src/nav (compiled here directly),
 # the Detour sources of the vendored recastnavigation (no engine link). ninja navtile_probe && build/tools/navtile_probe $KENSHI_DIR 20 32 [x0 z0 x1 z1]
-set(MD_DETOUR_DIR ${CMAKE_SOURCE_DIR}/engine/third_party/recastnavigation/Detour)
+set(MD_DETOUR_DIR ${MD_ROOT}/engine/third_party/recastnavigation/Detour)
 add_executable(navtile_probe
-    navtile/navtile_probe.cpp ${CMAKE_SOURCE_DIR}/engine/src/nav/navtile.cpp ${CMAKE_SOURCE_DIR}/engine/src/nav/hkt.cpp
+    navtile/navtile_probe.cpp ${MD_ROOT}/engine/src/nav/navtile.cpp ${MD_ROOT}/engine/src/nav/hkt.cpp
     ${MD_DETOUR_DIR}/Source/DetourAlloc.cpp ${MD_DETOUR_DIR}/Source/DetourAssert.cpp ${MD_DETOUR_DIR}/Source/DetourCommon.cpp
     ${MD_DETOUR_DIR}/Source/DetourNavMesh.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshBuilder.cpp ${MD_DETOUR_DIR}/Source/DetourNavMeshQuery.cpp ${MD_DETOUR_DIR}/Source/DetourNode.cpp
 )
-target_include_directories(navtile_probe PRIVATE ${MD_DETOUR_DIR}/Include ${CMAKE_SOURCE_DIR}/engine/include ${CMAKE_SOURCE_DIR}/engine/src/nav)
+target_include_directories(navtile_probe PRIVATE ${MD_DETOUR_DIR}/Include ${MD_ROOT}/engine/include ${MD_ROOT}/engine/src/nav)
 
 set_tests_properties(session_synthetic fcs_def PROPERTIES LABELS "fast" TIMEOUT 120)
+
+# Standalone mode: the game and the unit tests (in main they are added by the root CMakeLists.txt).
+if(MD_STANDALONE)
+    if(MONKEY_DUST_BUILD_GAME)
+        add_subdirectory(game)
+    endif()
+    if(MONKEY_DUST_BUILD_TESTS)
+        add_subdirectory(tests)
+    endif()
+endif()
