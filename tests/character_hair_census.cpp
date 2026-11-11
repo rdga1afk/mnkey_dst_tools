@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
                         const std::string key = std::to_string(slot) + a.id + (fem ? "f" : "m");
                         if (!counted.insert(key).second) continue;
                         ++styles;
-                        if (!diffs.count(a.id)) { diffs.insert(a.id); std::printf("REC %s | %s | %s | diffuse ch %d alpha ch %d rej %d spec %.2f | tex %s\n", a.id.c_str(), a.name.c_str(), slot ? "beard" : "hair", a.diffuse_channel, a.alpha_channel, a.alpha_rejection, a.specular, a.Texture(fem).c_str()); }
+                        if (!diffs.count(a.id)) { diffs.insert(a.id); std::printf("REC %s | %s | %s | diffuse ch %d alpha ch %d rej %d spec %.2f | tex %s\n", a.id.c_str(), a.name.c_str(), slot ? "beard" : "hair", a.diffuse_channel, a.alpha_channel, a.alpha_rejection, a.specular, a.Texture(fem).c_str()); if (const auto* g = s.Data().Get(a.id)) { static int shown = 0; if (shown++ < 3) std::printf("RAW %s specular: float key %s, int key %s\n", a.id.c_str(), g->floats.count("specular") ? std::to_string(g->floats.at("specular")).c_str() : "absent", g->ints.count("specular") ? std::to_string(g->ints.at("specular")).c_str() : "absent"); } }
                         if (!a.HasMesh(fem)) { ++nomesh; continue; }
                         const std::string path = s.Resources().Path(a.Mesh(fem));
                         if (seen.count(path)) continue;
