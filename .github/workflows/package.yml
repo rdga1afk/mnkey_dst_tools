@@ -60,6 +60,7 @@ jobs:
           E=$(cat ws/tools/ci/ENGINE_SHA); E12=${E:0:12}
           git clone -q https://github.com/${ENGINE_REPO}.git ws/engine
           git -C ws/engine checkout -q "$E"
+          git -C ws/engine submodule update --init --depth 1 third_party/recastnavigation   # navtile_probe compiles the Detour sources direct (tools/CMakeLists.txt)
           mkdir -p pkg
           curl -fsSL -o engine.tar.zst "https://github.com/${ENGINE_REPO}/releases/download/build-${E12}/engine-${E12}-release.tar.zst"
           tar --zstd -xf engine.tar.zst -C pkg
