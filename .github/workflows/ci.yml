@@ -68,6 +68,8 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMD_MARCH=skylake
       - name: Build (game, editor, tests)
         run: cmake --build build -j"$(nproc)"
+      - name: Shader inventory (public build, #207 release configuration — every missing world-surface shader has a run-time replacement)
+        run: python3 scripts/shader_inventory.py --spirv shaders/spirv
       - name: Unit tests that need no install
         run: ctest --test-dir build -L fast -LE needs-install --output-on-failure --timeout 120
       - name: Decompilation-pattern scan (counts, file:line only; 0 expected for addresses and decompiler names)

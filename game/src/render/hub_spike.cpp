@@ -380,7 +380,7 @@ void HubSpike::DrawGbuf(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, c
         pd.has_depth_target = true;
         pd.vert_uniform_bufs = 1; pd.frag_uniform_bufs = 0; pd.frag_samplers = 0; pd.frag_storage_bufs = 0;
         pd.color_format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UINT;
-        if (md::GroundSlotTargetOn()) { pd.color_format2 = SDL_GPU_TEXTUREFORMAT_R8_UINT; pd.frag_path = "shaders/terrain_gbuffer_mini_slot0.frag"; }
+        if (md::GroundSlotTargetOn()) { pd.color_format2 = SDL_GPU_TEXTUREFORMAT_R8_UINT; pd.frag_path = "shaders/terrain_gbuffer_mini_slot0.frag"; pd.color2_keep = true; }   // the slot of the ground under the feature stays: the live pass shades it with the original terrain program (the install draws TERRAIN-mode features with terrainfp4.hlsl mapfeature_fs, deferred/mapfeature.material)
         if (!pipe.Create(pd)) fprintf(stderr, "[HubSpike] G-buffer pipeline create failed\n");
     }
     float pn[4][4];
