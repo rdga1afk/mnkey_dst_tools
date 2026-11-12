@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
                             if (edge[0] > dmin * 0.985f) { rej = false; }
                             else {
                                 const int b0 = int(std::floor((a0 + amin) / 6.2831853f * kBins)) - 3, b1 = int(std::floor((a0 + amax) / 6.2831853f * kBins)) + 3;
-                                bool all_b = true; for (int b = b0; b <= b1 && all_b; ++b) { const int bb = ((b % kBins) + kBins) % kBins; all_b = tmax < horizon[bb][k] - 0.01f; }
+                                bool all_b = true; for (int b = b0; b <= b1 && all_b; ++b) { const int bb = ((b % kBins) + kBins) % kBins; all_b = tmax < horizon[bb][k] - 0.02f; }
                                 rej = all_b;
                             }
                         }
