@@ -11,12 +11,12 @@
 namespace md {
 namespace {
 constexpr int kBins = 360, kSteps = 20, kBinsSpread = 3; constexpr float kD0 = 4.f, kD1 = 4300.f, kMargin = 0.02f, kMinDist = 8.f, kMaxDrift = 20.f, kRebuildDist = 2.f; constexpr int kRebuildFrames = 8;
-constexpr float kTwoPi = 6.2831853f;
+constexpr float kTwoPi = 6.2831853f; constexpr float kMaxHeight = 80.f;
 struct Table { float cam[3] = {}; float h[kBins][kSteps]; bool valid = false; };
 Table g_tab[2]; int g_pub = -1;                      // published index (guarded by g_mu), -1 = none yet
 std::mutex& g_mu = *new std::mutex; std::condition_variable& g_cv = *new std::condition_variable;   // never destroyed: the detached worker may still wait on them at process exit
 bool g_req = false, g_quit = false; float g_req_cam[3] = {}; std::thread g_worker; bool g_started = false;
-std::atomic<bool> g_on{getenv("MD_HORIZON_CULL") && atoi(getenv("MD_HORIZON_CULL")) == 1};
+std::atomic<bool> g_on{!(getenv("MD_HORIZON_CULL") && atoi(getenv("MD_HORIZON_CULL")) == 0)};   // default ON (coordinator 6829930715, after the gates with it on); MD_HORIZON_CULL=0 / md.set_horizon_cull(false) switch it off
 HorizonCullStats g_stats; std::mutex& g_stats_mu = *new std::mutex; int g_frames_since = 1000; bool g_busy = false;
 float g_edge[kSteps]; bool g_edge_init = false;
 void InitEdges() { if (g_edge_init) return; for (int k = 0; k < kSteps; ++k) g_edge[k] = kD0 * std::pow(kD1 / kD0, float(k + 1) / kSteps); g_edge_init = true; }
@@ -52,6 +52,7 @@ int HorizonCullFilter(const float cam[3], TerrainLodNode* nodes, int n) {
     if (!g_on.load()) return n;
     const auto t0 = std::chrono::steady_clock::now();
     InitEdges();
+    if (cam[1] - TerrainAtlas_SampleWorld(cam[0], cam[2]) > kMaxHeight) return n;   // high above the ground the terrain hides almost nothing (high150: 2 % rejected): skip the filter and the table rebuild, they would only cost (p99 +2-4 ms measured)
     if (!g_started) { g_started = true; g_worker = std::thread(Worker); g_worker.detach(); }
     // snapshot of the published table (the worker writes only the other buffer; the reader uses its buffer without the lock for the duration of this call: the worker needs a new request to touch it, which only this function makes)
     int pub; { std::lock_guard<std::mutex> lk(g_mu); pub = g_pub; }
