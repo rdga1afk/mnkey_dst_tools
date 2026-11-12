@@ -1,5 +1,6 @@
 #include <chrono>
 #include "ground_live_driver.h"
+#include "horizon_cull.h"
 #include <monkey_dust/render/ground_slot.h>
 #include <algorithm>
 #include "town_buildings.h"
@@ -528,6 +529,7 @@ if (sr_prepass.terrain_granite_ready) {
             qt_count = sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp,
                                                                          lod_nodes, md::TerrainLodTree::kMaxNodes);
             const double sel_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sel_t0).count();
+            qt_count = md::HorizonCullFilter(sr_prepass.granite_abs_cam_, lod_nodes, qt_count);   // #207 horizon map: drops nodes hidden behind terrain; off by default (md.set_horizon_cull)
             {   // #207 H13.4: the selected nodes are drawn nearest first (early-Z rejects more of the far terrain); default on (owner Gates-approved 30.10), MD_LOD_SORT=0 restores the old order
                 static const bool lod_sort = !(getenv("MD_LOD_SORT") && atoi(getenv("MD_LOD_SORT")) == 0);
                 if (lod_sort) {
