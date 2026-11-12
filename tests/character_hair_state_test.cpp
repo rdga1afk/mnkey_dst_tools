@@ -50,6 +50,25 @@ static void Check(const Session& s, const std::string& what) {
         if (!InRaceColours(s, rgb)) { ++c.second; char b[160]; std::snprintf(b, sizeof b, "race %zu/%zu %s rgb %.2f %.2f %.2f (Hair Colour %.1f Sat %.1f Bri %.1f)", s.race_index(), s.subrace_index(), fem ? "F" : "M", rgb[0], rgb[1], rgb[2],
             s.Values().values.count("Hair Colour") ? s.Values().values.at("Hair Colour") : -1.f, s.Values().values.count("Hair Saturation") ? s.Values().values.at("Hair Saturation") : -1.f, s.Values().values.count("Hair Brightness") ? s.Values().values.at("Hair Brightness") : -1.f); if (!colour_first_bad.count(kind)) colour_first_bad[kind] = b; }
     }
+    // the HAIR-tab sliders read the STORED values (no range-midpoint fallback): the three keys exist after every selection step, the readout is the value, and one slider step moves the drawn colour by one step
+    if (what.rfind("select", 0) == 0 || what == "set gender") {
+        Session& m = const_cast<Session&>(s);   // restored below
+        static const char* kKey[3] = {"Hair Colour", "Hair Saturation", "Hair Brightness"};
+        float v[3];
+        for (int k = 0; k < 3; ++k) {
+            Range r; r.name = kKey[k]; r.min = 0; r.max = 100;
+            if (!s.Values().values.count(kKey[k])) bad((std::string(kKey[k]) + " is not stored: the slider would show the range midpoint").c_str());
+            v[k] = s.Value(r); if (v[k] < 0.f || v[k] > 100.f) bad("hair value outside 0..100");
+        }
+        const auto drawn = s.HairRgb(), want = HsbToRgb(v[0] * 0.01f, v[1] * 0.01f, v[2] * 0.01f);
+        for (int c = 0; c < 3; ++c) if (std::fabs(drawn[c] - want[c]) > 1e-4f) bad("slider readout differs from the colour drawn");
+        for (int k = 0; k < 3; ++k) {
+            m.SetValue(kKey[k], std::min(100.f, v[k] + 1.f)); const auto d1 = m.HairRgb();
+            float jump = 0.f; for (int c = 0; c < 3; ++c) jump = std::max(jump, std::fabs(d1[c] - drawn[c]));
+            if (jump > 0.07f) bad((std::string("one step of ") + kKey[k] + " jumps the colour by " + std::to_string(jump)).c_str());
+            m.SetValue(kKey[k], v[k]);
+        }
+    }
     if (fem && s.BeardCount() && s.beard_index() != 0) bad("a woman keeps a beard index (hidden, but it is in the saved state)");
 }
 

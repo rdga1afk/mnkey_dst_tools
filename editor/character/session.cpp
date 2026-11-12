@@ -67,6 +67,8 @@ void Session::Refresh() {
         (a.slot == kSlotBeard ? beards_ : hairs_).push_back(a);
     }
     { AttachmentInfo none; none.name = "None"; beards_.insert(beards_.begin(), none); }   // `beard` may be empty (M:docs/characters.md "Body file")
+    // the three hair values are always SET: what HairRgb draws for an unset value (hue 0, saturation 0, brightness 50 %: grey), so the HAIR-tab sliders never show a range midpoint the hair does not use
+    values_.values["Hair Colour"] = 0.f; values_.values["Hair Saturation"] = 0.f; values_.values["Hair Brightness"] = 50.f;
     // the default hair colour: the first of the race's hair colours (COLOR_DATA `color 1`) as HSB x 100
     for (const std::string& id : Current().hair_colors) {
         std::array<int, 3> rgb;
