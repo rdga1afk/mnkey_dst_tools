@@ -11,6 +11,9 @@
 #include "kenshi_hlsl.h"
 #endif
 
+// Game speed steps 1.0 / 2.0 / 5.0 and 0 while paused: docs/spec/mechanics/game_speed.md (read against the exe).
+static float g_game_speed = 1.f;
+
 #ifdef MD_HLSL_RUNTIME
 namespace {
 // Path 1 (docs/spec/shaders/path1_adapter.md): our glue around the ORIGINAL materials/SkyX/SkyX_Skydome.hlsl (HDR + STARFIELD variant).
@@ -48,8 +51,6 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0
 )HLSL";
 
 // SkyX::update accumulates mTime += timeMultiplier * dt and gives the dome uTime = mTime * 0.5 while the star field is on; the exe sets the multiplier to game speed * 0.0091667 (0 when paused).
-// Game speed steps 1.0 / 2.0 / 5.0 and 0 while paused: docs/spec/mechanics/game_speed.md (read against the exe).
-float g_game_speed = 1.f;
 float StarTime() {
     static double accum = 0.0; static std::chrono::steady_clock::time_point last; static bool have = false;
     const auto now = std::chrono::steady_clock::now();
