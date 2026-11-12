@@ -229,6 +229,11 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
         gcb.BeginColorPass(gcpd);
         if (SDL_GPURenderPass* grp = gcb.SDLPass()) {
             DrawGroundResolve(fc, cam, grp);
+            if (!gtsp.HasTranslatedResolve() && live_on) {   // release (no translated resolve): the live consumer = the original fog quad over the lit live ground + the fixed exposure
+                md::GroundLiveFogParams fp;
+                if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = k->params[2]; }
+                md::GroundLiveDriver::Get().DrawFog(grp, fc.cmd, fp, gsp.Fmt(), stencil_pass ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT : SDL_GPU_TEXTUREFORMAT_D32_FLOAT);
+            }
             SceneRender::Get().ground_split_active_ = true;
         }
         sr_gr.terrain_shading_projected_.SetReuse(nullptr);
@@ -426,6 +431,7 @@ void NpcRender::DrawSky(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp
 
 void NpcRender::DrawNpcForwardAndDissolve(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp)
 {
+    if (!pipeline.SDLPipeline()) return;   // no NPC shader in this build (npc_instanced.frag is not public yet): the NPCs are skipped, the world is drawn
     GpuPassView pv = GpuPassView::FromRaw(rp, fc.cmd);
     pv.BindPipeline(&pipeline);
 
@@ -721,7 +727,7 @@ void NpcRender::DrawWaterPlane(FrameCtx& fc, const MdCamera& cam, float now_s, b
     wv.world_sz = SceneRender::kWaterWorldSz;
     wv.time     = now_s;
     wv.water_y  = 0.2f; wv.pad0 = wv.pad1 = wv.pad2 = 0.f;
-    const bool kw = g_kenshi_water && SceneRender::Get().water_kenshi_pipeline.SDLPipeline() && KenshiWaterTexturesReady();
+    const bool kw = g_kenshi_water && (SceneRender::Get().water_kenshi_pipeline.SDLPipeline() || WaterLiveReady()) && KenshiWaterTexturesReady();   // release: the live water stands without the translated pipeline
     if (kw) wv.water_y = kKenshiWaterY;
     WFU wf;
     wf.sun_dir[0] = wls.sun_dir.x;

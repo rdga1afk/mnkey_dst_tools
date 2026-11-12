@@ -197,8 +197,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
             FS_END("AdvanceSlot");
 
             if (init && index_count > 0 &&
-                pipeline.SDLPipeline() &&
-                vbuf.SDLBuffer() && ibuf.SDLBuffer() &&
+                vbuf.SDLBuffer() && ibuf.SDLBuffer() &&   // the NPC pipeline itself is checked at its draw (DrawNpcForwardAndDissolve): a build without npc_instanced.frag still draws the world
                 vis_buf.SDLBuffer() && ind_buf.SDLBuffer() &&
                 body_color_buf.SDLBuffer() &&
                 TransformSoA::Get().SDLTransformBuffer() &&

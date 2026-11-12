@@ -26,6 +26,8 @@ public:
     // After the G-buffer pass (no pass open): depth = G-buffer depth, packed = R16G16B16A16_UINT, slot = the R8_UINT second target. inv_vp column-major; cam in metres (granite absolute).
     void Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* depth, SDL_GPUTexture* packed, SDL_GPUTexture* slot, int w, int h, const float inv_vp[16], const float cam[3], uint64_t frame);
     void SetLight(const GroundLiveLightParams* p) { light_ = p; }   // null = no original light pass this frame
+    // Release consumer (no translated resolve): inside the open ground pass, after Frame() of the same frame; false when nothing was lit this frame.
+    bool DrawFog(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const GroundLiveFogParams& p, SDL_GPUTextureFormat cfmt, SDL_GPUTextureFormat dfmt) { return lit_frame_ && pass_.DrawFog(rp, cmd, last_frame_, p, cfmt, dfmt); }
     void SetMaps(SDL_GPUTexture* colour, SDL_GPUTexture* overlay) { colour_ = colour; overlay_ = overlay; }   // the world colour map and the paint mask of the terrain (the original's colourMap / overlayMap); white stands in while unset
     const Stats& GetStats() const { return stats_; }
     GroundLivePass& Pass() { return pass_; }
@@ -43,6 +45,7 @@ private:
     std::unordered_map<uint64_t, int> node_list_;   // node (origin, level) -> index in lists_ (-1: empty list)
     std::vector<PatchList> lists_;                  // distinct patch lists seen so far
     const GroundLiveLightParams* light_ = nullptr;
+    GroundLiveFrame last_frame_; bool lit_frame_ = false;   // the inputs of the last Frame() that ran the light pass (DrawFog)
     SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *clear_ = nullptr;
     float far_clip_ = 40000.f; int max_groups_ = 31;
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)

@@ -33,6 +33,7 @@ public:
     void ResetAdaptation() { lum_valid_ = false; }
     bool AdaptReady() const { return adapt_ready_; }
     bool IsFloat() const { return fmt_ == SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT; }
+    SDL_GPUTextureFormat Fmt() const { return fmt_; }
     SDL_GPUTexture* StencilDepthTex(int w, int h);   // #207 stencil split: a w x h D32_FLOAT_S8_UINT depth-stencil target (created on demand, recreated on a size change); null on failure
     SDL_GPUTexture* LumTex() const { return lum_tex_[lum_idx_]; }   // the adapted luminance, 1x1 R32F
     void CompositeExposed(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd);

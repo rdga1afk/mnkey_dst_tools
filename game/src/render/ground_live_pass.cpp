@@ -4,6 +4,7 @@
 #include <monkey_dust/io/data_files.h>
 #include <monkey_dust/platform/md_log.h>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -116,6 +117,24 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
         gi.target_info.color_target_descriptions = &ct; gi.target_info.num_color_targets = 1;
         light_.pipe = SDL_CreateGPUGraphicsPipeline(dev, &gi); if (!light_.pipe) return false;
     }
+    {   // release consumer: the original fog quad (post/fog.hlsl atmosphere_fog_fs, which includes atmospherefog.hlsl) over the lit colour; non-fatal (a build with the translated resolve does not draw it)
+        const std::string orig = dir + "post/fog.hlsl";
+        std::string ff = ReadAll(DataPath("game/src/render/ground_live_fog.hlsl"));
+        if (ff.empty()) MD_LOG(MD_LOG_WARNING, "ground live: fog consumer glue missing");
+        else {
+            ff.replace(ff.find("@FOG@"), 5, orig);
+            std::vector<std::string> fdeps = { orig, dir + "post/atmospherefog.hlsl" };
+            hlsl::Compiled fc; std::vector<hlsl::UniformMember> fm; uint32_t fsz = 0;
+            if (!hlsl::Compile(ff, fdeps, 'f', fc)) MD_LOG(MD_LOG_WARNING, "ground live: fog consumer: %s", fc.log.c_str());
+            else if (!hlsl::GlobalBlockMembers(fc.spv, fm, fsz)) MD_LOG(MD_LOG_WARNING, "ground live: fog consumer: no $Global block");
+            else {
+                fog_.ub_size = fsz; fog_.ub.assign(fsz + 16, 0); for (const auto& u : fm) fog_.mem.push_back({ u.name, { u.offset, u.array_stride } });
+                SDL_GPUShaderCreateInfo sf = sv; sf.code = (const Uint8*)fc.spv.data(); sf.code_size = fc.spv.size() * 4; sf.stage = SDL_GPU_SHADERSTAGE_FRAGMENT; sf.num_samplers = 2; sf.num_uniform_buffers = 1;
+                fog_.fs = SDL_CreateGPUShader(dev, &sf); if (!fog_.fs) MD_LOG(MD_LOG_WARNING, "ground live: fog consumer: shader create failed");
+                else MD_LOG(MD_LOG_INFO, "ground live: fog consumer ready (%zu words, %u uniform bytes)", fc.spv.size(), fsz);
+            }
+        }
+    }
     SDL_GPUSamplerCreateInfo si = {}; si.min_filter = si.mag_filter = SDL_GPU_FILTER_NEAREST; si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     nearest_ = SDL_CreateGPUSampler(dev, &si);
@@ -126,6 +145,8 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
 }
 
 void GroundLivePass::Shutdown() {
+    for (int i = 0; i < n_fog_pipes_; ++i) if (fog_pipes_[i].pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, fog_pipes_[i].pipe);
+    n_fog_pipes_ = 0; if (fog_.fs) { SDL_ReleaseGPUShader(dev_, fog_.fs); fog_.fs = nullptr; }
     if (!dev_) return;
     for (auto& v : var_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
     for (int k = 0; k < 5; ++k) { if (bits_[k].pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, bits_[k].pipe); }
@@ -280,6 +301,40 @@ bool GroundLivePass::Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, 
     SDL_PushGPUFragmentUniformData(cmd, 0, light_.ub.data(), light_.ub_size);
     SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
     SDL_EndGPURenderPass(rp);
+    return true;
+}
+
+bool GroundLivePass::DrawFog(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveFogParams& p, SDL_GPUTextureFormat cfmt, SDL_GPUTextureFormat dfmt) {
+    if (!ready_ || !lit_ || !fog_.fs || !light_vs_) return false;
+    SDL_GPUGraphicsPipeline* pipe = nullptr;
+    for (int i = 0; i < n_fog_pipes_ && !pipe; ++i) if (fog_pipes_[i].c == cfmt && fog_pipes_[i].d == dfmt) pipe = fog_pipes_[i].pipe;
+    if (!pipe) {
+        if (n_fog_pipes_ >= 4) return false;
+        SDL_GPUColorTargetDescription ct = {}; ct.format = cfmt;
+        SDL_GPUGraphicsPipelineCreateInfo gi = {}; gi.vertex_shader = light_vs_; gi.fragment_shader = fog_.fs; gi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        gi.target_info.color_target_descriptions = &ct; gi.target_info.num_color_targets = 1;
+        gi.target_info.has_depth_stencil_target = true; gi.target_info.depth_stencil_format = dfmt;   // the ground pass carries the scene depth; no test, no write
+        pipe = SDL_CreateGPUGraphicsPipeline(dev_, &gi);
+        fog_pipes_[n_fog_pipes_++] = { cfmt, dfmt, pipe };
+        if (!pipe) { MD_LOG(MD_LOG_WARNING, "ground live: fog consumer pipeline create failed (%d / %d)", (int)cfmt, (int)dfmt); return false; }
+    }
+    auto set = [&](Variant& v, const char* name, const float* val, int count) { for (const auto& m : v.mem) if (m.first == name) { memcpy(&v.ub[m.second.first], val, 4 * count); return; } };
+    set(light_vsv_, "vl_invVP", f.inv_vp, 16); const float cam[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], 0.f }; set(light_vsv_, "vl_cam", cam, 4);
+    // the SkyX constants the exe gives the fog material (F040804; the same numbers as SkyPanorama's SkyUniforms): inner 9.77501, outer 10.2963, height 0.01, Kr 0.0022, Km 0.000675, ESun 30, exposure 1.4
+    const float inner = 9.77501f, outer = 10.2963f, thick = outer - inner, PI = 3.14159265f, kr = 0.0022f, km = 0.000675f;
+    const float cam_pos[3] = { 0.f, inner + thick * 0.01f, 0.f }, inv_wl[3] = { 1.f / powf(0.57f, 4.f), 1.f / powf(0.48f, 4.f), 1.f / powf(0.44f, 4.f) };
+    const float v_inner = inner, v_expo = 1.4f, v_kresun = kr * 30.f, v_kr4pi = kr * 4.f * PI, v_km4pi = km * 4.f * PI, v_scale = 1.f / thick, v_sdepth = thick * 0.5f, v_sosd = v_scale / v_sdepth, v_dome = p.skydome_radius;
+    const float fogp[4] = { 0.f, p.fog_near, p.fog_far, 0.f }, far_clip = f.far_clip;
+    set(fog_, "md_sunDirectionReal", p.sun_real, 3); set(fog_, "md_pFogParams", fogp, 4); set(fog_, "md_uCameraPos", cam_pos, 3); set(fog_, "md_uInvWaveLength", inv_wl, 3);
+    set(fog_, "md_uInnerRadius", &v_inner, 1); set(fog_, "md_uExposure", &v_expo, 1); set(fog_, "md_uKrESun", &v_kresun, 1); set(fog_, "md_uKr4PI", &v_kr4pi, 1); set(fog_, "md_uKm4PI", &v_km4pi, 1);
+    set(fog_, "md_uScale", &v_scale, 1); set(fog_, "md_uScaleDepth", &v_sdepth, 1); set(fog_, "md_uScaleOverScaleDepth", &v_sosd, 1); set(fog_, "md_uSkydomeRadius", &v_dome, 1); set(fog_, "md_horizonClouds", p.horizon, 4);
+    set(fog_, "md_farClip", &far_clip, 1); set(fog_, "md_exposure", &p.exposure, 1);
+    SDL_BindGPUGraphicsPipeline(rp, pipe);
+    SDL_GPUTextureSamplerBinding tb[2] = { { t_[2], nearest_ }, { lit_, nearest_ } };   // s0 = the original's gBuf2 (distance / farClip), s1 = the lit colour
+    SDL_BindGPUFragmentSamplers(rp, 0, tb, 2);
+    SDL_PushGPUVertexUniformData(cmd, 0, light_vsv_.ub.data(), light_vsv_.ub_size);
+    SDL_PushGPUFragmentUniformData(cmd, 0, fog_.ub.data(), fog_.ub_size);
+    SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
     return true;
 }
 

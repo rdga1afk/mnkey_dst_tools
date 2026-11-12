@@ -47,6 +47,15 @@ struct GroundLiveLightParams {
     SDL_GPUTexture* spec_cube = nullptr; SDL_GPUSampler* spec_smp = nullptr;
 };
 
+// The release consumer (no translated resolve, docs/research/GROUND_BASE_PATH1_DESIGN_2026-11-12.md): the original fog quad (post/fog.hlsl atmosphere_fog_fs) over Lit(), then the
+// fixed exposure of the exe (0.55 / lerp(MIN, MAX, saturate(5 sun.y)), UpdateKLight), written into the ground target of the ground pass. Values in Kenshi units (0.1 m), as the KLight UBO holds them.
+struct GroundLiveFogParams {
+    float sun_real[3] = { 0.f, 1.f, 0.f };          // sunDirectionReal
+    float fog_near = 0.f, fog_far = 0.f;            // pFogParams.y / .z
+    float skydome_radius = 1.f;                     // uSkydomeRadius
+    float horizon[4] = { 0.f, 0.f, 0.f, 0.f };      // horizonClouds
+    float exposure = 1.f;
+};
 class GroundLivePass {
 public:
     bool Init(SDL_GPUDevice* dev, const std::string& kenshi_dir);   // false + log when the original files do not compile
@@ -63,6 +72,9 @@ public:
     bool Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveLightParams& p);
     SDL_GPUTexture* Lit() const { return lit_; }
     bool LightReady() const { return light_.pipe != nullptr; }
+    // After Light(), inside the open ground pass (colour target of format `cfmt`, depth attachment of format `dfmt`): the fog quad + exposure over the lit pixels; the others are not written.
+    bool DrawFog(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveFogParams& p, SDL_GPUTextureFormat cfmt, SDL_GPUTextureFormat dfmt);
+    bool FogReady() const { return fog_.fs != nullptr; }
     // Clears the targets, fills the stencil from the slot texture (one draw per bit of the largest slot), then draws each group with the stencil EQUAL test.
     bool Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveGroup* groups, int n);
     void SetPhase(int p) { phase_ = p; }   // measurement: shade one quad in eight (-1: all)
@@ -75,6 +87,7 @@ private:
     SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4];
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
     SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
+    Variant fog_; struct FogPipe { SDL_GPUTextureFormat c = SDL_GPU_TEXTUREFORMAT_INVALID, d = SDL_GPU_TEXTUREFORMAT_INVALID; SDL_GPUGraphicsPipeline* pipe = nullptr; } fog_pipes_[4]; int n_fog_pipes_ = 0;   // one pipeline per (colour, depth) format of the ground pass
 };
 
 }   // namespace md

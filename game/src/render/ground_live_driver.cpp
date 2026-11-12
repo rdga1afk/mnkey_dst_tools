@@ -124,6 +124,7 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
 
 void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* depth, SDL_GPUTexture* packed, SDL_GPUTexture* slot, int w, int h, const float inv_vp[16], const float cam[3], uint64_t) {
     const uint64_t frame = ++frame_counter_;
+    lit_frame_ = false;
     if (!data_ok_) return;
     if (!gpu_tried_) { gpu_tried_ = true; gpu_ok_ = InitGpu(dev); }
     if (!gpu_ok_ || !depth || !packed || !slot || w < 16 || h < 16) return;
@@ -185,7 +186,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     if (ran && !no_decode) pass_.Decode(cmd);
     if (ran && light_) {   // the original main_fs; the camera in centred Kenshi units (0.1 m, world centre 14745.6 m) is the origin of the ambient map mapping
         GroundLiveLightParams lp = *light_; lp.world_origin_xz[0] = (cam[0] - 14745.6f) * 10.f; lp.world_origin_xz[1] = (cam[2] - 14745.6f) * 10.f;
-        pass_.Light(cmd, f, lp);
+        lit_frame_ = pass_.Light(cmd, f, lp); last_frame_ = f;
     }
     static const bool zcount = getenv("MD_GROUND_LIVE_ZCOUNT") != nullptr;   // measurement: pixels of the distance target that still hold the clear value (0) after the pass
     if (ran && zcount) {   // the copy is recorded now, read three frames later (the buffer ring), so no stall

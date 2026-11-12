@@ -1,5 +1,6 @@
 #ifdef MONKEY_DUST_EDITOR
 #include "editor_console.h"
+#include <cstdlib>
 #include "editor_core.h"
 #include <string>
 #include <monkey_dust/ecs/md_registry.h>
@@ -32,6 +33,8 @@ static void s_register_cvars() {
 void EditorConsole::Init() {
     MdLogSetHook([](int level, const char* msg) {
         EditorConsole::Get().Log(level, msg);
+        static const bool echo = getenv("MD_LOG_STDERR") != nullptr;   // scenario / gate logs: the engine's warnings also to stderr (the console swallows them otherwise)
+        if (echo) fprintf(stderr, "[%s] %s\n", level == MD_LOG_ERROR ? "ERROR" : level == MD_LOG_WARNING ? "WARN" : "INFO", msg);
     });
     s_register_cvars();
 }
