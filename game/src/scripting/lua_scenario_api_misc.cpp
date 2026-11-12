@@ -483,11 +483,12 @@ int l_md_set_window_size(lua_State* L) {
     return 0;
 }
 
-// ── md.get_frame_ms() -> last frame's dt in milliseconds ─────────────────
+// ── md.get_frame_ms() -> last frame's dt in milliseconds (scenario render_frame path: wall ms between renders) ─────────────────
 // Instantaneous (single-frame), not averaged -- a scenario sampling many
 // ticks per resolution step should average client-side in Lua.
 int l_md_get_frame_ms(lua_State* L) {
-    lua_pushnumber(L, (lua_Number)(frame_dt() * 1000.0f));
+    extern float g_scenario_last_frame_ms;   // scenario_driver.cpp: wall ms between consecutive md.render_frame() renders
+    lua_pushnumber(L, (lua_Number)(g_scenario_last_frame_ms > 0.f ? g_scenario_last_frame_ms : frame_dt() * 1000.0f));
     return 1;
 }
 

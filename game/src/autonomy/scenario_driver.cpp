@@ -6,6 +6,7 @@
 #include <monkey_dust/platform/job_system.h>  // Audit Phase 2b: --jobgraph-serial wiring
 #include <monkey_dust/render/md_camera.h>
 bool g_scenario_render_frame_pending = false;
+float g_scenario_last_frame_ms = 0.f;
 static constexpr float LOGIC_TICK_S = 0.1f;   // one scenario tick = 0.1 s of world time (10 TPS)
 #include <cstdio>
 #include <cstring>
@@ -381,6 +382,7 @@ int RunScenarioMode(const ScenarioConfig& cfg,
 #ifdef MONKEY_DUST_EDITOR
         if (EditorScreenshot_HasPending() || g_scenario_render_frame_pending) {
             g_scenario_render_frame_pending = false;
+            { static uint64_t prev_pc = 0; const uint64_t pc = SDL_GetPerformanceCounter(); if (prev_pc) g_scenario_last_frame_ms = (float)((double)(pc - prev_pc) * 1000.0 / (double)SDL_GetPerformanceFrequency()); prev_pc = pc; }   // md.get_frame_ms(): wall time between consecutive md.render_frame() renders (frame_dt() is not ticked on this path and returned 0)
             SDL_PumpEvents();
             EditorCore::Get().UpdateEditorCamera(LOGIC_TICK_S, false);
             MdCamera active_cam = EditorCore::Get().editor_cam;
