@@ -174,6 +174,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         const bool want_low = low ? (v > g_dynres_v_stop || w > g_dynres_w_stop) : (v > g_dynres_v_move || w > g_dynres_w_move);
         if (want_low == low) g_dynres_cnt = 0;
         else if (++g_dynres_cnt >= (want_low ? g_dynres_down : g_dynres_up)) { g_dynres_cur = want_low ? g_dynres_scale : 1.f; g_dynres_cnt = 0; }
+        if (low && want_low && g_dynres_cur != g_dynres_scale) g_dynres_cur = g_dynres_scale;   // a new low level (md.set_dyn_res) while already low took effect only after a stop: apply it at once
     } else g_dynres_cur = 1.f;
             {
                 FS_BEGIN("FenceWait");
