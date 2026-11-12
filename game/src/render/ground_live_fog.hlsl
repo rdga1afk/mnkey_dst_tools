@@ -3,7 +3,9 @@
 // set from our own uniforms at the start of main; the original text is untouched. s0 = the original's gBuf2 (our distance / farClip target), s1 = the lit colour.
 // A static sampler is dropped by the compiler, so the original's gBuf2 reads go through our own sampler at the original's register (tex2D is a macro while the original is included).
 uniform sampler md_gBuf2 : register(s0);
-float4 md_tex2D(float2 uv) { return tex2D(md_gBuf2, uv); }
+// DEVIATION: our ground reaches past the original's farClip (the original's far plane culls it); the original program saturates distance / farClip there, and
+// atmosphere_fog_fs treats distance == farClip as sky (no fog). A written ground pixel is kept just inside farClip, so it gets the fog of the far clip distance.
+float4 md_tex2D(float2 uv) { float4 v = tex2D(md_gBuf2, uv); v.r = min(v.r, 0.99999); return v; }
 #define tex2D(s, uv) md_tex2D(uv)
 #define VPOS SV_Position
 #define COLOR SV_Target0

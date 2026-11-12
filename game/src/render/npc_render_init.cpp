@@ -1,3 +1,4 @@
+#include "prop_tri_live.h"
 #include "town_buildings.h"
 #include "town_foliage.h"
 #include "npc_render_internal.h"
@@ -137,6 +138,7 @@ void NpcRender::Shutdown() {
 void NpcRender::Init() {
     if (init) return;
     init = true;
+    md::RegisterPropTriLive();   // before any map feature loads: the triplanar features of a build without the shader overlay
 
     // Load Kenshi human GLB (SkinVertex stride=44: pos+norm+joints+weights).
     // The body is built from the install as stored (#201 R3d, no clamps, no own morphs). MD_PURE_BODY=0 = old .glb if present (fallback, remove after 30.10).

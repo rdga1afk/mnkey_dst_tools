@@ -3,6 +3,7 @@
 #include "sky_moons.h"
 #include "sky_clouds.h"
 #include "ground_live_driver.h"
+#include "ground_live_hdr.h"
 #include "water_live_gpu.h"
 #include <monkey_dust/render/ground_slot.h>
 #include <monkey_dust/io/kenshi_dir.h>
@@ -225,13 +226,14 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
             md::GpuProfiler::Get().EndPass();
         }
         sr_gr.lum_adapt_active_ = g_kenshi_lighting_mode >= 4 && gsp.AdaptReady() && gsp.IsFloat();   // #140 L4
+        const bool live_hdr = !sr_gr.lum_adapt_active_ && gsp.IsFloat() && md::GroundLiveHdr::Active();   // release (1c): the ground target is before the exposure, the install HDR chain exposes it
         gtsp.SetFloatTarget(sr_gr.lum_adapt_active_);
         gcb.BeginColorPass(gcpd);
         if (SDL_GPURenderPass* grp = gcb.SDLPass()) {
             DrawGroundResolve(fc, cam, grp);
             if (!gtsp.HasTranslatedResolve() && live_on) {   // release (no translated resolve): the live consumer = the original fog quad over the lit live ground + the fixed exposure
                 md::GroundLiveFogParams fp;
-                if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = k->params[2]; }
+                if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = live_hdr ? 1.f : k->params[2]; }
                 md::GroundLiveDriver::Get().DrawFog(grp, fc.cmd, fp, gsp.Fmt(), stencil_pass ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT : SDL_GPU_TEXTUREFORMAT_D32_FLOAT);
             }
             SceneRender::Get().ground_split_active_ = true;
@@ -243,6 +245,10 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
             const md::KenshiSkySettings sky_a;
             const auto ml_a = sky_a.GetMainLight(LightSystem::Get().current_hours);
             gsp.Adapt(fc.cmd, g_adapt_override_dt > 0.f ? g_adapt_override_dt : g_frame_dt_s, ml_a.min_lum, sky_a.exposure_max, g_adapt_override_mean);
+        } else if (live_hdr) {   // the same frame time and luminance limits as the translated adaptation
+            const md::KenshiSkySettings sky_a;
+            md::GroundLiveHdrParams hp; hp.min_luminance = sky_a.GetMainLight(LightSystem::Get().current_hours).min_lum; hp.max_luminance = sky_a.exposure_max;
+            md::GroundLiveHdr::Get().Run(fc.cmd, gsp.Tex(), gw, gh, g_adapt_override_dt > 0.f ? g_adapt_override_dt : g_frame_dt_s, hp);
         }
         GpuPopDebugGroup(fc.cmd);
     }
@@ -313,7 +319,8 @@ if (rp) {
         // The ground goes in before the NPCs: its resolve writes no depth, the NPCs depth-test against the shared depth that already holds the ground depth.
         auto& sr_g = SceneRender::Get();
         const int resolve_repeat = sr_g.terrain_resolve_repeat_debug >= 0 ? sr_g.terrain_resolve_repeat_debug : 1;
-        if (sr_g.ground_split_active_) { if (g_opt_ground_split == 1) { if (sr_g.lum_adapt_active_) sr_g.ground_split_pass_.CompositeExposed(rp, fc.cmd); else sr_g.ground_split_pass_.Composite(rp, fc.cmd); } }   // #163 5b-2: the resolve already ran in its own pass
+        if (sr_g.ground_split_active_) { if (g_opt_ground_split == 1) { if (sr_g.lum_adapt_active_) sr_g.ground_split_pass_.CompositeExposed(rp, fc.cmd);
+                                                                  else if (!(sr_g.ground_split_pass_.IsFloat() && md::GroundLiveHdr::Active() && md::GroundLiveHdr::Get().Composite(rp, fc.cmd, SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()), SDL_GPU_TEXTUREFORMAT_D32_FLOAT))) sr_g.ground_split_pass_.Composite(rp, fc.cmd); } }   // #163 5b-2: the resolve already ran in its own pass
         else for (int _rr = 0; _rr < resolve_repeat; ++_rr) DrawGroundResolve(fc, cam, rp);
     }
 

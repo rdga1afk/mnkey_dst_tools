@@ -1,3 +1,4 @@
+#include "ground_live_hdr.h"
 #include "town_buildings.h"
 #include "town_foliage.h"
 #include "npc_render_internal.h"
@@ -240,7 +241,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                                 else { depth_alt.Shutdown(); std::swap(depth, depth_alt); depth.Init(w, h, false); }
                             }
                             sr_w.upscale_pass_.Ensure(w, h, sfmt);
-                            if (g_opt_ground_split > 0) sr_w.ground_split_pass_.Ensure(w, h, (g_kenshi_lighting_mode >= 4 && sr_w.ground_split_pass_.AdaptReady()) ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT : sfmt, g_opt_ground_reuse && g_opt_ground_split == 1);
+                            if (g_opt_ground_split > 0) sr_w.ground_split_pass_.Ensure(w, h, ((g_kenshi_lighting_mode >= 4 && sr_w.ground_split_pass_.AdaptReady()) || md::GroundLiveHdr::Active()) ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT : sfmt, g_opt_ground_reuse && g_opt_ground_split == 1);
                             sr_w.terrain_shading_projected_.EnsureHistory(g_opt_ground_reuse && g_opt_ground_split == 1, w, h);
                             sr_w.terrain_shading_projected_.EnsureSize(md::GpuDevice::Get().SDLDevice(), w, h);
                         }
@@ -271,7 +272,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         auto& sr_g = SceneRender::Get();
                         sr_g.gr_wanted_ = g_opt_ground_reuse && g_opt_ground_split == 1;
                         if (g_opt_ground_split > 0)
-                            if (sr_g.ground_split_pass_.Ensure(cur_w, cur_h, (g_kenshi_lighting_mode >= 4 && sr_g.ground_split_pass_.AdaptReady()) ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT : SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()), sr_g.gr_wanted_)) { sr_g.gr_have_ = false; sr_g.ground_split_pass_.ResetAdaptation(); }
+                            if (sr_g.ground_split_pass_.Ensure(cur_w, cur_h, ((g_kenshi_lighting_mode >= 4 && sr_g.ground_split_pass_.AdaptReady()) || md::GroundLiveHdr::Active()) ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT : SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()), sr_g.gr_wanted_)) { sr_g.gr_have_ = false; sr_g.ground_split_pass_.ResetAdaptation(); }
                         sr_g.terrain_shading_projected_.EnsureHistory(sr_g.gr_wanted_, cur_w, cur_h);
                         if (sr_g.gr_wanted_) sr_g.terrain_shading_projected_.BeginFrame(); else sr_g.gr_have_ = false;
                     }
