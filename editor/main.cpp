@@ -107,6 +107,9 @@ int main(int argc, char** argv) {
 
     // ── Window ────────────────────────────────────────────────────────────────
     fprintf(stderr, "[monkeydust] %s\n", md_tools_build_title);
+    // --exec frames are 1366x706 so the pictures do not depend on the monitor; MD_WINDOW_SIZE=<w>x<h> overrides it for a diagnosis (e.g. 1920x1170: the Characters tab then has a true 1920x1080 viewport)
+    int scn_w = 1366, scn_h = 706;
+    if (const char* e = getenv("MD_WINDOW_SIZE")) { int a = 0, b = 0; if (sscanf(e, "%dx%d", &a, &b) == 2 && a >= 640 && b >= 480) { scn_w = a; scn_h = b; } }
     window_init(0, 0, md_tools_build_title);
     input_init();
     {
@@ -123,7 +126,7 @@ int main(int argc, char** argv) {
             // removes this non-determinism source at its root (not a
             // loosened threshold — fixing the criterion's real cause, per
             // AUTONOMY_PROTOCOL.md point 4, not papering over it).
-            ww = 1366; wh = 706;
+            ww = scn_w; wh = scn_h;
         } else {
             SDL_DisplayID disp = SDL_GetDisplayForWindow(_wnd::ptr());
             SDL_Rect b = {};
@@ -159,15 +162,15 @@ int main(int argc, char** argv) {
         int aw = 0, ah = 0;
         for (int i = 0; i < 60; ++i) {   // the window manager may maximise or tile the new window: restore and set the size again until it holds (3 s at most)
             SDL_RestoreWindow(_wnd::ptr());
-            SDL_SetWindowSize(_wnd::ptr(), 1366, 706);
+            SDL_SetWindowSize(_wnd::ptr(), scn_w, scn_h);
             SDL_SyncWindow(_wnd::ptr());
             SDL_PumpEvents();
             SDL_GetWindowSize(_wnd::ptr(), &aw, &ah);
-            if (aw == 1366 && ah == 706) break;
+            if (aw == scn_w && ah == scn_h) break;
             SDL_Delay(50);
         }
         SDL_SetWindowResizable(_wnd::ptr(), false);
-        fprintf(stdout, "[Editor] --exec window %dx%d (wanted 1366x706)\n", aw, ah);
+        fprintf(stdout, "[Editor] --exec window %dx%d (wanted %dx%d)\n", aw, ah, scn_w, scn_h);
     }
     md::GpuDeviceHandle gpu = md::GpuDevice::Get().SDLDevice();
     SDL_GPUTextureFormat sc_fmt = SDL_GetGPUSwapchainTextureFormat(gpu, _wnd::ptr());
