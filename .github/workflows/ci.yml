@@ -31,6 +31,8 @@ jobs:
 
   # The repo builds on its own: engine is the submodule tools/engine; no private file, no Kenshi file, no secret. The tests that need an install (KENSHI_DIR) are not run here.
   standalone:
+    permissions:
+      contents: write   # the release game is published on GitHub Release build-<sha12> (push only)
     name: Standalone build, unit tests, scans
     runs-on: ubuntu-24.04
     timeout-minutes: 150
@@ -40,7 +42,7 @@ jobs:
         run: |
           echo "Server = https://archive.archlinux.org/repos/${ARCH_DATE}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
           pacman -Syyuu --noconfirm
-          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache sdl3 lua54 mold freetype2 shaderc glslang python pkgconf gtest vulkan-headers vulkan-icd-loader
+          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache zstd github-cli sdl3 lua54 mold freetype2 shaderc glslang python pkgconf gtest vulkan-headers vulkan-icd-loader
           echo "$EXPECT" | tr '|' '\n' | while read -r n v; do
             got=$(pacman -Q "$n" | cut -d' ' -f2)
             echo "$n: laptop $v, container $got"
@@ -80,3 +82,15 @@ jobs:
         run: python3 scripts/check_licences.py
       - name: Release binary (no Dear ImGui Test Engine, no GPL-class libraries)
         run: bash scripts/check_release_binary.sh build/game/monkey_dust build/monkey_dust_editor
+      - name: Publish the release game (game-<sha12>.tar.zst on GitHub Release build-<sha12>; the laptop fetches it instead of building, owner 12.11 / 13.11)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA12=${GITHUB_SHA:0:12}
+          mkdir -p gout/bin && cp build/game/monkey_dust gout/bin/
+          tar --zstd -19 -cf game-${SHA12}.tar.zst -C gout .
+          sha256sum game-${SHA12}.tar.zst > game-${SHA12}.tar.zst.sha256
+          ls -l game-${SHA12}.tar.zst
+          gh release view "build-${SHA12}" >/dev/null 2>&1 || gh release create "build-${SHA12}" --target "$GITHUB_SHA" --title "Tools build ${SHA12}" --notes "Prebuilt tools and the release game (no shader overlay) for tools commit ${GITHUB_SHA}. No Kenshi files." || true
+          gh release upload "build-${SHA12}" game-${SHA12}.tar.zst game-${SHA12}.tar.zst.sha256 --clobber
