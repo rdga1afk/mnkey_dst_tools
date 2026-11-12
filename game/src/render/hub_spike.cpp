@@ -201,7 +201,11 @@ void HubSpike::Prepare(std::vector<HubPlacement>& pl, std::vector<HubPrepared>& 
         if (std::find(done.begin(), done.end(), key) != done.end()) continue;
         done.push_back(key);
         HubPrepared h; h.key = key;
-        if (PrepareOne(p, pl, h)) { if (!p.tex.empty()) HubTexture(PlacementTexPath(p)); out.push_back(std::move(h)); }
+        if (PrepareOne(p, pl, h)) {
+            if (!p.tex.empty()) HubTexture(PlacementTexPath(p));
+            if (p.cut && !p.nrm.empty()) HubTexture(md::KenshiDir() + "/" + (p.nrm.rfind("./", 0) == 0 ? p.nrm.substr(2) : p.nrm));   // the cut-out normal map too: Step() loaded it on the render thread (24-57 ms per mesh in the town / foliage walks, #207 hitch trace)
+            out.push_back(std::move(h));
+        }
     }
 }
 

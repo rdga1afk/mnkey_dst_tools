@@ -16,7 +16,7 @@ struct Table { float cam[3] = {}; float h[kBins][kSteps]; bool valid = false; };
 Table g_tab[2]; int g_pub = -1;                      // published index (guarded by g_mu), -1 = none yet
 std::mutex& g_mu = *new std::mutex; std::condition_variable& g_cv = *new std::condition_variable;   // never destroyed: the detached worker may still wait on them at process exit
 bool g_req = false, g_quit = false; float g_req_cam[3] = {}; std::thread g_worker; bool g_started = false;
-std::atomic<bool> g_on{!(getenv("MD_HORIZON_CULL") && atoi(getenv("MD_HORIZON_CULL")) == 0)};   // default ON (coordinator 6829930715, after the gates with it on); MD_HORIZON_CULL=0 / md.set_horizon_cull(false) switch it off
+std::atomic<bool> g_on{getenv("MD_HORIZON_CULL") && atoi(getenv("MD_HORIZON_CULL")) == 1};   // default OFF: with it ON the perf gate refuses (unstable GPU frequency, max/min > 1.15: the lighter load downclocks the GT), see PR #164; MD_HORIZON_CULL=1 / md.set_horizon_cull(true) switch it on
 HorizonCullStats g_stats; std::mutex& g_stats_mu = *new std::mutex; int g_frames_since = 1000; bool g_busy = false;
 float g_edge[kSteps]; bool g_edge_init = false;
 void InitEdges() { if (g_edge_init) return; for (int k = 0; k < kSteps; ++k) g_edge[k] = kD0 * std::pow(kD1 / kD0, float(k + 1) / kSteps); g_edge_init = true; }
