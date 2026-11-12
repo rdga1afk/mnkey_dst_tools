@@ -300,6 +300,9 @@ static int l_md_set_dyn_res(lua_State* L) {
 }
 static int l_md_wall_ms(lua_State* L) { lua_pushnumber(L, (double)SDL_GetTicksNS() * 1e-6); return 1; }   // md.wall_ms(): monotonic wall clock in ms (scenario Lua has no os / io): per-frame wall time of a flight
 static int l_md_dyn_res_state(lua_State* L) { lua_pushnumber(L, g_dynres_cur); return 1; }
+extern float g_dynres_ema; extern int g_dynres_hold; extern long g_dynres_changes;
+static int l_md_set_dyn_res_damping(lua_State* L) { g_dynres_ema = std::max(0.f, std::min(0.99f, (float)luaL_optnumber(L, 1, 0.0))); g_dynres_hold = std::max(0, (int)luaL_optinteger(L, 2, 0)); return 0; }   // md.set_dyn_res_damping(ema, hold_frames): EMA factor of the camera speed / turn signals (0 = off) and the frames a level change holds (0 = off); defaults off
+static int l_md_dyn_res_changes(lua_State* L) { lua_pushinteger(L, (lua_Integer)g_dynres_changes); if (lua_toboolean(L, 1)) g_dynres_changes = 0; return 1; }   // md.dyn_res_changes([reset]) -> number of level changes since the start (or the last reset)
 static int l_md_set_gpu_frames_in_flight(lua_State* L) { lua_pushboolean(L, SDL_SetGPUAllowedFramesInFlight(md::GpuDevice::Get().SDLDevice(), (Uint32)luaL_checkinteger(L, 1))); return 1; }   // experiment: 1 / 2 / 3
 static int l_md_set_opt_ground_reuse_cr(lua_State* L) { g_opt_ground_reuse_cr = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) ? 1 : 0) : (int)luaL_checkinteger(L, 1); return 0; }   // #163 reopened: false/0 nearest, true/1 Catmull-Rom, 2 + live-only history
 extern int g_ground_variant;   // engine/src/render/terrain_shading_projected.cpp
@@ -514,6 +517,8 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_dyn_res", l_md_set_dyn_res);
     sys.RegisterNamespaceFunction("dyn_res_state", l_md_dyn_res_state);
+    sys.RegisterNamespaceFunction("set_dyn_res_damping", l_md_set_dyn_res_damping);
+    sys.RegisterNamespaceFunction("dyn_res_changes", l_md_dyn_res_changes);
     sys.RegisterNamespaceFunction("wall_ms", l_md_wall_ms);
     sys.RegisterNamespaceFunction("gpu_live_resources", l_md_gpu_live_resources);
     sys.RegisterNamespaceFunction("travel_zone", l_md_travel_zone);
