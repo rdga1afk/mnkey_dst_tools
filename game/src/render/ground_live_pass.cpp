@@ -36,18 +36,19 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
     if (!hlsl::Compile(kVert, {}, 'v', vc)) { MD_LOG(MD_LOG_WARNING, "ground live: vertex: %s", vc.log.c_str()); return false; }
     SDL_GPUShaderCreateInfo sv = {}; sv.code = (const Uint8*)vc.spv.data(); sv.code_size = vc.spv.size() * 4; sv.entrypoint = "main"; sv.format = SDL_GPU_SHADERFORMAT_SPIRV; sv.stage = SDL_GPU_SHADERSTAGE_VERTEX;
     vs_ = SDL_CreateGPUShader(dev, &sv); if (!vs_) return false;
-    for (int n = 0; n < 4; ++n) {
+    for (int n = 0; n < 5; ++n) {   // n 0..3: 1..4 biomes; n 4: the far program (GW_FAR), optional: without it a non-resident group is skipped as before
         std::string defs = "#define GW_ENGINE\n#define DX11\n";
+        if (n == 4) defs += "#define GW_FAR\n";
         if (getenv("MD_GROUND_LIVE_NOWET")) defs += "#define GW_NOWET\n";   // diagnostic: the dry makeWet of the original switched off (to account for the difference against the port)
-        for (int b = 1; b <= n; ++b) defs += "#define BLEND" + std::to_string(b) + " " + std::to_string(b) + "\n";
+        for (int b = 1; b <= n && n < 4; ++b) defs += "#define BLEND" + std::to_string(b) + " " + std::to_string(b) + "\n";
         hlsl::Compiled fc;
-        if (!hlsl::Compile(defs + glue, deps, 'f', fc)) { MD_LOG(MD_LOG_WARNING, "ground live: fragment (%d): %s", n + 1, fc.log.c_str()); return false; }
+        if (!hlsl::Compile(defs + glue, deps, 'f', fc)) { fprintf(stderr, "[WARN] ground live: fragment (%d): %s\n", n + 1, fc.log.c_str()); if (n == 4) break; return false; }   // fprintf: the whole compiler log (MD_LOG cuts at 256 chars)
         std::vector<hlsl::UniformMember> mem; uint32_t sz = 0;
-        if (!hlsl::GlobalBlockMembers(fc.spv, mem, sz)) return false;
-        Variant& v = var_[n]; v.ub_size = sz; v.ub.assign(sz + 16, 0);
+        if (!hlsl::GlobalBlockMembers(fc.spv, mem, sz)) { if (n == 4) break; return false; }
+        Variant& v = n < 4 ? var_[n] : far_; v.ub_size = sz; v.ub.assign(sz + 16, 0);
         for (const auto& u : mem) v.mem.push_back({ u.name, { u.offset, u.array_stride } });
         SDL_GPUShaderCreateInfo sf = sv; sf.code = (const Uint8*)fc.spv.data(); sf.code_size = fc.spv.size() * 4; sf.stage = SDL_GPU_SHADERSTAGE_FRAGMENT; sf.num_samplers = kSamplers; sf.num_uniform_buffers = 1;
-        v.fs = SDL_CreateGPUShader(dev, &sf); if (!v.fs) return false;
+        v.fs = SDL_CreateGPUShader(dev, &sf); if (!v.fs) { if (n == 4) break; return false; }
         SDL_GPUColorTargetDescription ct[3] = {};
         ct[0].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; ct[1].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; ct[2].format = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
         SDL_GPUGraphicsPipelineCreateInfo gi = {}; gi.vertex_shader = vs_; gi.fragment_shader = v.fs; gi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
@@ -55,7 +56,7 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
         gi.target_info.has_depth_stencil_target = true; gi.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
         gi.depth_stencil_state.enable_stencil_test = true; gi.depth_stencil_state.compare_mask = 0xff; gi.depth_stencil_state.write_mask = 0;
         gi.depth_stencil_state.front_stencil_state.compare_op = SDL_GPU_COMPAREOP_EQUAL; gi.depth_stencil_state.back_stencil_state = gi.depth_stencil_state.front_stencil_state;
-        v.pipe = SDL_CreateGPUGraphicsPipeline(dev, &gi); if (!v.pipe) return false;
+        v.pipe = SDL_CreateGPUGraphicsPipeline(dev, &gi); if (!v.pipe) { if (n == 4) break; return false; }
     }
     bake_ok_ = false;
     if (getenv("MD_GROUND_CACHE") && getenv("MD_GROUND_CACHE")[0] != '0') {   // the live-ground cache bake (GW_BAKE): the same program over ring texels, a scissor per cell instead of the stencil
@@ -197,6 +198,7 @@ void GroundLivePass::Shutdown() {
     n_fog_pipes_ = 0; if (fog_.fs) { SDL_ReleaseGPUShader(dev_, fog_.fs); fog_.fs = nullptr; }
     if (!dev_) return;
     for (auto& v : var_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
+    if (far_.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, far_.pipe); if (far_.fs) SDL_ReleaseGPUShader(dev_, far_.fs); far_ = Variant();
     for (auto& v : bake_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
     if (fetch_.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, fetch_.pipe); if (fetch_.fs) SDL_ReleaseGPUShader(dev_, fetch_.fs); fetch_ = Variant();
     if (repeat_) SDL_ReleaseGPUSampler(dev_, repeat_); repeat_ = nullptr;
@@ -325,6 +327,21 @@ bool GroundLivePass::Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, co
     static const bool class_only = getenv("MD_GROUND_LIVE_CLASSONLY") != nullptr || getenv("MD_GROUND_LIVE_IDONLY") != nullptr;   // measurement: cost split
     for (int gi = 0; gi < n && !class_only; ++gi) {
         const GroundLiveGroup& grp = groups[gi];
+        if (grp.far) {   // DEVIATION: the original loads its layer textures synchronously; a group whose arrays are still streaming is drawn with the original far program instead
+            if (!far_.pipe || !f.distant) continue;
+            SDL_GPUTextureSamplerBinding tb[kSamplers];
+            FillGroup(far_, f, grp, tw_, th_, tb);
+            const float map[4] = { -147456.f, -147456.f, 1.f / 294912.f, 1.f / 294912.f }, zero3[3] = { 0.f, 0.f, 0.f };   // the exe's "distant" world image rect (GROUND_FAR_PATH_2026-11-11.md §1); our positions are already absolute
+            SetIn(far_, "gw_map", map, 4); SetIn(far_, "gw_worldOffset", zero3, 3);
+            tb[0] = { f.distant, linear_ };
+            for (int i = 1; i < kSamplers; ++i) if (!tb[i].texture) tb[i].texture = f.interior;   // no biome arrays in this group: every unused slot gets the 1x1 stand-in
+            SDL_BindGPUGraphicsPipeline(rp, far_.pipe);
+            SDL_BindGPUFragmentSamplers(rp, 0, tb, kSamplers);
+            scissor(grp); SDL_SetGPUStencilReference(rp, (Uint8)grp.slot);
+            SDL_PushGPUFragmentUniformData(cmd, 0, far_.ub.data(), far_.ub_size);
+            SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+            continue;
+        }
         if (grp.biome_count < 1 || grp.biome_count > 4) continue;
         Variant& v = var_[grp.biome_count - 1];
         SDL_GPUTextureSamplerBinding tb[kSamplers];

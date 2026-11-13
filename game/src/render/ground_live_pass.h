@@ -18,6 +18,7 @@ struct GroundLiveBiome {
 struct GroundLiveGroup {                  // the pixels of one biome list
     int slot = 1;                         // value of this group in the slot target (1..31)
     int biome_count = 1;                  // 1..4, main biome first
+    bool far = false;                     // no layer set resident yet: drawn with the original far program (distant.png) instead of being skipped
     GroundLiveBiome biome[4];
     int x0 = 0, y0 = 0, x1 = 0, y1 = 0;   // scissor (pixels); x1 <= x0 = the whole target
 };
@@ -29,6 +30,7 @@ struct GroundLiveFrame {
     SDL_GPUTexture* overlay = nullptr;
     SDL_GPUTexture* colour = nullptr;
     SDL_GPUTexture* interior = nullptr;   // "no interior" 1x1
+    SDL_GPUTexture* distant = nullptr;    // data/newland/land/overlaymaps/distant.png (the far program's distantColour)
     float inv_vp[16] = {};                // gw_invVP in column-major memory order (glm layout)
     float cam_ws[3] = {};                 // camera position in metres, world corner origin
     float cam_dir[3] = { 0.f, 0.f, 1.f };    // unit view direction
@@ -98,7 +100,7 @@ private:
         std::vector<unsigned char> ub; std::vector<std::pair<std::string, std::pair<unsigned, unsigned>>> mem;   // name -> (offset, array stride)
         unsigned ub_size = 0;
     };
-    SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4];
+    SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4]; Variant far_;
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
     SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
     Variant bake_[4]; bool bake_ok_ = false; Variant fetch_; SDL_GPUSampler* repeat_ = nullptr; const GroundLiveCacheView* cache_view_ = nullptr;

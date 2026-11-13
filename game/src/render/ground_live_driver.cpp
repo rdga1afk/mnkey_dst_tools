@@ -73,6 +73,8 @@ bool GroundLiveDriver::InitGpu(SDL_GPUDevice* dev) {
     if (!bm) { MD_LOG(MD_LOG_WARNING, "[GroundLive] blendmap.png missing"); return false; }
     blend_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, bm, (size_t)w * h * 4); stbi_image_free(bm);
     const Uint8 white[4] = { 255, 255, 255, 255 }, zero[4] = {};
+    { int dw = 0, dh = 0, dn = 0; unsigned char* dm = stbi_load((kenshi_dir_ + "/data/newland/land/overlaymaps/distant.png").c_str(), &dw, &dh, &dn, 4);   // the far program's distantColour
+      if (dm) { distant_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, dw, dh, dm, (size_t)dw * dh * 4); stbi_image_free(dm); } }
     white_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1, 1, white, 4); clear_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1, 1, zero, 4);
     if (!blend_ || !white_ || !clear_) return false;
     arrays_.SetBuildGapMs(getenv("MD_GROUND_LIVE_GAP_MS") ? atoi(getenv("MD_GROUND_LIVE_GAP_MS")) : 40);
@@ -177,14 +179,14 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     static GroundLiveGroup groups[32]; int ng = 0;
     for (int s = 1; s <= n_slots_; ++s) {
         const PatchBiomes& pb = lists_[(size_t)slot_list_[s]].pb;
-        GroundLiveGroup& g = groups[ng]; g.slot = s; g.biome_count = 0; g.x0 = g.x1 = g.y0 = g.y1 = 0;
+        GroundLiveGroup& g = groups[ng]; g.slot = s; g.biome_count = 0; g.far = false; g.x0 = g.x1 = g.y0 = g.y1 = 0;
         float tile = 1e9f; bool ok = true;
         const float d = slot_dmin_[s] + 1.f;
         for (int b = 0; b < pb.count; ++b) {
             const BiomeInfo* bi = Find(pb.ids[b]); if (!bi || !bi->valid) { ok = false; break; }
             for (const float* a : { bi->pack.scalesA, bi->pack.scalesB, bi->pack.scalesC }) for (int j = 0; j < 4; ++j) if (a[j] > 0.f && a[j] < tile) tile = a[j];
         }
-        if (!ok) continue;
+        if (!ok) { g.far = true; ++stats_.skipped; ++ng; continue; }   // a biome without data: the original far program (never left unwritten)
         const float footprint = pix_angle * d * 4.096f * (tile < 1e8f ? tile : 1.f);   // base texels per pixel along the minor axis
         int K = 0; while (K < 6 && std::ldexp(1.f, K + 2) <= footprint / 1.25f) K += 2;
         const int tier_rec = K / 2; if (K > 0) stats_.min_margin = std::min(stats_.min_margin, footprint / 1.25f / std::ldexp(1.f, K));
@@ -200,7 +202,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
             if (!set) { ok = false; ++stats_.skipped; break; }
             g.biome[g.biome_count].pack = bi->pack; g.biome[g.biome_count].diffuse = set->diffuse.SDLTexture(); g.biome[g.biome_count].normal = set->normal.SDLTexture(); ++g.biome_count;
         }
-        if (!ok || g.biome_count < 1) continue;
+        if (!ok || g.biome_count < 1) { g.far = true; g.biome_count = 0; ++ng; continue; }   // no resident tier (streaming): the original far program until the arrays arrive (skipped counts these)
         ++stats_.tiers[tier_rec]; ++ng;
     }
     stats_.groups = ng; stats_.resident = arrays_.Cache().Resident(); stats_.resident_bytes = arrays_.Cache().ResidentBytes(); stats_.builds = arrays_.Cache().Builds(); stats_.evictions = arrays_.Cache().Evictions();
@@ -210,7 +212,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
                                        (unsigned long long)stats_.builds, (unsigned long long)stats_.evictions, stats_.waiting, stats_.skipped, stats_.assign_ms);
     if (ng < 1) return;
     GroundLiveFrame f;
-    f.depth = depth; f.packed = packed; f.blend_map = blend_; f.overlay = overlay_ ? overlay_ : white_; f.colour = colour_ ? colour_ : white_; f.interior = clear_; f.slot_tex = slot;
+    f.depth = depth; f.packed = packed; f.blend_map = blend_; f.overlay = overlay_ ? overlay_ : white_; f.colour = colour_ ? colour_ : white_; f.interior = clear_; f.distant = distant_; f.slot_tex = slot;
     memcpy(f.inv_vp, inv_vp, sizeof(f.inv_vp)); memcpy(f.cam_ws, cam, sizeof(f.cam_ws)); f.far_clip = far_clip_; f.wetness = SkyClouds::OverrideWetness();
     static const bool no_decode = getenv("MD_GROUND_LIVE_NODECODE") != nullptr;   // measurement: cost split
     { static const bool ph = getenv("MD_GROUND_LIVE_PHASE") != nullptr; pass_.SetPhase(ph ? (int)(frame & 7) : -1); }   // measurement: upper bound of the 1/8 reuse

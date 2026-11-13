@@ -9,9 +9,17 @@
 #define makeWet makeWetOff
 void makeWetOff(inout float4 f, float a, float b, float c = -10.0, float d = 2.0) {}
 #endif
+#ifndef GW_FAR
 #define main_fs ground_orig_fs
 #include "@FS@"
 #undef main_fs
+#else   // the far program (terrain.hlsl simple_fs, already in @VS@) takes its inputs as parameters
+sampler2D gw_distant : register(s0);
+uniform float4 gw_map;
+uniform float3 gw_worldOffset;
+uniform float3 cameraPos;
+uniform float farClip;
+#endif
 
 #ifdef GW_ENGINE   // the engine pass: world position and normal come from our terrain G-buffer (game/src/render/ground_live_gbuf.hlsl), metres -> the original's centred 0.1 m units
 #include "@GBUF@"
@@ -85,5 +93,9 @@ void main(float4 fragCoord : SV_Position, out GBuffer buffer)
     float4 oPos; float3 oNormal; float3 oWorld; float3 oTex0; float4 oTex1; float2 uvblend; float4 oTexV;
     ground_orig_vs(float4(gw_position4.xyz, 1.0), gw_normal4.xyz.yzx, gw_normal4.xyz.yzx, oPos, oNormal, oWorld, oTex0, oTex1, uvblend, oTexV,
         gw_wvp, gw_world, 0.0, gw_distortion0, gw_distortion1, gw_biomeData, gw_overlayData, gw_cameraPos, gw_cameraDir);
+#ifdef GW_FAR   // a group whose layer arrays are not resident yet: the original's far program (DistantTerrain = Terrain_Far_FP = simple_fs of the same terrain.hlsl, one distant.png fetch)
+    simple_fs(fragCoord, oNormal, oWorld, gw_distant, gw_map, gw_worldOffset, cameraPos, farClip, buffer);
+#else
     ground_orig_fs(fragCoord, oNormal, oWorld, oTex0, oTex1, uvblend, oTexV, buffer);
+#endif
 }

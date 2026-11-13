@@ -54,7 +54,7 @@ private:
     std::vector<PatchList> lists_;                  // distinct patch lists seen so far
     const GroundLiveLightParams* light_ = nullptr;
     GroundLiveFrame last_frame_; bool lit_frame_ = false;   // the inputs of the last Frame() that ran the light pass (DrawFog)
-    SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *clear_ = nullptr;
+    SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *clear_ = nullptr, *distant_ = nullptr;
     float far_clip_ = 40000.f; int max_groups_ = 31;
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)
     float slot_dmin_[32] = {};
