@@ -23,9 +23,9 @@ public:
     struct Stats { int zones = 0, loading = 0, requested = 0, instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int textured_batches = 0, no_texture_batches = 0; int loaded_total = 0, unloaded_total = 0; double max_step_ms = 0; };
     Stats stats() const { return stats_; }
 private:
-    struct Zone { int zx = 0, zz = 0; enum State { Requested, Ready, Loading, Live } state = Requested; double last_wanted_s = 0; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; std::unique_ptr<HubSpike> hs; };
+    struct Zone { int zx = 0, zz = 0; enum State { Requested, Ready, Loading, Live } state = Requested; double last_wanted_s = 0; uint64_t req_frame = 0; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; std::unique_ptr<HubSpike> hs; };
     void WorkerMain();
-    bool enabled_ = false; float range_ = 300.f;
+    bool enabled_ = false; float range_ = 300.f; uint64_t tick_ = 0;
     std::vector<std::unique_ptr<Zone>> zones_;
     // worker
     std::thread worker_; std::mutex mu_; std::condition_variable cv_; bool stop_ = false;

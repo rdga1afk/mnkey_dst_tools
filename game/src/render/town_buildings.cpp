@@ -51,6 +51,7 @@ void TownBuildings::SetEnabled(bool on, float range_m) {
             PropRenderer warm; warm.InitFromArrays(v, 3, ix, 3);
             GpuStaticBuffer::EndUploadBatch();
             warm.Shutdown();
+            PropRenderer::PrewarmPipelines();   // the six pipeline variants of the zone batches, so a zone load does not create one
         }
         stop_ = false;
         worker_ = std::thread([this] { WorkerMain(); });
@@ -67,7 +68,7 @@ void TownBuildings::Shutdown() {
 
 void TownBuildings::Tick(float cam_x, float cam_z) {
     if (!enabled_) return;
-    HubSpike::FrameTick();
+    HubSpike::FrameTick(); ++tick_;
     const auto t0 = std::chrono::steady_clock::now();
     const double now_s = std::chrono::duration<double>(t0.time_since_epoch()).count();
     const float R = range_ + 100.f;
@@ -77,7 +78,7 @@ void TownBuildings::Tick(float cam_x, float cam_z) {
     for (int zx = x0; zx <= x1; ++zx) for (int zz = z0; zz <= z1; ++zz) {
         Zone* z = find(zx, zz);
         if (!z) {
-            zones_.push_back(std::make_unique<Zone>()); z = zones_.back().get(); z->zx = zx; z->zz = zz;
+            zones_.push_back(std::make_unique<Zone>()); z = zones_.back().get(); z->zx = zx; z->zz = zz; z->req_frame = tick_;
             { std::lock_guard<std::mutex> lk(mu_); requests_.emplace_back(zx, zz); }
             cv_.notify_one();
         }
@@ -102,7 +103,7 @@ void TownBuildings::Tick(float cam_x, float cam_z) {
                     z->hs->Begin(std::move(z->parts), std::move(z->prepared)); z->state = Zone::Loading; cur = z.get(); break;
                 }
             if (!cur) break;
-            if (!cur->hs->Step()) { cur->state = Zone::Live; cur->parts.clear(); cur->parts.shrink_to_fit(); ++stats_.loaded_total; }
+            if (!cur->hs->Step()) { cur->state = Zone::Live; cur->parts.clear(); cur->parts.shrink_to_fit(); ++stats_.loaded_total; fprintf(stdout, "[Town] zone %d,%d live %llu frames after the request\n", cur->zx, cur->zz, (unsigned long long)(tick_ - cur->req_frame)); }
             if (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() >= BUDGET_MS) break;
         }
         GpuStaticBuffer::EndUploadBatch();
