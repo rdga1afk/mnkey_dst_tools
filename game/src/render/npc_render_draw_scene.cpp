@@ -282,6 +282,10 @@ if (SceneRender::Get().depth_alias_ && fc.ac > 0 && prepass_pipeline.SDLPipeline
             static const bool keep_clear = getenv("MD_SWAP_CLEAR") != nullptr;
             if (!keep_clear && SceneRender::Get().sky_pipeline.SDLPipeline() && md::RenderPassGraph::Get().IsEnabled("draw_sky")) cpd.color_dont_care = true;
         }
+        {   // MD_DEBUG_UNWRITTEN=1 (frames gate only, coordinator #207 6861963075): clear to magenta, so a pixel no pass writes shows up instead of stale swapchain content
+            static const bool unwritten = getenv("MD_DEBUG_UNWRITTEN") && getenv("MD_DEBUG_UNWRITTEN")[0] == '1';
+            if (unwritten) { cpd.color_dont_care = false; cpd.clear_color[0] = 1.f; cpd.clear_color[1] = 0.f; cpd.clear_color[2] = 1.f; cpd.clear_color[3] = 1.f; }
+        }
         bool load_depth = (fc.ac > 0 && prepass_pipeline.SDLPipeline()) ||
                           SceneRender::Get().terrain_granite_ready;
         if (scene_depth.SDLTexture()) {

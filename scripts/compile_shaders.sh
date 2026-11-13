@@ -139,6 +139,7 @@ done
 # task #227: Kenshi-parity resolve variant (same source, -DTS_KENSHI_FULL=1); the only ground resolve variant.
 should_compile shaders/terrain_gbuffer_mini.frag && compile_vulkan shaders/terrain_gbuffer_mini.frag "$SPIRV_DIR/terrain_gbuffer_mini_slot.frag.spv" "-DTS_SLOT=1"   # ground live pass: second target = the patch's biome-list slot
 should_compile shaders/terrain_gbuffer_mini.frag && compile_vulkan shaders/terrain_gbuffer_mini.frag "$SPIRV_DIR/terrain_gbuffer_mini_slot0.frag.spv" "-DTS_SLOT0=1"   # ground live pass: second target = 0 (geometry without a patch list)
+should_compile shaders/feature_gbuf.vert && compile_vulkan shaders/feature_gbuf.vert "$SPIRV_DIR/feature_gbuf_slot.vert.spv" "-DFEATURE_SLOT=1"   # ground live pass: a TERRAIN-mode feature writes the slot of the list at its own position (coordinator #207 6861963075)
 should_compile shaders/terrain_quadtree_batched_lod.vert && compile_vulkan shaders/terrain_quadtree_batched_lod.vert "$SPIRV_DIR/terrain_quadtree_batched_lod_slot.vert.spv" "-DTS_SLOT=1"
 should_compile shaders/terrain_shading_screenspace.frag && compile_vulkan shaders/terrain_shading_screenspace.frag "$SPIRV_DIR/terrain_shading_screenspace_kenshi.frag.spv" "-DTS_KENSHI_FULL=1 -DTS_BIOME_SSBO=1"
 should_compile shaders/terrain_shading_screenspace.frag && compile_vulkan shaders/terrain_shading_screenspace.frag "$SPIRV_DIR/terrain_shading_screenspace_kenshi_noskip.frag.spv" "-DTS_KENSHI_FULL=1 -DTS_BIOME_SSBO=1 -DTS_SKIP_FLAT_ON_CLIFF=0"

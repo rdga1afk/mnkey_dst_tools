@@ -87,6 +87,15 @@ int GroundLiveDriver::ListIdOf(const PatchBiomes& pb) {
     PatchList pl; pl.pb = pb; lists_.push_back(pl); return (int)lists_.size() - 1;
 }
 
+int GroundLiveDriver::SlotAt(float x, float z) const {
+    int best = 0; float best_size = 1e30f;
+    for (int i = 0; i < n_node_slot_; ++i) {
+        const NodeSlot& q = node_slot_[i];
+        if (x >= q.x0 && x < q.x0 + q.size && z >= q.z0 && z < q.z0 + q.size && q.size < best_size) { best = q.slot; best_size = q.size; }
+    }
+    return best;
+}
+
 void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam[3]) {
     if (!data_tried_) { data_tried_ = true; data_ok_ = InitData(); }
     stats_.assign_ms = 0; n_slots_ = 0;
@@ -119,6 +128,9 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
     for (int k = 0; k < m && k < max_groups_; ++k) { lists_[(size_t)order[k]].slot = k + 1; slot_list_[k + 1] = order[k]; slot_dmin_[k + 1] = std::sqrt(lists_[(size_t)order[k]].dmin); n_slots_ = k + 1; }
     stats_.no_slot_nodes = 0;
     for (int i = 0; i < n; ++i) { nodes[i].list_slot = lid_of[i] >= 0 ? lists_[(size_t)lid_of[i]].slot : 0; if (!nodes[i].list_slot) ++stats_.no_slot_nodes; }
+    for (int i = 0; i < n; ++i) node_slot_[i] = { nodes[i].origin_x, nodes[i].origin_z, nodes[i].size, nodes[i].list_slot };
+    n_node_slot_ = n;
+    GroundSlotAtHook() = [](float x, float z) { return GroundLiveDriver::Get().SlotAt(x, z); };
     stats_.assign_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 }
 

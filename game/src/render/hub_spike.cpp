@@ -497,7 +497,7 @@ void HubSpike::DrawGbuf(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, c
         pd.has_depth_target = true;
         pd.vert_uniform_bufs = 1; pd.frag_uniform_bufs = 0; pd.frag_samplers = 0; pd.frag_storage_bufs = 0;
         pd.color_format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UINT;
-        if (md::GroundSlotTargetOn()) { pd.color_format2 = SDL_GPU_TEXTUREFORMAT_R8_UINT; pd.frag_path = "shaders/terrain_gbuffer_mini_slot0.frag"; pd.color2_keep = true; }   // the slot of the ground under the feature stays: the live pass shades it with the original terrain program (the install draws TERRAIN-mode features with terrainfp4.hlsl mapfeature_fs, deferred/mapfeature.material)
+        if (md::GroundSlotTargetOn()) { pd.color_format2 = SDL_GPU_TEXTUREFORMAT_R8_UINT; pd.vert_path = "shaders/feature_gbuf_slot.vert"; pd.frag_path = "shaders/terrain_gbuffer_mini_slot.frag"; }   // the feature writes the slot of the biome list at its own position (md::GroundSlotAt), also where no ground lies behind it
         if (!pipe.Create(pd)) fprintf(stderr, "[HubSpike] G-buffer pipeline create failed\n");
     }
     float pn[4][4];
@@ -505,12 +505,12 @@ void HubSpike::DrawGbuf(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, c
         float l = std::sqrt(fr[p*4] * fr[p*4] + fr[p*4+1] * fr[p*4+1] + fr[p*4+2] * fr[p*4+2]); if (l < 1e-6f) l = 1.f;
         for (int k = 0; k < 4; ++k) pn[p][k] = fr[p*4+k] / l;
     }
-    static float gp[PropRenderer::MAX_PROPS * 3], gq[PropRenderer::MAX_PROPS * 4], gs[PropRenderer::MAX_PROPS];
+    static float gp[PropRenderer::MAX_PROPS * 3], gq[PropRenderer::MAX_PROPS * 4], gs[PropRenderer::MAX_PROPS], gl[PropRenderer::MAX_PROPS];
     for (int i = 0; i < batch_count_; ++i) {
         Batch& b = batches_[i];
         if (!b.terrain) continue;
         int n = 0;
-        auto flush = [&]() { if (n > 0) b.r.DrawGbuf(rp, cmd, pipe, gp, gq, n, vp16, gs); n = 0; };
+        auto flush = [&]() { if (n > 0) b.r.DrawGbuf(rp, cmd, pipe, gp, gq, n, vp16, gs, gl); n = 0; };
         for (int k = 0; k < b.count; ++k) {
             const int o = b.first + k;
             const float x = pos_[o*3], y = pos_[o*3+1], z = pos_[o*3+2], r = b.radius * scale_[o];
@@ -518,7 +518,7 @@ void HubSpike::DrawGbuf(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, c
             bool out = false;
             if (fr) for (int p = 0; p < 4; ++p) if (pn[p][0] * x + pn[p][1] * y + pn[p][2] * z + pn[p][3] < -r) { out = true; break; }
             if (out) continue;
-            memcpy(gp + n * 3, pos_ + o * 3, 12); memcpy(gq + n * 4, quat_ + o * 4, 16); gs[n] = scale_[o];
+            memcpy(gp + n * 3, pos_ + o * 3, 12); memcpy(gq + n * 4, quat_ + o * 4, 16); gs[n] = scale_[o]; gl[n] = (float)md::GroundSlotAt(x, z);
             if (++n == PropRenderer::MAX_PROPS) flush();
         }
         flush();

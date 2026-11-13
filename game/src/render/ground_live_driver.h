@@ -25,6 +25,8 @@ public:
     struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; uint64_t cache_strips = 0, cache_texels = 0, cache_invalidations = 0, cache_waits = 0, cache_nolist = 0; };
     // Before the nodes are uploaded: sets nodes[i].list_slot (0 = none) from the node's biome list; the nearest lists get slots 1..max_groups.
     void AssignSlots(TerrainLodNode* nodes, int n, const float cam[3]);
+    // The slot of the smallest node of the last AssignSlots that contains (x, z), metres (granite absolute); 0 = none. TERRAIN-mode features write it (md::GroundSlotAt).
+    int SlotAt(float x, float z) const;
     // After the G-buffer pass (no pass open): depth = G-buffer depth, packed = R16G16B16A16_UINT, slot = the R8_UINT second target. inv_vp column-major; cam in metres (granite absolute).
     void Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* depth, SDL_GPUTexture* packed, SDL_GPUTexture* slot, int w, int h, const float inv_vp[16], const float cam[3], uint64_t frame);
     void SetLight(const GroundLiveLightParams* p) { light_ = p; }   // null = no original light pass this frame
@@ -55,6 +57,8 @@ private:
     float far_clip_ = 40000.f; int max_groups_ = 31;
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)
     float slot_dmin_[32] = {};
+    struct NodeSlot { float x0, z0, size; int slot; };
+    NodeSlot node_slot_[8192]; int n_node_slot_ = 0;   // the nodes of the last AssignSlots (SlotAt)
     Stats stats_; uint64_t frame_counter_ = 0;
     // live-ground cache (MD_GROUND_CACHE): bake strips of the rings after the frame's pass, within a texel budget per frame
     void BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, uint64_t frame);
