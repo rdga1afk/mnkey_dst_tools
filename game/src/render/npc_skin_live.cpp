@@ -4,6 +4,7 @@
 #include "spirv_combine.h"
 #include <monkey_dust/render/gpu_sampler_texture.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <map>
@@ -20,7 +21,8 @@ struct State {
     Stage vs, fs;
     SDL_GPUGraphicsPipeline* pipe = nullptr;
     SDL_GPUSampler* diffuse_smp = nullptr;
-    GpuTexture tex[3];   // diffuse, normal, colour map
+    GpuTexture tex[13];   // the Character material's units s0..s12: install files or the material's defaults
+    SDL_GPUSampler* diffuse_smp_head = nullptr;
     bool ready = false;
 };
 State S;
@@ -56,7 +58,7 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
     if (S.ready) return true;
     if (!dev || kd.empty()) return false;
     S.dev = dev;
-    const std::string dir = kd + "/data/materials/deferred/", skin = dir + "skin.hlsl";
+    const std::string dir = kd + "/data/materials/deferred/", skin = dir + "character.hlsl";
     if (!std::filesystem::exists(skin)) return false;
     std::vector<std::string> deps = { skin };
     for (const char* d : { "common", "deferred", "forward", "post" }) {
@@ -65,11 +67,20 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
         for (const auto& e : std::filesystem::directory_iterator(p)) if (e.path().extension() == ".hlsl" && e.path().string() != skin) deps.push_back(e.path().string());
     }
     if (!Build(S.vs, kVert, {}, 'v', 0, 5, "vertex")) return false;
-    if (!Build(S.fs, FragmentGlue(skin), deps, 'f', 4, 0, "fragment (skin.hlsl main_fs)")) return false;
+    if (!Build(S.fs, FragmentGlue(skin), deps, 'f', 14, 0, "fragment (character.hlsl main_fs)")) return false;
 
-    const std::string base = kd + "/data/character/skins/human_male/";
-    if (!S.tex[0].InitFromDDS((base + "human_male_body_diffuse.dds").c_str()) || !S.tex[1].InitFromDDS((base + "human_male_body_normal.dds").c_str()) ||
-        !S.tex[2].InitFromDDS((kd + "/data/items/colormap_default.dds").c_str())) { fprintf(stderr, "[NpcSkin] install textures missing\n"); return false; }
+    {   // the install textures of the male body and head; the units the NPC has no file for get the material's defaults (nothing / flat / white)
+        const std::string base = kd + "/data/character/skins/human_male/";
+        const struct { int unit; const char* file; } files[] = { { 0, "human_male_body_diffuse.dds" }, { 1, "human_male_body_normal.dds" }, { 3, "human_male_body_mask_HI.dds" },
+                                                                 { 5, "human_male_head_diffuse_HI.dds" }, { 6, "human_male_head_normal_HI.dds" }, { 7, "human_male_head_mask.dds" } };
+        for (const auto& f : files) if (!S.tex[f.unit].InitFromDDS((base + f.file).c_str())) { fprintf(stderr, "[NpcSkin] install texture missing: %s\n", f.file); return false; }
+        GpuSamplerDesc sd; const uint8_t none[4] = { 0, 0, 0, 0 }, flat[4] = { 128, 128, 255, 128 };
+        for (int u = 0; u < 13; ++u) {
+            if (S.tex[u].SDLTexture()) continue;
+            S.tex[u].InitFromMemory(u == 4 || u == 11 ? flat : none, 1, 1, sd);
+            if (!S.tex[u].SDLTexture()) return false;
+        }
+    }
     SDL_GPUSamplerCreateInfo sci = {}; sci.min_filter = sci.mag_filter = SDL_GPU_FILTER_LINEAR; sci.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
     sci.address_mode_u = sci.address_mode_v = sci.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT; sci.mip_lod_bias = kDiffuseMipBias; sci.max_lod = 1000.f;   // skin.material: diffuseMap trilinear, mipmap_bias -2
     S.diffuse_smp = SDL_CreateGPUSampler(dev, &sci);
@@ -107,14 +118,18 @@ void Record(const Frame& f) {
     if (!rp) return;
     Ub vu(S.vs), fu(S.fs);
     for (int c = 0; c < 4; ++c) vu.set("vp", f.view_proj + 4 * c, 4, c);
-    const float cam4[4] = { f.cam[0], f.cam[1], f.cam[2], 0.f }, far1 = f.far_clip, gloss = 1.f, wh = -1e5f;
-    fu.set("farClip", &far1, 1); fu.set("cameraPos", cam4, 3); fu.set("glossMult", &gloss, 1); fu.set("waterHeightRel", &wh, 1);
+    const float cam4[4] = { f.cam[0], f.cam[1], f.cam[2], 0.f }, far1 = f.far_clip, wh = -1e5f, zero1 = 0.f, zero4[4] = {};
+    fu.set("md_skintone", zero4, 3);   /* body *= 1 - skintone * mask: 0 = the skin as stored; the per-NPC skin tone is not wired (UNKNOWN source) */ fu.set("md_color", zero4, 4); fu.set("md_muscleBlend", &zero1, 1); fu.set("md_cameraPos", cam4, 3); fu.set("md_farClip", &far1, 1); fu.set("md_waterHeightRel", &wh, 1);
+    fu.set("md_bloodColour", zero4, 4); fu.set("md_hairColor", zero4, 3); fu.set("md_hairMult", zero4, 4); fu.set("md_hairAlpha", zero4, 4); fu.set("md_beardAlpha", zero4, 4);
+    static const float tol = getenv("MD_NPC_SKIN_NODEPTH") ? 1e9f : 0.f; fu.set("depthTol", &tol, 1);   // diagnostic: the depth test against the terrain G-buffer off
     SDL_BindGPUGraphicsPipeline(rp, S.pipe);
     SDL_GPUBufferBinding vb = { f.vbo, 0 }; SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
     SDL_GPUBufferBinding ib = { f.ibo, 0 }; SDL_BindGPUIndexBuffer(rp, &ib, f.idx_elem);
     SDL_GPUBuffer* st[5] = { f.storage[0], f.storage[1], f.storage[2], f.storage[3], f.storage[4] }; SDL_BindGPUVertexStorageBuffers(rp, 0, st, 5);
-    const SDL_GPUTextureSamplerBinding tb[4] = { { S.tex[0].SDLTexture(), S.diffuse_smp }, { S.tex[1].SDLTexture(), S.tex[1].SDLSampler() }, { S.tex[2].SDLTexture(), S.tex[2].SDLSampler() }, { f.terrain_depth, S.tex[1].SDLSampler() } };
-    SDL_BindGPUFragmentSamplers(rp, 0, tb, 4);
+    SDL_GPUTextureSamplerBinding tb[14];
+    for (int u = 0; u < 13; ++u) tb[u] = { S.tex[u].SDLTexture(), u == 0 ? S.diffuse_smp : S.tex[u].SDLSampler() };
+    tb[13] = { f.terrain_depth, S.tex[1].SDLSampler() };
+    SDL_BindGPUFragmentSamplers(rp, 0, tb, 14);
     SDL_PushGPUFragmentUniformData(f.cmd, 0, fu.b.data(), (Uint32)fu.b.size());
     SDL_GPUViewport vpt = { 0.f, 0.f, (float)f.w, (float)f.h, 0.f, 1.f }; SDL_SetGPUViewport(rp, &vpt);
     for (int tier = 0; tier < 2; ++tier) {
