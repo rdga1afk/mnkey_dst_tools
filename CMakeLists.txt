@@ -184,6 +184,13 @@ if(TARGET monkey_dust_mygui OR TARGET monkey_dust::mygui)   # in-tree engine (MD
     target_link_libraries(monkey_dust_editor PRIVATE $<IF:$<TARGET_EXISTS:monkey_dust_mygui>,monkey_dust_mygui,monkey_dust::mygui>)
     target_compile_definitions(monkey_dust_editor PRIVATE MD_CHARACTER_MYGUI=1)
 endif()
+# #207 item 8 step 3: the editor's character body runs the install fragment program (character.hlsl main_fs), compiled at run time like the game's ground / water
+if(MD_HLSL_RUNTIME)
+    target_sources(monkey_dust_editor PRIVATE editor/editor_char_body_live.cpp game/src/render/kenshi_hlsl.cpp game/src/render/spirv_combine.cpp)
+    target_include_directories(monkey_dust_editor PRIVATE ${MD_GLSLANG_INC} ${MD_TOOLS_DIR}/game/src/render)
+    target_link_libraries(monkey_dust_editor PRIVATE glslang SPIRV glslang-default-resource-limits SPIRV-Tools-opt SPIRV-Tools)
+    target_compile_definitions(monkey_dust_editor PRIVATE MD_HLSL_RUNTIME=1)
+endif()
 target_include_directories(monkey_dust_editor PRIVATE
     editor/
     ${MD_TOOLS_DIR}/third_party/imgui

@@ -1,4 +1,8 @@
 #include <monkey_dust/io/kenshi_dir.h>
+#ifdef MD_HLSL_RUNTIME
+#include <vector>
+namespace md { bool CharBodyLiveCompile(std::vector<uint32_t>& spv_out); }   // editor_char_body_live.cpp
+#endif
 #include "character/appearance.h"
 #include "character/face_poses.h"
 #include "character/pose_solver.h"
@@ -113,6 +117,9 @@ void EnsureRtt(int w, int h) {
 }
 
 bool CreatePipelines() {
+#ifdef MD_HLSL_RUNTIME
+    if (getenv("MD_CHAR_LIVE")) { std::vector<uint32_t> spv; ::md::CharBodyLiveCompile(spv); }   // step 1 smoke: the install body program compiles in the editor (design note CHAR_BODY_INSTALL_FS_DESIGN)
+#endif
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/char_preview.vert"; pd.frag_path = "shaders/char_body.frag";
     pd.layout.count = 7; pd.layout.stride = sizeof(Vtx);
