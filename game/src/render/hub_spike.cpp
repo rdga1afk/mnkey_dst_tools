@@ -165,7 +165,7 @@ static void HubTextureThrottle() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
-// MD_HUB_TEX_CHUNKED=1 (default off): a BC1 / BC3 DDS is uploaded in parts. The worker creates the texture and uploads the levels of at most 256 texels in one copy;
+// MD_HUB_TEX_CHUNKED (default on, coordinator 6845842179; 0 = one upload per texture): a BC1 / BC3 DDS is uploaded in parts. The worker creates the texture and uploads the levels of at most 256 texels in one copy;
 // the render thread (FrameTick) uploads the larger levels coarse to fine, at most 2 MB per frame through one reused staging buffer. The sampler's min_lod is the
 // finest complete level, so no level without data is sampled; the texture is drawn from the first part on (town: one 5-21 MB copy per texture made a 40-50 ms frame).
 struct HubChunkJob { GpuTexture* t = nullptr; std::vector<uint8_t> data; size_t off[16] = {}; int w = 0, h = 0, block = 16, level = 0, row = 0; };
@@ -183,7 +183,7 @@ static void HubSetMinLod(GpuTexture* t, int level) {
     t->SetSDLSampler(HubSampler((float)level));
     if (old) SDL_ReleaseGPUSampler(md::GpuDevice::Get().SDLDevice(), old);
 }
-static bool HubChunkedWanted() { static const bool on = getenv("MD_HUB_TEX_CHUNKED") && getenv("MD_HUB_TEX_CHUNKED")[0] == '1'; return on; }
+static bool HubChunkedWanted() { static const bool on = !(getenv("MD_HUB_TEX_CHUNKED") && getenv("MD_HUB_TEX_CHUNKED")[0] == '0'); return on; }
 static bool HubTextureChunked(const std::string& path, GpuTexture* t) {
     FILE* fp = fopen(path.c_str(), "rb"); if (!fp) return false;
     fseek(fp, 0, SEEK_END); const long fsz = ftell(fp); fseek(fp, 0, SEEK_SET);
