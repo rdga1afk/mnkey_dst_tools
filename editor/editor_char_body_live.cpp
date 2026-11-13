@@ -198,7 +198,7 @@ void DrawBody(const BodyArgs& a) {
         Ub fu(S.bfs);
         float one = 1.f, zero = 0.f, far_clip = 100.f;
         fu.set("skintone", a.skintone, 3); fu.set("color", a.shirt, 4); fu.set("muscleBlend", &zero, 1); fu.set("cameraPos", a.zero4, 3); fu.set("farClip", &far_clip, 1);
-        fu.set("waterHeightRel", &zero, 1); fu.set("bloodColour", a.zero4, 4); fu.set("hairColor", a.hair_colour, 3); fu.set("hairMult", a.hair_mult, 4);
+        const float dry = -1.0e5f; fu.set("waterHeightRel", &dry, 1);   // the preview has no water: view-space heights must never read as under it fu.set("bloodColour", a.zero4, 4); fu.set("hairColor", a.hair_colour, 3); fu.set("hairMult", a.hair_mult, 4);
         fu.set("hairAlpha", a.hair_alpha, 4); fu.set("beardAlpha", a.beard_alpha, 4); (void)one;
         SDL_PushGPUFragmentUniformData(a.cmd, 0, fu.b.data(), (Uint32)fu.b.size());
         SDL_GPUBufferBinding vbind = { a.vbo, 0 }, ibind = { a.ibo, 0 };
