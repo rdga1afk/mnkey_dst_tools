@@ -112,8 +112,11 @@ endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # -ffast-math: RE confirms 17K-18K float chain ops in Kenshi+AI.exe = SIMD candidates.
-    # -march=native: Intel HD 520 has AVX2 — enables auto-vectorisation of float4 loops.
-    target_compile_options(monkey_dust PRIVATE -O2 -march=native -ffast-math)
+    # -march=${MD_MARCH} (default native; CI: skylake, the laptop's family): AVX2 auto-vectorisation of float4 loops. A native build on the CI runner emitted AVX-512 (SIGILL on the laptop).
+    if(NOT MD_MARCH)
+        set(MD_MARCH native)
+    endif()
+    target_compile_options(monkey_dust PRIVATE -O2 -march=${MD_MARCH} -ffast-math)
 endif()
 
 if(MONKEY_DUST_EDITOR)
