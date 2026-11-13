@@ -28,6 +28,8 @@ static bool LoadBodyPixels(std::vector<uint8_t>& px, int& w, int& h) {
     return true;
 }
 
+std::vector<float> g_body_tan;   // 4 floats per vertex of the install body mesh (empty without a tangent element)
+
 const char* NpcRender::ResolveBodyTexture() {
     // Only use bundled game asset — no external/system paths.
     static std::string primary_png;
@@ -148,6 +150,7 @@ void NpcRender::Init() {
     if (!body_ok && !md::KenshiDir().empty()) {   // pure body / release: converted from the install at run time
         static HumanBodyData hb;
         body_ok = BuildHumanBody(md::KenshiDir(), hb) && mesh.LoadFromBody(hb);
+        if (body_ok) { g_body_tan = hb.tan; fprintf(stderr, "[NPC] body tangents from the install mesh: %s (%zu vertices)\n", hb.tan.empty() ? "none" : "present", hb.tan.size() / 4); }
     }
     if (body_ok) {
         if (!ozz.Init(mesh))
