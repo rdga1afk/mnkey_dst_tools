@@ -79,8 +79,8 @@ struct Stage {
 
 struct State {
     SDL_GPUDevice* dev = nullptr;
-    Stage bvs, bfs, lvs, lfs;
-    SDL_GPUGraphicsPipeline *gpipe = nullptr, *lpipe = nullptr;
+    Stage bvs, bfs, hfs, lvs, lfs;
+    SDL_GPUGraphicsPipeline *gpipe = nullptr, *hpipe = nullptr, *lpipe = nullptr;
     SDL_GPUSampler* point = nullptr;
     SDL_GPUTexture* gb[3] = {};
     int gw = 0, gh = 0;
@@ -142,6 +142,7 @@ bool Init(SDL_GPUDevice* dev) {
     if (!std::filesystem::exists(chr) || !std::filesystem::exists(rtt)) { fprintf(stderr, "[CharBodyLive] install programs missing\n"); return false; }
     if (!Build(S.bvs, kBodyVert, {}, 'v', 0, "body vertex")) return false;
     if (!Build(S.bfs, std::string(kBorder) + "#define VPOS SV_Position\n#define main_fs main\n#include \"" + chr + "\"\n", Deps(dir, chr), 'f', 13, "body fragment (character.hlsl)")) return false;
+    if (!Build(S.hfs, std::string(kBorder) + "#define VPOS SV_Position\n#define hair_fs main\n#include \"" + chr + "\"\n", Deps(dir, chr), 'f', 3, "hair fragment (character.hlsl hair_fs)")) return false;
     if (!Build(S.lvs, kLightVert, {}, 'v', 0, "light vertex")) return false;
     if (!Build(S.lfs, "#define VPOS SV_Position\n#define main_fs main\n#include \"" + rtt + "\"\n", Deps(dir, rtt), 'f', 5, "light fragment (rtt.hlsl)")) return false;
 
@@ -160,6 +161,9 @@ bool Init(SDL_GPUDevice* dev) {
     gi.target_info.color_target_descriptions = ct; gi.target_info.num_color_targets = 3; gi.target_info.has_depth_stencil_target = true; gi.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     S.gpipe = SDL_CreateGPUGraphicsPipeline(dev, &gi);
     if (!S.gpipe) { fprintf(stderr, "[CharBodyLive] G-buffer pipeline: %s\n", SDL_GetError()); return false; }
+    gi.fragment_shader = S.hfs.sh; gi.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;   // the hair material has cull_hardware none
+    S.hpipe = SDL_CreateGPUGraphicsPipeline(dev, &gi);
+    if (!S.hpipe) { fprintf(stderr, "[CharBodyLive] hair pipeline: %s\n", SDL_GetError()); return false; }
 
     SDL_GPUColorTargetDescription lc = {}; lc.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     lc.blend_state.enable_blend = true; lc.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE; lc.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
@@ -205,6 +209,20 @@ void DrawBody(const BodyArgs& a) {
         SDL_BindGPUVertexBuffers(rp, 0, &vbind, 1); SDL_BindGPUIndexBuffer(rp, &ibind, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         SDL_BindGPUFragmentSamplers(rp, 0, a.tex, 13);
         SDL_DrawGPUIndexedPrimitives(rp, a.ni, 1, 0, 0, 0);
+        SDL_BindGPUGraphicsPipeline(rp, S.hpipe);
+        for (int h = 0; h < a.num_hair; ++h) {
+            const HairDraw& hd = a.hair[h];
+            SDL_PushGPUVertexUniformData(a.cmd, 0, vu.b.data(), (Uint32)vu.b.size());
+            Ub hu(S.hfs); const float thr[3] = { hd.threshold, hd.threshold, hd.threshold };
+            hu.set("color", hd.colour, 3); hu.set("diffuseChannel", hd.diffuse, 4); hu.set("alphaChannel", hd.alpha, 4); hu.set("threshold", thr, 3);
+            hu.set("cameraPos", a.zero4, 3); hu.set("farClip", &far_clip, 1); hu.set("specularMult", &hd.specular, 1);
+            SDL_PushGPUFragmentUniformData(a.cmd, 0, hu.b.data(), (Uint32)hu.b.size());
+            SDL_GPUBufferBinding hv = { hd.vbo, 0 }, hi = { hd.ibo, 0 };
+            SDL_BindGPUVertexBuffers(rp, 0, &hv, 1); SDL_BindGPUIndexBuffer(rp, &hi, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            const SDL_GPUTextureSamplerBinding ht[3] = { hd.tex, hd.none, hd.none };
+            SDL_BindGPUFragmentSamplers(rp, 0, ht, 3);
+            SDL_DrawGPUIndexedPrimitives(rp, hd.ni, 1, 0, 0, 0);
+        }
         SDL_EndGPURenderPass(rp);
     }
     // 2. Light: the install character-screen light over the G-buffer, blended onto the preview colour (empty pixels return 0,0,0,0).

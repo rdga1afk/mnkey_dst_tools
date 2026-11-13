@@ -499,6 +499,15 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         ba.tex[5] = tx(g_tex_head, none); ba.tex[6] = tx(g_nrm_head, g_tex_flat); ba.tex[7] = tx(g_mask_head, g_tex_maskr); ba.tex[8] = hh ? tx(ha.head_tex, none) : tx(none, none);
         ba.tex[9] = bh ? tx(be.head_tex, none) : tx(none, none); ba.tex[10] = tx(none, none); ba.tex[11] = tx(none, none); ba.tex[12] = tx(none, none);
         ba.irr = {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}; ba.spec = {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()};
+        for (Attach* at : {&g_hair, &g_beard}) {
+            if (!at->ok || !at->vbo.SDLBuffer() || !at->tex.SDLTexture() || ba.num_hair >= 2) continue;
+            md::charlive::HairDraw& hd = ba.hair[ba.num_hair++];
+            hd.vbo = at->vbo.SDLBuffer(); hd.ibo = at->ibo.SDLBuffer(); hd.ni = uint32_t(at->ni);
+            hd.tex = {at->tex.SDLTexture(), at->tex.SDLSampler()}; hd.none = {none.SDLTexture(), none.SDLSampler()};
+            for (int k = 0; k < 3; ++k) hd.colour[k] = hrgb[k];
+            for (int k = 0; k < 4; ++k) { hd.diffuse[k] = at->diffuse[k]; hd.alpha[k] = at->alpha[k]; }
+            hd.threshold = at->threshold; hd.specular = at->specular;
+        }
         md::charlive::DrawBody(ba);
         GpuCommandBuffer::ColorPassDesc c2; c2.cmd = cmd; c2.color_tex[0] = g_color.SDLTexture(); c2.depth_tex = g_depth.SDLTexture(); c2.load_color = true; c2.load_depth = true;
         cb.BeginColorPass(c2); rp = cb.SDLPass(); if (!rp) return; pv = GpuPassView::FromRaw(rp, cmd);
@@ -533,6 +542,9 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         pv.BindFragmentSamplers(0, tb, 10);
         pv.DrawIndexed(uint32_t(g_ni), 1, 0, 0, 0);
     }
+#ifdef MD_HLSL_RUNTIME
+    if (!live)
+#endif
     if (g_hair_pipe.SDLPipeline()) {
         const auto rgb = g_session->HairRgb();
         for (Attach* a : {&g_hair, &g_beard}) {
