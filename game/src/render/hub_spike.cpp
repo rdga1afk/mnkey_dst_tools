@@ -1,3 +1,5 @@
+#include <monkey_dust/render/gpu_device.h>
+#include <deque>
 #include <cstdlib>
 #include <thread>
 #include <atomic>
@@ -142,9 +144,12 @@ static std::string PlacementKey(const HubPlacement& p) {
 static std::atomic<uint64_t> s_hub_frame{0};
 static std::atomic<bool> s_hub_main_set{false};
 static std::thread::id s_hub_main;
+static void HubChunkTick();
+static bool HubChunkedWanted();
 void HubSpike::FrameTick() {
     if (!s_hub_main_set.load()) { s_hub_main = std::this_thread::get_id(); s_hub_main_set.store(true); }
     s_hub_frame.fetch_add(1);
+    if (HubChunkedWanted()) HubChunkTick();
 }
 // MD_HUB_TEX_PER_FRAME=n (default 0 = off): the worker's texture create + upload + mip generation competes with the frame on the GPU (town: frames > 33 ms
 // 5 / 3 with the textures, 2 / 0 without them); the worker waits until the render thread has advanced a frame once it started n uploads in this one
@@ -160,6 +165,92 @@ static void HubTextureThrottle() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
+// MD_HUB_TEX_CHUNKED=1 (default off): a BC1 / BC3 DDS is uploaded in parts. The worker creates the texture and uploads the levels of at most 256 texels in one copy;
+// the render thread (FrameTick) uploads the larger levels coarse to fine, at most 2 MB per frame through one reused staging buffer. The sampler's min_lod is the
+// finest complete level, so no level without data is sampled; the texture is drawn from the first part on (town: one 5-21 MB copy per texture made a 40-50 ms frame).
+struct HubChunkJob { GpuTexture* t = nullptr; std::vector<uint8_t> data; size_t off[16] = {}; int w = 0, h = 0, block = 16, level = 0, row = 0; };
+static std::mutex s_chunk_mu;
+static std::deque<HubChunkJob*> s_chunk_q;
+static SDL_GPUSampler* HubSampler(float min_lod) {
+    SDL_GPUSamplerCreateInfo si = {};   // the GpuSamplerDesc default HubTexture used: linear, linear mips, repeat
+    si.min_filter = si.mag_filter = SDL_GPU_FILTER_LINEAR; si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+    si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    si.min_lod = min_lod; si.max_lod = 1000.f;
+    return SDL_CreateGPUSampler(md::GpuDevice::Get().SDLDevice(), &si);
+}
+static void HubSetMinLod(GpuTexture* t, int level) {
+    SDL_GPUSampler* old = t->TakeSDLSampler();
+    t->SetSDLSampler(HubSampler((float)level));
+    if (old) SDL_ReleaseGPUSampler(md::GpuDevice::Get().SDLDevice(), old);
+}
+static bool HubChunkedWanted() { static const bool on = getenv("MD_HUB_TEX_CHUNKED") && getenv("MD_HUB_TEX_CHUNKED")[0] == '1'; return on; }
+static bool HubTextureChunked(const std::string& path, GpuTexture* t) {
+    FILE* fp = fopen(path.c_str(), "rb"); if (!fp) return false;
+    fseek(fp, 0, SEEK_END); const long fsz = ftell(fp); fseek(fp, 0, SEEK_SET);
+    if (fsz < 128) { fclose(fp); return false; }
+    std::vector<uint8_t> f((size_t)fsz); const size_t got = fread(f.data(), 1, f.size(), fp); fclose(fp);
+    if (got != f.size() || memcmp(f.data(), "DDS ", 4) != 0) return false;
+    auto r32 = [&](size_t o) { uint32_t v; memcpy(&v, f.data() + o, 4); return v; };
+    const uint32_t fourcc = r32(84); const bool dxt1 = fourcc == 0x31545844u, dxt5 = fourcc == 0x35545844u;
+    if (!dxt1 && !dxt5) return false;
+    HubChunkJob* j = new HubChunkJob; j->h = (int)r32(12); j->w = (int)r32(16); j->block = dxt1 ? 8 : 16;
+    int mips = (int)r32(28); if (mips < 1) mips = 1; if (mips > 16) mips = 16;
+    size_t o = 128; int first_small = -1;
+    for (int m = 0, mw = j->w, mh = j->h; m < mips; ++m, mw = mw > 1 ? mw / 2 : 1, mh = mh > 1 ? mh / 2 : 1) {
+        j->off[m] = o; o += (size_t)((mw + 3) / 4) * ((mh + 3) / 4) * j->block;
+        if (first_small < 0 && mw <= 256 && mh <= 256) first_small = m;
+    }
+    if (o > f.size() || first_small < 0) { delete j; return false; }
+    GpuSamplerDesc sd; sd.gen_mipmap = true;
+    if (!t->InitCompute(j->w, j->h, dxt1 ? SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM : SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, (uint32_t)mips, sd)) { delete j; return false; }
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    {   // the small levels in one copy
+        const size_t bytes = o - j->off[first_small];
+        SDL_GPUTransferBufferCreateInfo bi = {}; bi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD; bi.size = (Uint32)bytes;
+        SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &bi); if (!tb) { delete j; return false; }
+        if (void* p = SDL_MapGPUTransferBuffer(dev, tb, false)) { memcpy(p, f.data() + j->off[first_small], bytes); SDL_UnmapGPUTransferBuffer(dev, tb); }
+        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+        for (int m = first_small, mw = std::max(1, j->w >> first_small), mh = std::max(1, j->h >> first_small); m < mips; ++m, mw = mw > 1 ? mw / 2 : 1, mh = mh > 1 ? mh / 2 : 1) {
+            SDL_GPUTextureTransferInfo src = {}; src.transfer_buffer = tb; src.offset = (Uint32)(j->off[m] - j->off[first_small]);
+            src.pixels_per_row = (Uint32)((mw + 3) & ~3); src.rows_per_layer = (Uint32)((mh + 3) & ~3);
+            SDL_GPUTextureRegion dst = {}; dst.texture = t->SDLTexture(); dst.mip_level = (Uint32)m; dst.w = (Uint32)mw; dst.h = (Uint32)mh; dst.d = 1;
+            SDL_UploadToGPUTexture(cp, &src, &dst, false);
+        }
+        SDL_EndGPUCopyPass(cp); SDL_SubmitGPUCommandBuffer(cmd); SDL_ReleaseGPUTransferBuffer(dev, tb);
+    }
+    HubSetMinLod(t, first_small);
+    if (first_small == 0) { delete j; return true; }
+    j->t = t; j->data = std::move(f); j->level = first_small - 1; j->row = 0;
+    std::lock_guard<std::mutex> lk(s_chunk_mu); s_chunk_q.push_back(j);
+    return true;
+}
+static void HubChunkTick() {
+    HubChunkJob* j = nullptr;
+    { std::lock_guard<std::mutex> lk(s_chunk_mu); if (s_chunk_q.empty()) return; j = s_chunk_q.front(); }
+    constexpr size_t kMax = 2u << 20;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    static SDL_GPUTransferBuffer* stage = nullptr;
+    if (!stage) { SDL_GPUTransferBufferCreateInfo bi = {}; bi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD; bi.size = (Uint32)kMax; stage = SDL_CreateGPUTransferBuffer(dev, &bi); if (!stage) return; }
+    const int mw = std::max(1, j->w >> j->level), mh = std::max(1, j->h >> j->level);
+    const int bw = (mw + 3) / 4, bh = (mh + 3) / 4; const size_t row_bytes = (size_t)bw * j->block;
+    const int rows = std::min(bh - j->row, (int)std::max<size_t>(1, kMax / row_bytes));
+    if ((size_t)rows * row_bytes > kMax) return;   // a block row over 2 MB (a texture wider than 32 k texels): not expected
+    if (void* p = SDL_MapGPUTransferBuffer(dev, stage, true)) { memcpy(p, j->data.data() + j->off[j->level] + (size_t)j->row * row_bytes, (size_t)rows * row_bytes); SDL_UnmapGPUTransferBuffer(dev, stage); }
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev); if (!cmd) return;
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src = {}; src.transfer_buffer = stage; src.offset = 0; src.pixels_per_row = (Uint32)(bw * 4); src.rows_per_layer = (Uint32)(rows * 4);
+    SDL_GPUTextureRegion dst = {}; dst.texture = j->t->SDLTexture(); dst.mip_level = (Uint32)j->level; dst.y = (Uint32)(j->row * 4);
+    dst.w = (Uint32)mw; dst.h = (Uint32)std::min(rows * 4, mh - j->row * 4); dst.d = 1;
+    SDL_UploadToGPUTexture(cp, &src, &dst, false);
+    SDL_EndGPUCopyPass(cp); SDL_SubmitGPUCommandBuffer(cmd);
+    j->row += rows;
+    if (j->row >= bh) {   // the level is complete: sample it from now on
+        HubSetMinLod(j->t, j->level);
+        j->row = 0;
+        if (--j->level < 0) { std::lock_guard<std::mutex> lk(s_chunk_mu); s_chunk_q.pop_front(); delete j; }
+    }
+}
 static GpuTexture* HubTexture(const std::string& tp) {
     static std::mutex mu; static std::condition_variable cv;
     static std::unordered_map<std::string, GpuTexture*> cache; static std::unordered_set<std::string> loading;
@@ -171,7 +262,8 @@ static GpuTexture* HubTexture(const std::string& tp) {
     lk.unlock();
     HubTextureThrottle();
     std::string load = tp; GpuTexture* t = new GpuTexture; GpuSamplerDesc sd; sd.gen_mipmap = true;
-    bool ok = t->InitFromFile(load.c_str(), sd);
+    bool ok = HubChunkedWanted() && load.size() > 4 && load.compare(load.size() - 4, 4, ".dds") == 0 && HubTextureChunked(load, t);
+    if (!ok) ok = t->InitFromFile(load.c_str(), sd);
     if (!ok) { const size_t hi = load.rfind("_HI.dds"); if (hi != std::string::npos) { load.erase(hi, 3); ok = t->InitFromFile(load.c_str(), sd); } }   // the record names the high-quality variant, the install may only have the plain one
     if (!ok) { delete t; t = nullptr; }
     lk.lock();
