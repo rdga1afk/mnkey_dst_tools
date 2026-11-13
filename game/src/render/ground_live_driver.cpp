@@ -231,6 +231,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     }
     pass_.SetCacheView(use_cache ? &cview : nullptr);
     const bool ran = pass_.Run(cmd, f, groups, ng);
+    if (ran && npc_hook_) { SDL_GPUTexture* t3[3] = { pass_.Target(0), pass_.Target(1), pass_.Target(2) }; npc_hook_(cmd, t3, pass_.DepthStencil(), pass_.Width(), pass_.Height(), npc_user_); }
     if (ran && !no_decode) pass_.Decode(cmd);
     if (pass_.BakeReady()) BakeCache(dev, cmd, f, frame);
     if (ran && light_) {   // the original main_fs; the camera in centred Kenshi units (0.1 m, world centre 14745.6 m) is the origin of the ambient map mapping

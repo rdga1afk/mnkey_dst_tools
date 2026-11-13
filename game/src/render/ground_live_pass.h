@@ -93,6 +93,10 @@ public:
     bool FogReady() const { return fog_.fs != nullptr; }
     // Clears the targets, fills the stencil from the slot texture (one draw per bit of the largest slot), then draws each group with the stencil EQUAL test.
     bool Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveGroup* groups, int n);
+    SDL_GPUTexture* Target(int i) const { return t_[i]; }   // the three raw G-buffer targets and their depth-stencil, for the NPC pass between Run() and Decode()
+    SDL_GPUTexture* DepthStencil() const { return ds_; }
+    int Width() const { return tw_; }
+    int Height() const { return th_; }
     void SetPhase(int p) { phase_ = p; }   // measurement: shade one quad in eight (-1: all)
 private:
     struct Variant {

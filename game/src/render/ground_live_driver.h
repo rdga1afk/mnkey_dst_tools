@@ -20,6 +20,10 @@ class GroundLiveDriver {
 public:
     static GroundLiveDriver& Get();
     static bool Wanted();   // MD_GROUND_LIVE=1
+    // NPC G-buffer pass: called after the ground Run() and before Decode() / Light() with the raw targets (set per frame by the caller, cleared by it).
+    using NpcHook = void (*)(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, void* user);
+    float FarClip() const { return far_clip_; }
+    void SetNpcHook(NpcHook h, void* user) { npc_hook_ = h; npc_user_ = user; }
     void Shutdown() { arrays_.Stop(); }   // before GpuDevice::Shutdown(): joins the layer-array worker, whose build in flight uses the GPU device (ASan double-free at exit, PR #164 6856689259)
     static bool OrigLight();   // MD_GROUND_LIVE_ORIGLIGHT=1 (with MD_GROUND_LIVE_LIGHT): the ground is lit by the original main_fs (GroundLivePass::Light) instead of TS_KenshiLight
     struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, lists_near = 0, no_slot_near = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; uint64_t cache_strips = 0, cache_texels = 0, cache_invalidations = 0, cache_waits = 0, cache_nolist = 0; };
@@ -53,6 +57,7 @@ private:
     std::unordered_map<uint64_t, int> node_list_;   // node (origin, level) -> index in lists_ (-1: empty list)
     std::vector<PatchList> lists_;                  // distinct patch lists seen so far
     const GroundLiveLightParams* light_ = nullptr;
+    NpcHook npc_hook_ = nullptr; void* npc_user_ = nullptr;
     GroundLiveFrame last_frame_; bool lit_frame_ = false;   // the inputs of the last Frame() that ran the light pass (DrawFog)
     SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *clear_ = nullptr, *distant_ = nullptr;
     float far_clip_ = 40000.f; int max_groups_ = 31;

@@ -10,6 +10,7 @@
 #include <string>
 #include "town_foliage.h"
 #include "npc_render_internal.h"
+#include "npc_skin_live.h"
 #include <monkey_dust/render/kenshi_sky.h>
 #include <monkey_dust/render/kenshi_hdr.h>
 extern int g_opt_ground_split;
@@ -221,6 +222,9 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
                 llp.spec_cube = sr_gr.terrain.KenshiSpecularityCube(); llp.spec_smp = sr_gr.terrain.KenshiSpecularitySampler();
             }
             md::GroundLiveDriver::Get().SetLight(orig_light ? &llp : nullptr);
+            struct SkinCtx { NpcRender* self; const MdCamera* cam; SDL_GPUTexture* terrain_depth; } skin_ctx{ this, &cam, gtsp.GBufferDepth().SDLTexture() };
+            md::GroundLiveDriver::Get().SetNpcHook(skin_live_ ? +[](SDL_GPUCommandBuffer* c, SDL_GPUTexture* const t[3], SDL_GPUTexture* d, int w, int h, void* u) {
+                auto* x = static_cast<SkinCtx*>(u); x->self->RecordSkinPass(c, t, d, w, h, *x->cam, x->terrain_depth); } : nullptr, &skin_ctx);
             md::GroundLiveDriver::Get().Frame(md::GpuDevice::Get().SDLDevice(), fc.cmd, gtsp.GBufferDepth().SDLTexture(), gtsp.GBufferColor().SDLTexture(), gtsp.GBufferSlot(), gtsp.GBufferDepth().Width(), gtsp.GBufferDepth().Height(),
                                               gtsp.S7InvVp(), sr_gr.granite_abs_cam_, (uint64_t)sr_gr.frame_counter_pvt_);
             gtsp.SetLiveTargets(orig_light && md::GroundLiveDriver::Get().Pass().Lit() ? md::GroundLiveDriver::Get().Pass().Lit() : md::GroundLiveDriver::Get().Pass().AlbedoRgb(), md::GroundLiveDriver::Get().Pass().AuxB());   // the ground resolve of this pass reads the live material
@@ -469,8 +473,26 @@ void NpcRender::DrawSkyHdr(const MdCamera& cam, SDL_GPURenderPass* rp, SDL_GPUCo
     pv.Draw(3, 1, 0, 0);
 }
 
+void NpcRender::RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, const MdCamera& cam, SDL_GPUTexture* terrain_depth)
+{
+    if (!skin_live_ || !vbuf.SDLBuffer() || !ibuf.SDLBuffer()) return;
+    const float asp = (float)window_get_width() / (float)window_get_height();
+    const Mat4 vp = cam.ViewProjMatrix(asp);
+    md::npcskin::Frame f;
+    f.cmd = cmd; for (int i = 0; i < 3; ++i) f.target[i] = target[i];
+    f.depth = depth; f.terrain_depth = terrain_depth; f.w = w; f.h = h; f.view_proj = mat4_ptr(vp);
+    cam.CamPosToArr(f.cam); f.far_clip = md::GroundLiveDriver::Get().FarClip();
+    f.vbo = skin_vbo.SDLBuffer(); f.ibo = ibuf.SDLBuffer(); f.idx_elem = idx_elem; f.index_count = index_count;
+    f.storage[0] = TransformSoA::Get().SDLTransformBuffer(); f.storage[1] = vis_buf.SDLBuffer(); f.storage[2] = TransformSoA::Get().SDLFactionBuffer();
+    f.storage[3] = AnimationSoA::Get().SDLBonesBuffer(); f.storage[4] = TransformSoA::Get().SDLSkinBuffer();
+    f.n01 = t01_count_; f.n2 = t2_count_; f.t2_base = (uint32_t)MAX_ANIMATED_NPC;
+    md::npcskin::Record(f);
+    skin_drawn_ = (f.n01 + f.n2) > 0;
+}
+
 void NpcRender::DrawNpcForwardAndDissolve(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp)
 {
+    if (skin_drawn_) { skin_drawn_ = false; return; }   // the install skin pass drew the NPCs into the G-buffer this frame (dissolving NPCs are not drawn on this route yet)
     if (!pipeline.SDLPipeline()) return;   // no NPC shader in this build (npc_instanced.frag is not public yet): the NPCs are skipped, the world is drawn
     GpuPassView pv = GpuPassView::FromRaw(rp, fc.cmd);
     pv.BindPipeline(&pipeline);

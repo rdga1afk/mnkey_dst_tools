@@ -97,6 +97,9 @@ struct NpcRender {
     // Vertex/index geometry
     GpuStaticBuffer    vbuf;
     GpuStaticBuffer    body_color_buf;
+    GpuStaticBuffer    skin_vbo;   // install skin program stream (npc_skin_live.h): SkinVertex + tangent + binormal of the install mesh
+    bool               skin_live_ = false, skin_drawn_ = false;   // skin_drawn_: the install skin pass drew this frame, the forward NPC pass is skipped
+    void RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, const MdCamera& cam, SDL_GPUTexture* terrain_depth);
     GpuStaticBuffer    ibuf;
     GpuDepthTexture    depth, depth_alt;   // #194: depth_alt keeps the other size of the dynamic resolution
     uint32_t           index_count = 0;

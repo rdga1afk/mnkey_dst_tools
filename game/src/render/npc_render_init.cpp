@@ -2,6 +2,7 @@
 #include "town_buildings.h"
 #include "town_foliage.h"
 #include "npc_render_internal.h"
+#include "npc_skin_live.h"
 #include <monkey_dust/io/dds_decode.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/io/data_files.h>
@@ -28,7 +29,7 @@ static bool LoadBodyPixels(std::vector<uint8_t>& px, int& w, int& h) {
     return true;
 }
 
-std::vector<float> g_body_tan;   // 4 floats per vertex of the install body mesh (empty without a tangent element)
+std::vector<float> g_body_tan, g_body_bin;   // 4 floats per vertex of the install body mesh (empty without a tangent element)
 
 const char* NpcRender::ResolveBodyTexture() {
     // Only use bundled game asset — no external/system paths.
@@ -150,7 +151,7 @@ void NpcRender::Init() {
     if (!body_ok && !md::KenshiDir().empty()) {   // pure body / release: converted from the install at run time
         static HumanBodyData hb;
         body_ok = BuildHumanBody(md::KenshiDir(), hb) && mesh.LoadFromBody(hb);
-        if (body_ok) { g_body_tan = hb.tan; fprintf(stderr, "[NPC] body tangents from the install mesh: %s (%zu vertices)\n", hb.tan.empty() ? "none" : "present", hb.tan.size() / 4); }
+        if (body_ok) { g_body_tan = hb.tan; g_body_bin = hb.bin; fprintf(stderr, "[NPC] body tangents from the install mesh: %s (%zu vertices)\n", hb.tan.empty() ? "none" : "present", hb.tan.size() / 4); }
     }
     if (body_ok) {
         if (!ozz.Init(mesh))
@@ -223,6 +224,15 @@ void NpcRender::Init() {
                 }
                 body_color_buf.Init(0x8892u, combined, nv * 56u);
                 delete[] combined;
+                if (g_body_tan.size() == (size_t)nv * 4 && g_body_bin.size() == (size_t)nv * 3) {   // the install skin program's stream: stride 84
+                    std::vector<uint8_t> sv((size_t)nv * md::npcskin::kStride, 0);
+                    for (uint32_t i = 0; i < nv; ++i) {
+                        uint8_t* d = &sv[(size_t)i * md::npcskin::kStride];
+                        memcpy(d, &verts[i], 52); memcpy(d + 56, &g_body_tan[(size_t)i * 4], 16); memcpy(d + 72, &g_body_bin[(size_t)i * 3], 12);
+                    }
+                    skin_vbo.Init(0x8892u, sv.data(), (uint32_t)sv.size());
+                    skin_live_ = md::npcskin::Init(md::GpuDevice::Get().SDLDevice(), md::KenshiDir());
+                }
             }
         }
     } else {
