@@ -159,7 +159,7 @@ def cmd_run(args) -> int:
     # (ShutdownGame(save_world=false)), not from this directory being a
     # true sandbox yet. Full symlink/CoW population is still Backlog.
 
-    binary = REPO_ROOT / "build/game/monkey_dust"
+    binary = REPO_ROOT / os.environ.get("MD_GAME_BIN", "build/game/monkey_dust")   # MD_GAME_BIN: the release binary for the gates (owner 13.11), same variable as scripts/accept_route.sh
     if not binary.exists():
         print(f"[md_ctl run] game binary not built: {binary} (run `md_ctl build game`)")
         return 2

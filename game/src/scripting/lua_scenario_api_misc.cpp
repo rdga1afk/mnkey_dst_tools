@@ -1,3 +1,4 @@
+#include "render/ground_live_hdr.h"
 #include "lua_scenario_api_internal.h"
 #include "render/npc_render.h"
 #include "render/scene_render.h"
@@ -579,9 +580,10 @@ extern float g_adapt_override_mean, g_adapt_override_dt;
 int l_md_adapt_lum_debug(lua_State* L) { g_adapt_override_mean = (float)luaL_checknumber(L, 1); g_adapt_override_dt = (float)luaL_optnumber(L, 2, -1.0); return 0; }
 int l_md_adapt_lum_read(lua_State* L) {
     auto& sr = SceneRender::Get();
-    SDL_GPUTexture* t = sr.ground_split_pass_.LumTex();
+    const bool install = !sr.lum_adapt_active_ && md::GroundLiveHdr::Active();   // release: the install hdrfp4 chain's rt_adaptedLum (log luminance)
+    SDL_GPUTexture* t = install ? md::GroundLiveHdr::Get().AdaptedLumTex() : sr.ground_split_pass_.LumTex();
     float v = -1.f;
-    if (t && sr.lum_adapt_active_) {
+    if (t && (sr.lum_adapt_active_ || install)) {
         md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
         SDL_GPUTransferBufferCreateInfo tci{}; tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD; tci.size = 4;
         SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tci);
@@ -597,7 +599,7 @@ int l_md_adapt_lum_read(lua_State* L) {
         if (m) { memcpy(&v, m, 4); SDL_UnmapGPUTransferBuffer(dev, tb); }
         SDL_ReleaseGPUTransferBuffer(dev, tb);
     }
-    lua_pushnumber(L, v); return 1;
+    lua_pushnumber(L, v); lua_pushstring(L, install ? "install" : (sr.lum_adapt_active_ ? "translated" : "none")); return 2;
 }
 // md.light_sun_dir() -> {x, y, z}: LightSystem's direction TO the sun (the negated sun_dir).
 int l_md_light_sun_dir(lua_State* L) {
