@@ -10,6 +10,7 @@ extern const char* const md_build_title;   // generated at build time: cmake/bui
 // Hot-reload stub: editor_console.cpp /reload-shaders — no-op in game build.
 void EditorReloadAllShaderPipelines() {}
 // scenario bursts paced by the real game loop's frame cap (md.set_burst_paced, power runs); the platform header stays in main.cpp
+bool g_dynres_input_event = false; // a key, wheel or button-held mouse motion since the last rendered frame (dynres v2 step 4; the controller clears it)
 void ScenarioPacedFrameWait(uint64_t& prev_ns) { window_frame_cap_wait(prev_ns); }
 void ScenarioNoteActivity() { window_note_activity(); }
 #endif
@@ -104,6 +105,7 @@ int main(int argc, char** argv)
         {
             SDL_Event _ev;
             while (SDL_PollEvent(&_ev)) {
+                if (_ev.type == SDL_EVENT_KEY_DOWN || _ev.type == SDL_EVENT_MOUSE_WHEEL || (_ev.type == SDL_EVENT_MOUSE_MOTION && _ev.motion.state != 0)) g_dynres_input_event = true;
 #ifdef MONKEY_DUST_EDITOR
                 ImGui_ImplSDL3_ProcessEvent(&_ev);
 #endif

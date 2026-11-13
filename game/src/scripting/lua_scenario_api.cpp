@@ -301,6 +301,7 @@ static int l_md_set_dyn_res(lua_State* L) {
 }
 static int l_md_wall_ms(lua_State* L) { lua_pushnumber(L, (double)SDL_GetTicksNS() * 1e-6); return 1; }   // md.wall_ms(): monotonic wall clock in ms (scenario Lua has no os / io): per-frame wall time of a flight
 static int l_md_dyn_res_state(lua_State* L) { lua_pushnumber(L, g_dynres_cur); return 1; }
+static int l_md_push_key(lua_State* L) { SDL_Event ev = {}; ev.type = SDL_EVENT_KEY_DOWN; ev.key.scancode = (SDL_Scancode)luaL_checkinteger(L, 1); ev.key.down = true; SDL_PushEvent(&ev); ev.type = SDL_EVENT_KEY_UP; ev.key.down = false; SDL_PushEvent(&ev); return 0; }   // md.push_key(scancode): a synthetic key press (dynres input oracle)
 extern float g_dynres_ema; extern int g_dynres_hold; extern long g_dynres_changes;
 static int l_md_set_horizon_cull(lua_State* L) { md::HorizonCullSet(lua_toboolean(L, 1) != 0); return 0; }   // md.set_horizon_cull(on): CPU horizon map drops terrain nodes hidden behind terrain (#207); default off
 static int l_md_horizon_cull_stats(lua_State* L) { const md::HorizonCullStats s = md::HorizonCullGetStats(); lua_pushinteger(L, s.kept); lua_pushinteger(L, s.dropped); lua_pushnumber(L, s.filter_ms); lua_pushnumber(L, s.build_ms); return 4; }   // md.horizon_cull_stats() -> kept, dropped, render-thread filter ms, worker table build ms (last frame)
@@ -520,6 +521,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_dyn_res", l_md_set_dyn_res);
     sys.RegisterNamespaceFunction("dyn_res_state", l_md_dyn_res_state);
+    sys.RegisterNamespaceFunction("push_key", l_md_push_key);
     sys.RegisterNamespaceFunction("set_dyn_res_damping", l_md_set_dyn_res_damping);
     sys.RegisterNamespaceFunction("set_horizon_cull", l_md_set_horizon_cull);
     sys.RegisterNamespaceFunction("horizon_cull_stats", l_md_horizon_cull_stats);
