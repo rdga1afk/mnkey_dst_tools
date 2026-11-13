@@ -12,6 +12,8 @@ struct Compiled {
     std::string log;       // glslang info log on failure
     double compile_ms = 0; // 0 when taken from the cache
     bool from_cache = false;
+    bool valid = true;      // spirv-val (Vulkan 1.1) verdict; an invalid module must never reach the driver (ANV hangs in pipeline creation)
+    std::string valid_log;  // first validator message when !valid
     std::string cache_path; // the SPIR-V file of the cache (the HAL can load a pipeline from it)
 };
 

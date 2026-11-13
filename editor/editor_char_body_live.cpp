@@ -132,6 +132,7 @@ std::vector<std::string> Deps(const std::string& dir, const std::string& orig) {
 bool Build(Stage& st, const std::string& glue, const std::vector<std::string>& deps, char stage, int samplers, const char* what) {
     hlsl::Compiled c;
     if (!hlsl::Compile(glue, deps, stage, c)) { fprintf(stderr, "[CharBodyLive] %s: %s\n", what, c.log.c_str()); return false; }
+    if (!c.valid) { fprintf(stderr, "[CharBodyLive] %s: SPIR-V validation failed, program skipped: %s\n", what, c.valid_log.c_str()); return false; }
     std::vector<hlsl::UniformMember> m;
     if (!hlsl::GlobalBlockMembers(c.spv, m, st.size)) { st.size = 0; }
     for (const auto& u : m) st.mem[u.name] = { u.offset, u.array_stride };

@@ -2,6 +2,7 @@
 #include <glslang/Public/ShaderLang.h>
 #include "spirv_combine.h"
 #include <spirv-tools/optimizer.hpp>
+#include <spirv-tools/libspirv.hpp>
 #include <glslang/Public/ResourceLimits.h>
 #include <SPIRV/GlslangToSpv.h>
 #include <chrono>
@@ -169,6 +170,15 @@ const char* Version() { return "glslang-1.4.363"; }
 // MD_SPV_OPT=1: after legalization and sampler combine, SPIRV-Tools' performance passes run on the result (glslang is called with its optimizer off; fxc-compiled originals reach DXVK optimized). Part of the cache key.
 bool SpvOptOn() { static const bool on = [] { const char* e = getenv("MD_SPV_OPT"); return e && e[0] == '1'; }(); return on; }
 
+static void ValidateModule(Compiled& out) {
+    spvtools::SpirvTools t(SPV_ENV_VULKAN_1_1); std::string m;
+    t.SetMessageConsumer([&m](spv_message_level_t, const char*, const spv_position_t&, const char* msg) { if (m.empty()) m = msg; });
+    out.valid = t.Validate(out.spv.data(), out.spv.size());
+    out.valid_log = out.valid ? std::string() : m;
+    static std::set<std::string> logged;   // log each invalid module once
+    if (!out.valid && logged.insert(out.cache_path).second) fprintf(stderr, "[SpvVal] %s: %s\n", out.cache_path.c_str(), m.c_str());
+}
+
 bool Compile(const std::string& glue, const std::vector<std::string>& dep_files, char stage, Compiled& out) {
     auto t0 = std::chrono::steady_clock::now();
     uint64_t h = 1469598103934665603ull;
@@ -181,7 +191,7 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
         std::string b = ReadFile(path);
         if (!b.empty() && b.size() % 4 == 0) {
             out.spv.assign(reinterpret_cast<const uint32_t*>(b.data()), reinterpret_cast<const uint32_t*>(b.data()) + b.size() / 4);
-            out.from_cache = true; out.compile_ms = 0; return true;
+            out.from_cache = true; out.compile_ms = 0; ValidateModule(out); return true;
         }
     }
     static bool inited = false; if (!inited) { glslang::InitializeProcess(); inited = true; }
@@ -218,6 +228,7 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
     }
     out.from_cache = false;
     out.compile_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    ValidateModule(out);
     std::ofstream f(path, std::ios::binary); f.write(reinterpret_cast<const char*>(out.spv.data()), out.spv.size() * 4);
     return true;
 }
