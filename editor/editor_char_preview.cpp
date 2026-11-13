@@ -1,7 +1,6 @@
 #include <monkey_dust/io/kenshi_dir.h>
 #ifdef MD_HLSL_RUNTIME
-#include <vector>
-namespace md { bool CharBodyLiveCompile(std::vector<uint32_t>& spv_out); }   // editor_char_body_live.cpp
+#include "editor_char_body_live.h"
 #endif
 #include "character/appearance.h"
 #include "character/face_poses.h"
@@ -41,7 +40,7 @@ struct VU { float mvp[16]; };
 struct VU2 { float mv[16]; };
 bool g_kenshi_light = true;   // default ON (owner 23.10, #201 R3e option A): Kenshi character-screen lighting + SandyGround.dds
 GpuTexture g_bg_sandy;   // gui/gfx/SandyGround.dds
-GpuTexture g_mask_body, g_mask_head, g_nrm_body, g_nrm_head, g_tex_white;   // skin-tone masks and tangent-space normal maps next to the diffuse textures (Character_FP maskMap / normalMap / headMaskMap / headNormalMap)
+GpuTexture g_mask_body, g_mask_head, g_nrm_body, g_nrm_head, g_tex_white, g_tex_flat, g_tex_maskr;   // skin-tone masks and tangent-space normal maps next to the diffuse textures (Character_FP maskMap / normalMap / headMaskMap / headNormalMap)
 bool g_have_nrm_body = false, g_have_nrm_head = false;   // view * model of the body: view-space lighting
 
 Session* g_session = nullptr;
@@ -118,7 +117,7 @@ void EnsureRtt(int w, int h) {
 
 bool CreatePipelines() {
 #ifdef MD_HLSL_RUNTIME
-    if (getenv("MD_CHAR_LIVE")) { std::vector<uint32_t> spv; ::md::CharBodyLiveCompile(spv); }   // step 1 smoke: the install body program compiles in the editor (design note CHAR_BODY_INSTALL_FS_DESIGN)
+    if (getenv("MD_CHAR_LIVE")) md::charlive::Init(md::GpuDevice::Get().SDLDevice());   // body + light on the install programs (design note CHAR_BODY_INSTALL_FS_DESIGN); falls back to the GLSL body when it does not build
 #endif
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/char_preview.vert"; pd.frag_path = "shaders/char_body.frag";
@@ -260,7 +259,8 @@ bool Rebuild() {
     const char* bp = body_tex.c_str(); const char* hp = head_tex.c_str();
     if (body_tex.empty() || !g_tex.InitFromDDSArray(&bp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; g_tex.InitFromMemory(fb, 1, 1, sd); g_error = "body texture not found: " + FileOf(race.id, female ? "body texture female" : "body texture male"); fprintf(stderr, "[CharPreview] %s\n", g_error.c_str()); }
     if (head_tex.empty() || !g_tex_head.InitFromDDSArray(&hp, 1, sd)) { uint8_t fb[4] = {200, 162, 122, 255}; g_tex_head.InitFromMemory(fb, 1, 1, sd); g_error = "head texture not found: " + head_tex; fprintf(stderr, "[CharPreview] %s\n", g_error.c_str()); }
-    { GpuSamplerDesc nd; uint8_t z[4] = {0, 0, 0, 0}; if (!g_tex_none.SDLTexture()) g_tex_none.InitFromMemory(z, 1, 1, nd); uint8_t w[4] = {255, 255, 255, 255}; if (!g_tex_white.SDLTexture()) g_tex_white.InitFromMemory(w, 1, 1, nd); }
+    { GpuSamplerDesc nd; uint8_t z[4] = {0, 0, 0, 0}; if (!g_tex_none.SDLTexture()) g_tex_none.InitFromMemory(z, 1, 1, nd); uint8_t w[4] = {255, 255, 255, 255}; if (!g_tex_white.SDLTexture()) g_tex_white.InitFromMemory(w, 1, 1, nd);
+      uint8_t fl[4] = {128, 128, 255, 128}, mr[4] = {255, 0, 0, 255}; if (!g_tex_flat.SDLTexture()) g_tex_flat.InitFromMemory(fl, 1, 1, nd); if (!g_tex_maskr.SDLTexture()) g_tex_maskr.InitFromMemory(mr, 1, 1, nd); }   // flat DXT5nm normal (x in alpha, y in green); skin mask with no glowing-eye channel
     {   // the textures that go with the diffuse ones are named after them: body_diffuse -> body_mask_HI / body_normal, head_diffuse_HI -> head_mask / head_normal_HI (the head variants share the mask)
         auto sibling = [](const std::string& path, const char* from, const char* to) { const size_t i = path.find(from); return i == std::string::npos ? std::string() : path.substr(0, i) + to + path.substr(i + strlen(from)); };
         auto load = [&](GpuTexture& t, std::string path, bool& ok) { const char* p = path.c_str(); ok = !path.empty() && std::filesystem::exists(path) && t.InitFromDDSArray(&p, 1, sd); };
@@ -483,6 +483,28 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         pv.PushVertexUniforms(0, &svu, sizeof(svu));
         pv.DrawIndexed(uint32_t(g_scene_ni), 1, 0, 0, 0);
     }
+#ifdef MD_HLSL_RUNTIME
+    const bool live = md::charlive::Ready() && g_vbo.SDLBuffer() && g_ibo.SDLBuffer() && g_tex.SDLTexture() && g_tex_head.SDLTexture();
+    if (live) {
+        cb.EndPass();
+        md::charlive::BodyArgs ba; ba.cmd = cmd; ba.color = g_color.SDLTexture(); ba.depth = g_depth.SDLTexture(); ba.w = g_rtt_w; ba.h = g_rtt_h; ba.aspect = asp; ba.tan_half = tanf(0.39f);
+        ba.mvp = body_mvp.data(); M4 mvm = Mul(view, Mul(Translate(0.f, -g_ground * 0.1f, 0.f), scale)); ba.mv = mvm.data(); ba.bones = &g_ws[0][0];
+        ba.vbo = g_vbo.SDLBuffer(); ba.ibo = g_ibo.SDLBuffer(); ba.ni = uint32_t(g_ni);
+        const auto hrgb = g_session->HairRgb(); Attach& ha = g_hair; Attach& be = g_beard; const bool hh = ha.head_ok, bh = be.head_ok;
+        for (int k = 0; k < 3; ++k) { ba.skintone[k] = 1.f - g_tint[k]; ba.hair_colour[k] = hrgb[k]; }
+        for (int k = 0; k < 4; ++k) { ba.hair_mult[k] = hh ? ha.head_mult[k] : 0.f; ba.hair_alpha[k] = hh ? ha.head_alpha[k] : 0.f; ba.beard_alpha[k] = bh ? be.head_alpha[k] : 0.f; }
+        auto tx = [&](GpuTexture& a, GpuTexture& fallback) { GpuTexture& u = a.SDLTexture() ? a : fallback; return SDL_GPUTextureSamplerBinding{u.SDLTexture(), u.SDLSampler()}; };
+        GpuTexture& none = g_tex_none;
+        ba.tex[0] = tx(g_tex, none); ba.tex[1] = tx(g_nrm_body, g_tex_flat); ba.tex[2] = tx(none, none); ba.tex[3] = tx(g_mask_body, g_tex_white); ba.tex[4] = tx(none, none);
+        ba.tex[5] = tx(g_tex_head, none); ba.tex[6] = tx(g_nrm_head, g_tex_flat); ba.tex[7] = tx(g_mask_head, g_tex_maskr); ba.tex[8] = hh ? tx(ha.head_tex, none) : tx(none, none);
+        ba.tex[9] = bh ? tx(be.head_tex, none) : tx(none, none); ba.tex[10] = tx(none, none); ba.tex[11] = tx(none, none); ba.tex[12] = tx(none, none);
+        ba.irr = {g_irr_cube.SDLTexture(), g_irr_cube.SDLSampler()}; ba.spec = {g_spec_cube.SDLTexture(), g_spec_cube.SDLSampler()};
+        md::charlive::DrawBody(ba);
+        GpuCommandBuffer::ColorPassDesc c2; c2.cmd = cmd; c2.color_tex[0] = g_color.SDLTexture(); c2.depth_tex = g_depth.SDLTexture(); c2.load_color = true; c2.load_depth = true;
+        cb.BeginColorPass(c2); rp = cb.SDLPass(); if (!rp) return; pv = GpuPassView::FromRaw(rp, cmd);
+    }
+    if (!live)
+#endif
     if (g_body_pipe.SDLPipeline() && g_vbo.SDLBuffer() && g_ibo.SDLBuffer() && g_tex.SDLTexture() && g_tex_head.SDLTexture()) {
         pv.BindPipeline(&g_body_pipe);
         pv.BindVertexBuffer(&g_vbo);

@@ -1,0 +1,24 @@
+#pragma once
+// Character editor body on the install programs (see editor_char_body_live.cpp). Off unless MD_CHAR_LIVE=1.
+#include <SDL3/SDL_gpu.h>
+
+namespace md::charlive {
+constexpr uint32_t kVertexStride = 76;   // the preview's vertex: pos, normal, uv, joints (u8 x4), weights, tangent, binormal
+
+struct BodyArgs {
+    SDL_GPUCommandBuffer* cmd = nullptr;
+    SDL_GPUTexture *color = nullptr, *depth = nullptr;
+    int w = 0, h = 0;
+    float aspect = 1.f, tan_half = 0.4f;
+    bool flip_v = true;                   // the light pass samples the G-buffer with v = 1 - ndc
+    const float *mvp = nullptr, *mv = nullptr, *bones = nullptr;   // column-major 4x4, 30 bone matrices
+    SDL_GPUBuffer *vbo = nullptr, *ibo = nullptr; uint32_t ni = 0;
+    SDL_GPUTextureSamplerBinding tex[13] = {};   // character.hlsl s0..s12
+    SDL_GPUTextureSamplerBinding irr = {}, spec = {};
+    float skintone[3] = {}, shirt[4] = {1, 1, 1, 1}, hair_colour[3] = {}, hair_mult[4] = {}, hair_alpha[4] = {}, beard_alpha[4] = {}, zero4[4] = {};
+};
+
+bool Init(SDL_GPUDevice* dev);
+bool Ready();
+void DrawBody(const BodyArgs& a);   // no render pass may be open
+}
