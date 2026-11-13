@@ -118,7 +118,7 @@ void EnsureRtt(int w, int h) {
 
 bool CreatePipelines() {
 #ifdef MD_HLSL_RUNTIME
-    if (getenv("MD_CHAR_LIVE")) md::charlive::Init(md::GpuDevice::Get().SDLDevice());   // body + light on the install programs (design note CHAR_BODY_INSTALL_FS_DESIGN); falls back to the GLSL body when it does not build
+    if (!getenv("MD_CHAR_LIVE") || atoi(getenv("MD_CHAR_LIVE")) != 0) md::charlive::Init(md::GpuDevice::Get().SDLDevice());   // body + light on the install programs (design note CHAR_BODY_INSTALL_FS_DESIGN); falls back to the GLSL body when it does not build
 #endif
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/char_preview.vert"; pd.frag_path = "shaders/char_body.frag";
@@ -230,7 +230,7 @@ void LoadPlatform() {
     g_plat_ibo.Init(0x8893u, sm.indices.data(), uint32_t(sm.indices.size() * sizeof(uint32_t)));
     g_plat_ni = int(sm.indices.size());
 #ifdef MD_HLSL_RUNTIME
-    if (getenv("MD_CHAR_LIVE")) {   // the install platform program: normal and metal atlases, and a tangent frame from the mesh UVs
+    if (!getenv("MD_CHAR_LIVE") || atoi(getenv("MD_CHAR_LIVE")) != 0) {   // the install platform program: normal and metal atlases, and a tangent frame from the mesh UVs
         const size_t nv = p.size() / 3; std::vector<float> tn(nv * 3, 0.f), bn(nv * 3, 0.f);
         for (size_t t = 0; t + 2 < sm.indices.size(); t += 3) {
             const uint32_t ia = sm.indices[t], ib = sm.indices[t + 1], ic = sm.indices[t + 2];
