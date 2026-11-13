@@ -466,6 +466,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("light_sun_dir", l_md_light_sun_dir);
     sys.RegisterNamespaceFunction("adapt_lum_debug", l_md_adapt_lum_debug);
     sys.RegisterNamespaceFunction("adapt_lum_read", l_md_adapt_lum_read);
+    sys.RegisterNamespaceFunction("ground_live_stats", l_md_ground_live_stats);
     sys.RegisterNamespaceFunction("set_kenshi_lighting", l_md_set_kenshi_lighting);
     sys.RegisterNamespaceFunction("set_resolution_scale", l_md_set_resolution_scale);
     sys.RegisterNamespaceFunction("set_terrain_wireframe", l_md_set_terrain_wireframe);

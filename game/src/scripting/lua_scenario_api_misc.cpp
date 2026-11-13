@@ -1,4 +1,5 @@
 #include "render/ground_live_hdr.h"
+#include "render/ground_live_driver.h"
 #include "lua_scenario_api_internal.h"
 #include "render/npc_render.h"
 #include "render/scene_render.h"
@@ -578,6 +579,15 @@ int l_md_set_kenshi_lighting(lua_State* L) { g_kenshi_lighting_mode = (int)luaL_
 // md.adapt_lum_debug(mean[, dt]): L4 oracle, a mean luminance >= 0 replaces the measured one (-1 = measure), dt > 0 replaces the frame time. md.adapt_lum_read() -> the adapted luminance (1x1 R32F) of the last frame, or -1.
 extern float g_adapt_override_mean, g_adapt_override_dt;
 int l_md_adapt_lum_debug(lua_State* L) { g_adapt_override_mean = (float)luaL_checknumber(L, 1); g_adapt_override_dt = (float)luaL_optnumber(L, 2, -1.0); return 0; }
+// md.ground_live_stats() -> { groups, lists_seen, lists_near, over_limit, no_slot_nodes, no_slot_near, skipped, waiting, pending } of the last frame (near = within 3 km, the original's DistantTerrain distance)
+int l_md_ground_live_stats(lua_State* L) {
+    const auto& s = md::GroundLiveDriver::Get().GetStats(); lua_newtable(L);
+#define GLS(k) lua_pushinteger(L, s.k); lua_setfield(L, -2, #k);
+    GLS(groups) GLS(lists_seen) GLS(lists_near) GLS(over_limit) GLS(no_slot_nodes) GLS(no_slot_near) GLS(skipped) GLS(waiting)
+#undef GLS
+    lua_pushinteger(L, md::GroundLiveDriver::Get().PendingArrays()); lua_setfield(L, -2, "pending");
+    return 1;
+}
 int l_md_adapt_lum_read(lua_State* L) {
     auto& sr = SceneRender::Get();
     const bool install = !sr.lum_adapt_active_ && md::GroundLiveHdr::Active();   // release: the install hdrfp4 chain's rt_adaptedLum (log luminance)

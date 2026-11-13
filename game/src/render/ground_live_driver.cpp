@@ -87,11 +87,22 @@ int GroundLiveDriver::ListIdOf(const PatchBiomes& pb) {
     PatchList pl; pl.pb = pb; lists_.push_back(pl); return (int)lists_.size() - 1;
 }
 
-int GroundLiveDriver::SlotAt(float x, float z) const {
+int GroundLiveDriver::SlotAt(float x, float z) {
     int best = 0; float best_size = 1e30f;
     for (int i = 0; i < n_node_slot_; ++i) {
         const NodeSlot& q = node_slot_[i];
         if (x >= q.x0 && x < q.x0 + q.size && z >= q.z0 && z < q.z0 + q.size && q.size < best_size) { best = q.slot; best_size = q.size; }
+    }
+    if (best || !data_ok_) return best;
+    // no visible node holds the point (its node is culled): the slot of the list at the point itself, else the nearest visible node's slot
+    const float px = (float)((x - 0.05) - 14745.6) * 10.f, pz = (float)((z - 0.05) - 14745.6) * 10.f, qx = (float)((x + 0.05) - 14745.6) * 10.f, qz = (float)((z + 0.05) - 14745.6) * 10.f;
+    const PatchBiomes pb = kbi_.Query(px, pz, qx, qz);
+    if (pb.count > 0) { const int lid = ListIdOf(pb); if (lists_[(size_t)lid].slot) return lists_[(size_t)lid].slot; }
+    float best_d2 = 1e30f;
+    for (int i = 0; i < n_node_slot_; ++i) {
+        const NodeSlot& q = node_slot_[i]; if (!q.slot) continue;
+        const float dx = std::max(std::max(q.x0 - x, x - (q.x0 + q.size)), 0.f), dz = std::max(std::max(q.z0 - z, z - (q.z0 + q.size)), 0.f), d2 = dx * dx + dz * dz;
+        if (d2 < best_d2) { best_d2 = d2; best = q.slot; }
     }
     return best;
 }
@@ -125,9 +136,18 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
     for (size_t i = 0; i < lists_.size() && m < 1024; ++i) { lists_[i].slot = 0; if (lists_[i].dmin < 1e29f) order[m++] = (int)i; }
     std::sort(order, order + m, [&](int a, int b) { return lists_[(size_t)a].dmin < lists_[(size_t)b].dmin; });
     stats_.lists_seen = m; stats_.over_limit = std::max(0, m - max_groups_);
+    stats_.lists_near = 0; for (int k = 0; k < m; ++k) if (lists_[(size_t)order[k]].dmin < 3000.f * 3000.f) ++stats_.lists_near;   // within the original's DistantTerrain distance (3 km)
     for (int k = 0; k < m && k < max_groups_; ++k) { lists_[(size_t)order[k]].slot = k + 1; slot_list_[k + 1] = order[k]; slot_dmin_[k + 1] = std::sqrt(lists_[(size_t)order[k]].dmin); n_slots_ = k + 1; }
     stats_.no_slot_nodes = 0;
-    for (int i = 0; i < n; ++i) { nodes[i].list_slot = lid_of[i] >= 0 ? lists_[(size_t)lid_of[i]].slot : 0; if (!nodes[i].list_slot) ++stats_.no_slot_nodes; }
+    stats_.no_slot_near = 0;
+    for (int i = 0; i < n; ++i) {
+        nodes[i].list_slot = lid_of[i] >= 0 ? lists_[(size_t)lid_of[i]].slot : 0;
+        if (nodes[i].list_slot) continue;
+        ++stats_.no_slot_nodes;
+        const TerrainLodNode& nd = nodes[i];
+        const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f);
+        if (dx * dx + dz * dz < 3000.f * 3000.f) ++stats_.no_slot_near;
+    }
     for (int i = 0; i < n; ++i) node_slot_[i] = { nodes[i].origin_x, nodes[i].origin_z, nodes[i].size, nodes[i].list_slot };
     n_node_slot_ = n;
     GroundSlotAtHook() = [](float x, float z) { return GroundLiveDriver::Get().SlotAt(x, z); };

@@ -97,6 +97,7 @@ int l_md_kenshi_sky(lua_State* L);
 int l_md_light_sun_dir(lua_State* L);          // #140 L1
 int l_md_adapt_lum_debug(lua_State* L);        // #140 L4
 int l_md_adapt_lum_read(lua_State* L);
+int l_md_ground_live_stats(lua_State* L);
 int l_md_set_kenshi_lighting(lua_State* L);
 int l_md_ground_reuse_stats(lua_State* L);   // #163 5b-2b
 int l_md_splash_shot(lua_State* L);   // #200
