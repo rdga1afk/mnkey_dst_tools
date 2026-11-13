@@ -89,7 +89,7 @@ jobs:
         run: |
           SHA12=${GITHUB_SHA:0:12}
           mkdir -p gout/bin && cp build/game/monkey_dust gout/bin/
-          tar --zstd -19 -cf game-${SHA12}.tar.zst -C gout .
+          tar -I 'zstd -19' -cf game-${SHA12}.tar.zst -C gout .
           sha256sum game-${SHA12}.tar.zst > game-${SHA12}.tar.zst.sha256
           ls -l game-${SHA12}.tar.zst
           gh release view "build-${SHA12}" >/dev/null 2>&1 || gh release create "build-${SHA12}" --target "$GITHUB_SHA" --title "Tools build ${SHA12}" --notes "Prebuilt tools and the release game (no shader overlay) for tools commit ${GITHUB_SHA}. No Kenshi files." || true

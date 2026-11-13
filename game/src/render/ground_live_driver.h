@@ -3,6 +3,7 @@
 // ancestor mask): AssignSlots gives every LOD node the slot of its list, the terrain G-buffer pass writes the slot into a second R8_UINT target (engine: ground_slot.h), and Frame runs
 // GroundLivePass (stencil groups from the slot target) + the original decodePixel after the pass. Every enclosing node's list gives identical weights (private leaf-vs-patch proof,
 // scripts/kbi1_leaf_vs_patch.py), so the node size of our LOD does not matter. The result is not consumed by the lighting yet (measurement path).
+#include "ground_live_cache.h"
 #include "ground_live_pass.h"
 #include <monkey_dust/render/biome_layer_arrays.h>
 #include <monkey_dust/world/kbi1.h>
@@ -20,7 +21,7 @@ public:
     static GroundLiveDriver& Get();
     static bool Wanted();   // MD_GROUND_LIVE=1
     static bool OrigLight();   // MD_GROUND_LIVE_ORIGLIGHT=1 (with MD_GROUND_LIVE_LIGHT): the ground is lit by the original main_fs (GroundLivePass::Light) instead of TS_KenshiLight
-    struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; };
+    struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; uint64_t cache_strips = 0, cache_texels = 0; };
     // Before the nodes are uploaded: sets nodes[i].list_slot (0 = none) from the node's biome list; the nearest lists get slots 1..max_groups.
     void AssignSlots(TerrainLodNode* nodes, int n, const float cam[3]);
     // After the G-buffer pass (no pass open): depth = G-buffer depth, packed = R16G16B16A16_UINT, slot = the R8_UINT second target. inv_vp column-major; cam in metres (granite absolute).
@@ -29,6 +30,9 @@ public:
     // Release consumer (no translated resolve): inside the open ground pass, after Frame() of the same frame; false when nothing was lit this frame.
     bool DrawFog(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const GroundLiveFogParams& p, SDL_GPUTextureFormat cfmt, SDL_GPUTextureFormat dfmt) { return lit_frame_ && pass_.DrawFog(rp, cmd, last_frame_, p, cfmt, dfmt); }
     void SetMaps(SDL_GPUTexture* colour, SDL_GPUTexture* overlay) { colour_ = colour; overlay_ = overlay; }   // the world colour map and the paint mask of the terrain (the original's colourMap / overlayMap); white stands in while unset
+    // the world heightmap (R16_UNORM, res x res cells over extent metres) for the cache bake (MD_GROUND_CACHE)
+    void SetHeightmap(SDL_GPUTexture* tex, float hmin, float hmax, float extent, int res) { hmap_ = tex; hmap_p_[0] = hmin; hmap_p_[1] = hmax; hmap_p_[2] = extent; hmap_p_[3] = (float)res; }
+    GroundLiveCache& Cache() { return cache_; }
     const Stats& GetStats() const { return stats_; }
     GroundLivePass& Pass() { return pass_; }
 private:
@@ -51,6 +55,10 @@ private:
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)
     float slot_dmin_[32] = {};
     Stats stats_; uint64_t frame_counter_ = 0;
+    // live-ground cache (MD_GROUND_CACHE): bake strips of the rings after the frame's pass, within a texel budget per frame
+    void BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, uint64_t frame);
+    GroundLiveCache cache_; bool cache_tried_ = false; float cache_wetness_ = -1.f;
+    SDL_GPUTexture* hmap_ = nullptr; float hmap_p_[4] = {};
 };
 
 }   // namespace md

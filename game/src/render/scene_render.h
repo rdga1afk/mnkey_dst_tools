@@ -217,6 +217,7 @@ struct SceneRender {
     // Sky / UI / water pipelines
     GpuPipeline sky_pipeline;
     GpuPipeline sky_kenshi_pipeline;   // #173: SkyX scattering (shaders/sky_kenshi.frag), md.set_kenshi_sky(1)
+    GpuPipeline sky_kenshi_hdr_pipeline[2];   // release 1c: the same sky into the float ground target, RGB only (alpha 0); [0] scene depth D32, [1] the stencil-split depth D32_S8
     GpuPipeline overlay_pipeline;
     GpuPipeline water_pipeline;
     GpuPipeline water_kenshi_pipeline;   // #173: water.hlsl of Kenshi (shaders/water_kenshi.frag), md.set_kenshi_water(1)

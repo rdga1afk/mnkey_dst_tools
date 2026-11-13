@@ -57,6 +57,29 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
         gi.depth_stencil_state.front_stencil_state.compare_op = SDL_GPU_COMPAREOP_EQUAL; gi.depth_stencil_state.back_stencil_state = gi.depth_stencil_state.front_stencil_state;
         v.pipe = SDL_CreateGPUGraphicsPipeline(dev, &gi); if (!v.pipe) return false;
     }
+    bake_ok_ = false;
+    if (getenv("MD_GROUND_CACHE") && getenv("MD_GROUND_CACHE")[0] != '0') {   // the live-ground cache bake (GW_BAKE): the same program over ring texels, a scissor per cell instead of the stencil
+        bake_ok_ = true;
+        for (int n = 0; n < 4 && bake_ok_; ++n) {
+            std::string defs = "#define GW_BAKE\n#define DX11\n";
+            for (int b = 1; b <= n; ++b) defs += "#define BLEND" + std::to_string(b) + " " + std::to_string(b) + "\n";
+            hlsl::Compiled fc;
+            if (!hlsl::Compile(defs + glue, deps, 'f', fc)) { MD_LOG(MD_LOG_WARNING, "ground live: bake fragment (%d): %s", n + 1, fc.log.c_str()); bake_ok_ = false; break; }
+            std::vector<hlsl::UniformMember> mem; uint32_t sz = 0;
+            if (!hlsl::GlobalBlockMembers(fc.spv, mem, sz)) { bake_ok_ = false; break; }
+            Variant& v = bake_[n]; v.ub_size = sz; v.ub.assign(sz + 16, 0);
+            for (const auto& u : mem) v.mem.push_back({ u.name, { u.offset, u.array_stride } });
+            SDL_GPUShaderCreateInfo sf = sv; sf.code = (const Uint8*)fc.spv.data(); sf.code_size = fc.spv.size() * 4; sf.stage = SDL_GPU_SHADERSTAGE_FRAGMENT; sf.num_samplers = kSamplers; sf.num_uniform_buffers = 1;
+            v.fs = SDL_CreateGPUShader(dev, &sf);
+            SDL_GPUColorTargetDescription ct[3] = {};
+            ct[0].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; ct[1].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; ct[2].format = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
+            SDL_GPUGraphicsPipelineCreateInfo gi = {}; gi.vertex_shader = vs_; gi.fragment_shader = v.fs; gi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+            gi.target_info.color_target_descriptions = ct; gi.target_info.num_color_targets = 3;
+            v.pipe = v.fs ? SDL_CreateGPUGraphicsPipeline(dev, &gi) : nullptr;
+            if (!v.pipe) bake_ok_ = false;
+        }
+        MD_LOG(bake_ok_ ? MD_LOG_INFO : MD_LOG_WARNING, "ground live: cache bake variants %s", bake_ok_ ? "ready" : "failed");
+    }
     {   // classification: five bit-plane draws fill the stencil with the slot (write mask = one bit each)
         std::string bg = ReadAll(DataPath("game/src/render/ground_live_bits.hlsl"));
         hlsl::Compiled bc;
@@ -149,6 +172,8 @@ void GroundLivePass::Shutdown() {
     n_fog_pipes_ = 0; if (fog_.fs) { SDL_ReleaseGPUShader(dev_, fog_.fs); fog_.fs = nullptr; }
     if (!dev_) return;
     for (auto& v : var_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
+    for (auto& v : bake_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
+    bake_ok_ = false;
     for (int k = 0; k < 5; ++k) { if (bits_[k].pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, bits_[k].pipe); }
     if (bits_[0].fs) SDL_ReleaseGPUShader(dev_, bits_[0].fs);
     for (auto& b : bits_) b = Variant();
@@ -196,6 +221,41 @@ bool GroundLivePass::EnsureTargets(int w, int h) {
     tw_ = w; th_ = h; return true;
 }
 
+void GroundLivePass::SetIn(Variant& v, const std::string& name, const float* val, int count, int idx) {
+    for (const auto& m : v.mem) if (m.first == name) { memcpy(&v.ub[m.second.first + (m.second.second ? m.second.second * idx : 0)], val, 4 * count); return; }
+}
+
+// the uniforms and textures of one biome-list group (the program's inputs except the G-buffer position source)
+void GroundLivePass::FillGroup(Variant& v, const GroundLiveFrame& f, const GroundLiveGroup& grp, int tw, int th, SDL_GPUTextureSamplerBinding* tb) {
+    auto set = [&](const std::string& nm, const float* val, int count, int idx = 0) { SetIn(v, nm, val, count, idx); };
+    const float viewport[4] = { (float)tw, (float)th, 1.f / tw, 1.f / th };
+    set("viewport", viewport, 4); set("farClip", &f.far_clip, 1); set("waterHeightRel", &f.water_height_rel, 1); set("wetness", &f.wetness, 1);
+    const float cam_u[3] = { (f.cam_ws[0] - 14745.6f) * 10.f, f.cam_ws[1] * 10.f, (f.cam_ws[2] - 14745.6f) * 10.f };   // the original works in centred 0.1 m units
+    set("cameraPos", cam_u, 3);
+    float bright[4] = { 1, 1, 1, 1 };
+    for (int b = 0; b < grp.biome_count; ++b) {
+        const std::string s = b ? std::to_string(b) : ""; const GroundPack& p = grp.biome[b].pack;
+        set("scalesA" + s, p.scalesA, 4); set("scalesB" + s, p.scalesB, 4); set("scalesC" + s, p.scalesC, 4);
+        set("slopeMin" + s, p.slopeMin, 4); set("slopeMax" + s, p.slopeMax, 4); set("slopeBlend" + s, p.slopeBlend, 4);
+        set("overlayMult" + s, p.overlayMult, 4); set("textureFade" + s, p.textureFade, 4);
+        const float a2[8] = { p.absorbance[0], p.absorbance[1], p.absorbance[2], p.absorbance[3], p.absorbance[4], p.absorbance[5], 0, 0 };
+        set("absorbance" + s, a2, 4, 0); set("absorbance" + s, a2 + 4, 4, 1);
+        bright[b] = p.brightnessFix;
+    }
+    set("brightnessFix", bright, 4);
+    float d[8] = {}; for (int b = 0; b < grp.biome_count; ++b) { d[b * 2] = grp.biome[b].pack.distortFreq; d[b * 2 + 1] = grp.biome[b].pack.distortAmp; }
+    const float ident[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 }, origin[4] = { 14745.6f, 14745.6f, 0.f, 10.f };
+    set("gw_wvp", ident, 16); set("gw_world", ident, 16); set("gw_distortion0", d, 4); set("gw_distortion1", d + 4, 4);
+    set("gw_biomeData", f.biome_rect, 4); set("gw_overlayData", f.overlay_rect, 4); set("gw_cameraPos", cam_u, 3); set("gw_cameraDir", f.cam_dir, 3);
+    set("gw_invVP", f.inv_vp, 16); const float cam4[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], 0.f }; set("gw_camWs", cam4, 4); set("gw_originM", origin, 4);
+    SDL_GPUTexture* tex[kSamplers];
+    for (auto& t : tex) t = f.interior;
+    tex[0] = grp.biome[0].diffuse; tex[1] = grp.biome[0].normal; tex[2] = f.overlay; tex[3] = f.colour; tex[4] = f.interior;
+    if (grp.biome_count > 1) { tex[5] = f.blend_map; for (int k = 1; k < grp.biome_count; ++k) { tex[4 + 2 * k] = grp.biome[k].diffuse; tex[5 + 2 * k] = grp.biome[k].normal; } }
+    tex[12] = f.depth; tex[13] = f.packed;
+    for (int i = 0; i < kSamplers; ++i) tb[i] = { tex[i], (i >= 12 || i == 5) ? nearest_ : linear_ };
+}
+
 bool GroundLivePass::Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveGroup* groups, int n) {
     if (!ready_ || !t_[0] || n < 1 || n > 250) return false;
     auto setIn = [&](Variant& v, const std::string& name, const float* val, int count, int idx = 0) {
@@ -229,34 +289,8 @@ bool GroundLivePass::Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, co
         const GroundLiveGroup& grp = groups[gi];
         if (grp.biome_count < 1 || grp.biome_count > 4) continue;
         Variant& v = var_[grp.biome_count - 1];
-        auto set = [&](const std::string& nm, const float* val, int count, int idx = 0) { setIn(v, nm, val, count, idx); };
-        const float viewport[4] = { (float)tw_, (float)th_, 1.f / tw_, 1.f / th_ };
-        set("viewport", viewport, 4); set("farClip", &f.far_clip, 1); set("waterHeightRel", &f.water_height_rel, 1); set("wetness", &f.wetness, 1);
-        const float cam_u[3] = { (f.cam_ws[0] - 14745.6f) * 10.f, f.cam_ws[1] * 10.f, (f.cam_ws[2] - 14745.6f) * 10.f };   // the original works in centred 0.1 m units
-        set("cameraPos", cam_u, 3);
-        float bright[4] = { 1, 1, 1, 1 };
-        for (int b = 0; b < grp.biome_count; ++b) {
-            const std::string s = b ? std::to_string(b) : ""; const GroundPack& p = grp.biome[b].pack;
-            set("scalesA" + s, p.scalesA, 4); set("scalesB" + s, p.scalesB, 4); set("scalesC" + s, p.scalesC, 4);
-            set("slopeMin" + s, p.slopeMin, 4); set("slopeMax" + s, p.slopeMax, 4); set("slopeBlend" + s, p.slopeBlend, 4);
-            set("overlayMult" + s, p.overlayMult, 4); set("textureFade" + s, p.textureFade, 4);
-            const float a2[8] = { p.absorbance[0], p.absorbance[1], p.absorbance[2], p.absorbance[3], p.absorbance[4], p.absorbance[5], 0, 0 };
-            set("absorbance" + s, a2, 4, 0); set("absorbance" + s, a2 + 4, 4, 1);
-            bright[b] = p.brightnessFix;
-        }
-        set("brightnessFix", bright, 4);
-        float d[8] = {}; for (int b = 0; b < grp.biome_count; ++b) { d[b * 2] = grp.biome[b].pack.distortFreq; d[b * 2 + 1] = grp.biome[b].pack.distortAmp; }
-        const float ident[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 }, origin[4] = { 14745.6f, 14745.6f, 0.f, 10.f };
-        set("gw_wvp", ident, 16); set("gw_world", ident, 16); set("gw_distortion0", d, 4); set("gw_distortion1", d + 4, 4);
-        set("gw_biomeData", f.biome_rect, 4); set("gw_overlayData", f.overlay_rect, 4); set("gw_cameraPos", cam_u, 3); set("gw_cameraDir", f.cam_dir, 3);
-        set("gw_invVP", f.inv_vp, 16); const float cam4[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], 0.f }; set("gw_camWs", cam4, 4); set("gw_originM", origin, 4);
-        SDL_GPUTexture* tex[kSamplers];
-        for (auto& t : tex) t = f.interior;
-        tex[0] = grp.biome[0].diffuse; tex[1] = grp.biome[0].normal; tex[2] = f.overlay; tex[3] = f.colour; tex[4] = f.interior;
-        if (grp.biome_count > 1) { tex[5] = f.blend_map; for (int k = 1; k < grp.biome_count; ++k) { tex[4 + 2 * k] = grp.biome[k].diffuse; tex[5 + 2 * k] = grp.biome[k].normal; } }
-        tex[12] = f.depth; tex[13] = f.packed;
         SDL_GPUTextureSamplerBinding tb[kSamplers];
-        for (int i = 0; i < kSamplers; ++i) tb[i] = { tex[i], (i >= 12 || i == 5) ? nearest_ : linear_ };
+        FillGroup(v, f, grp, tw_, th_, tb);
         SDL_BindGPUGraphicsPipeline(rp, v.pipe);
         SDL_BindGPUFragmentSamplers(rp, 0, tb, kSamplers);
         scissor(grp); SDL_SetGPUStencilReference(rp, (Uint8)grp.slot);
@@ -268,15 +302,44 @@ bool GroundLivePass::Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, co
 }
 
 bool GroundLivePass::Decode(SDL_GPUCommandBuffer* cmd) {
-    if (!ready_ || !rgb_) return false;
-    const float viewport[4] = { (float)tw_, (float)th_, 1.f / tw_, 1.f / th_ };
+    return ready_ && rgb_ && DecodeTo(cmd, t_, tw_, th_, rgb_, aux_);
+}
+
+bool GroundLivePass::DecodeTo(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const src[3], int w, int h, SDL_GPUTexture* out_rgb, SDL_GPUTexture* out_aux) {
+    const float viewport[4] = { (float)w, (float)h, 1.f / w, 1.f / h };
     for (const auto& m : dec_.mem) if (m.first == "viewport") memcpy(&dec_.ub[m.second.first], viewport, 16);
-    SDL_GPUColorTargetInfo cti[2] = {}; cti[0].texture = rgb_; cti[1].texture = aux_; for (auto& c : cti) { c.load_op = SDL_GPU_LOADOP_DONT_CARE; c.store_op = SDL_GPU_STOREOP_STORE; }
+    SDL_GPUColorTargetInfo cti[2] = {}; cti[0].texture = out_rgb; cti[1].texture = out_aux; for (auto& c : cti) { c.load_op = SDL_GPU_LOADOP_DONT_CARE; c.store_op = SDL_GPU_STOREOP_STORE; }
     SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, cti, 2, nullptr);
+    if (!rp) return false;
     SDL_BindGPUGraphicsPipeline(rp, dec_.pipe);
-    SDL_GPUTextureSamplerBinding tb[3] = { { t_[0], nearest_ }, { t_[1], nearest_ }, { t_[2], nearest_ } }; SDL_BindGPUFragmentSamplers(rp, 0, tb, 3);
+    SDL_GPUTextureSamplerBinding tb[3] = { { src[0], nearest_ }, { src[1], nearest_ }, { src[2], nearest_ } }; SDL_BindGPUFragmentSamplers(rp, 0, tb, 3);
     SDL_PushGPUFragmentUniformData(cmd, 0, dec_.ub.data(), dec_.ub_size);
     SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(rp);
+    return true;
+}
+
+bool GroundLivePass::Bake(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const dst[3], int w, int h, const GroundLiveFrame& f, SDL_GPUTexture* hmap, const float bake0[4], const float bake1[4], const float bake2[4],
+                          const GroundLiveGroup* cells, int n) {
+    if (!ready_ || !bake_ok_ || !hmap || n < 1) return false;
+    SDL_GPUColorTargetInfo cti[3] = {};
+    for (int i = 0; i < 3; ++i) { cti[i].texture = dst[i]; cti[i].load_op = SDL_GPU_LOADOP_CLEAR; cti[i].store_op = SDL_GPU_STOREOP_STORE; }
+    SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, cti, 3, nullptr);
+    if (!rp) return false;
+    for (int c = 0; c < n; ++c) {
+        const GroundLiveGroup& grp = cells[c];
+        if (grp.biome_count < 1 || grp.biome_count > 4 || grp.x1 <= grp.x0 || grp.y1 <= grp.y0) continue;
+        Variant& v = bake_[grp.biome_count - 1];
+        SDL_GPUTextureSamplerBinding tb[kSamplers];
+        FillGroup(v, f, grp, w, h, tb);
+        SetIn(v, "gw_bake0", bake0, 4); SetIn(v, "gw_bake1", bake1, 4); SetIn(v, "gw_bake2", bake2, 4);
+        tb[12] = { hmap, nearest_ }; tb[13] = { f.interior, nearest_ };
+        SDL_BindGPUGraphicsPipeline(rp, v.pipe);
+        SDL_BindGPUFragmentSamplers(rp, 0, tb, kSamplers);
+        const SDL_Rect r = { grp.x0, grp.y0, grp.x1 - grp.x0, grp.y1 - grp.y0 }; SDL_SetGPUScissor(rp, &r);
+        SDL_PushGPUFragmentUniformData(cmd, 0, v.ub.data(), v.ub_size);
+        SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+    }
     SDL_EndGPURenderPass(rp);
     return true;
 }

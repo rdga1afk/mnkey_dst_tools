@@ -208,6 +208,7 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
         if (live_on) {
             md::GpuProfiler::Get().BeginPass("Ground Live");
             { SDL_GPUTextureSamplerBinding gsb[7]; sr_gr.terrain.GetSharedGroundSamplers(gsb); md::GroundLiveDriver::Get().SetMaps(gsb[0].texture, gsb[3].texture); }
+            { const auto& hm = sr_gr.terrain_granite_hmap; md::GroundLiveDriver::Get().SetHeightmap(hm.IsReady() ? hm.Texture() : nullptr, hm.HeightMin(), hm.HeightMax(), hm.WorldExtent(), hm.Resolution()); }   // the cache bake (MD_GROUND_CACHE)
             static md::GroundLiveLightParams llp;   // the original main_fs (MD_GROUND_LIVE_ORIGLIGHT): sun from the same weather as the translated light, the ambient map and the two cubes of the install
             const auto* klp = UpdateKLight();
             const bool orig_light = md::GroundLiveDriver::OrigLight() && klp && sr_gr.terrain.KenshiLightCubesReady() && sr_gr.terrain.AmbientMapReady();
@@ -230,6 +231,7 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
         gtsp.SetFloatTarget(sr_gr.lum_adapt_active_);
         gcb.BeginColorPass(gcpd);
         if (SDL_GPURenderPass* grp = gcb.SDLPass()) {
+            if (live_hdr) DrawSkyHdr(cam, grp, fc.cmd, stencil_pass);   // the luminance chain measures the sky too; the ground overwrites its own pixels
             DrawGroundResolve(fc, cam, grp);
             if (!gtsp.HasTranslatedResolve() && live_on) {   // release (no translated resolve): the live consumer = the original fog quad over the lit live ground + the fixed exposure
                 md::GroundLiveFogParams fp;
@@ -434,6 +436,33 @@ void NpcRender::DrawSky(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp
         pv.Draw(3, 1, 0, 0);
         if (sky_pano) { const md::KsVec3 rs = md::KenshiSkySettings().SunDirection(LightSystem::Get().current_hours); const float sd3[3] = { rs.x, rs.y, rs.z }; SkyMoons::Draw(pv, cam, sd3, LightSystem::Get().current_hours); { const SceneRender& sr = SceneRender::Get(); SkyClouds::SetCameraWorld((float)sr.zone_ox * CHUNK_SIZE + cam.pos.x - sr.tnoff_x, (float)sr.zone_oz * CHUNK_SIZE + cam.pos.z - sr.tnoff_z); } SkyClouds::Draw(pv, cam, LightSystem::Get().current_hours); }   // path 1: the two moons from the install (MD_SKY_INSTALL)
     }
+}
+
+// Release 1c: the install sky panorama into the float ground target before the ground, unexposed (factor 1) and RGB only, so its alpha stays 0:
+// the original rt_hdr holds the sky too, and our HDR chain measures the whole target, while the composite (alpha < 0.5 discard) leaves the sky drawn by DrawSky.
+// DEVIATION: moons, clouds, props and NPCs are not in this target (docs/DEVIATIONS.md).
+void NpcRender::DrawSkyHdr(const MdCamera& cam, SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, bool stencil_depth)
+{
+    GpuPipeline& pipe = SceneRender::Get().sky_kenshi_hdr_pipeline[stencil_depth ? 1 : 0];
+    if (!g_kenshi_sky || !pipe.SDLPipeline() || !SkyPanorama::Get().Ready()) return;
+    SkyUBO sky = {};
+    const Mat4 view = cam.ViewMatrix();
+    const float* v = mat4_ptr(view);
+    sky.cam_right[0] = v[0]; sky.cam_right[1] = v[4]; sky.cam_right[2] = v[8];
+    sky.cam_up[0]    = v[1]; sky.cam_up[1]    = v[5]; sky.cam_up[2]    = v[9];
+    sky.cam_fwd[0]   =-v[2]; sky.cam_fwd[1]   =-v[6]; sky.cam_fwd[2]   =-v[10];
+    const md::KsVec3 real = md::KenshiSkySettings().SunDirection(LightSystem::Get().current_hours);
+    sky.sun_dir[0] = real.x; sky.sun_dir[1] = real.y; sky.sun_dir[2] = real.z;
+    sky.fov_tan = tanf(cam.fovy * 0.00872664f);
+    sky.aspect  = (float)window_get_width() / (float)window_get_height();
+    sky.horizon_col[0] = 1.f;   // unexposed: the HDR chain exposes
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&pipe);
+    SDL_GPUTextureSamplerBinding tsb{ SkyPanorama::Get().Tex(), SkyPanorama::Get().Sampler() };
+    pv.BindFragmentSamplers(0, &tsb, 1);
+    pv.PushVertexUniforms(0, &sky, sizeof(sky));
+    pv.PushFragmentUniforms(0, &sky, sizeof(sky));
+    pv.Draw(3, 1, 0, 0);
 }
 
 void NpcRender::DrawNpcForwardAndDissolve(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp)

@@ -184,6 +184,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     { static const bool ph = getenv("MD_GROUND_LIVE_PHASE") != nullptr; pass_.SetPhase(ph ? (int)(frame & 7) : -1); }   // measurement: upper bound of the 1/8 reuse
     const bool ran = pass_.Run(cmd, f, groups, ng);
     if (ran && !no_decode) pass_.Decode(cmd);
+    if (pass_.BakeReady()) BakeCache(dev, cmd, f, frame);
     if (ran && light_) {   // the original main_fs; the camera in centred Kenshi units (0.1 m, world centre 14745.6 m) is the origin of the ambient map mapping
         GroundLiveLightParams lp = *light_; lp.world_origin_xz[0] = (cam[0] - 14745.6f) * 10.f; lp.world_origin_xz[1] = (cam[2] - 14745.6f) * 10.f;
         lit_frame_ = pass_.Light(cmd, f, lp); last_frame_ = f;
@@ -205,4 +206,63 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     }
 }
 
+void GroundLiveDriver::BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, uint64_t frame) {
+    if (!cache_tried_) { cache_tried_ = true; if (!cache_.Init(dev)) MD_LOG(MD_LOG_WARNING, "[GroundLive] cache init failed: no bake"); }
+    if (!cache_.Ready() || !hmap_) return;
+    cache_.DumpTick(cmd, frame);
+    GroundCacheRings& rings = cache_.Rings();
+    if (f.wetness != cache_wetness_) { cache_wetness_ = f.wetness; rings.Invalidate(); }   // §3: wetness is a global input of the program; everything is baked again, progressively
+    rings.Update(f.cam_ws[0], f.cam_ws[2]);
+    static const int64_t budget = getenv("MD_GROUND_CACHE_BUDGET") ? std::atoll(getenv("MD_GROUND_CACHE_BUDGET")) : 65536;   // texels per frame (§5: the 1.5 ms cap is checked by the probe)
+    int r = 0; CacheRect s;
+    if (!rings.NextStrip(budget, &r, &s, GroundLiveCache::kMaxShort)) return;
+    const int32_t nx = s.x1 - s.x0, nz = s.z1 - s.z0;
+    const bool tr = nz > nx;   // the target's long axis (u) runs along z
+    const int32_t nlong = tr ? nz : nx, nshort = tr ? nx : nz, ap = GroundLiveCache::kApron;
+    if (nlong > GroundLiveCache::kMaxLong || nshort > GroundLiveCache::kMaxShort) return;
+    const float t = GroundCacheRings::kTexel[r];
+    const int w = nlong + 2 * ap, h = nshort + 2 * ap;
+    // cells along the long axis, about 64 m each; a cell's biome list is the original's rule on its box (an enclosing box gives the same weights, see the header)
+    const int32_t cell = std::max<int32_t>(16, (int32_t)(64.f / t));
+    static GroundLiveGroup cells[160]; int nc = 0;
+    int last_lid = -2;
+    for (int32_t u0 = -ap; u0 < nlong + ap && nc < 160;) {
+        const int32_t u1 = std::min<int32_t>(nlong + ap, u0 + cell);
+        // the cell's box in world texels: u along the long axis, the whole short axis (apron included)
+        const int32_t ax0 = tr ? s.x0 - ap : s.x0 + u0, ax1 = tr ? s.x1 + ap : s.x0 + u1, az0 = tr ? s.z0 + u0 : s.z0 - ap, az1 = tr ? s.z0 + u1 : s.z1 + ap;
+        const float x0 = (float)((ax0 * (double)t + 0.01) - 14745.6) * 10.f, z0 = (float)((az0 * (double)t + 0.01) - 14745.6) * 10.f;
+        const float x1 = (float)((ax1 * (double)t - 0.01) - 14745.6) * 10.f, z1 = (float)((az1 * (double)t - 0.01) - 14745.6) * 10.f;
+        const PatchBiomes pb = kbi_.Query(x0, z0, x1, z1);
+        const int lid = pb.count > 0 ? ListIdOf(pb) : -1;
+        if (lid < 0) return;   // no list (outside the map): the strip stays unbaked, those pixels keep the program path
+        if (lid == last_lid && nc > 0) { cells[nc - 1].x1 = u1 + ap; u0 = u1; continue; }
+        GroundLiveGroup& g = cells[nc]; g = GroundLiveGroup(); g.slot = 0; g.biome_count = 0;
+        g.x0 = u0 + ap; g.x1 = u1 + ap; g.y0 = 0; g.y1 = h;
+        float tile = 1e9f;
+        for (int b = 0; b < pb.count; ++b) {
+            const BiomeInfo* bi = Find(pb.ids[b]); if (!bi || !bi->valid) return;
+            for (const float* a : { bi->pack.scalesA, bi->pack.scalesB, bi->pack.scalesC }) for (int j = 0; j < 4; ++j) if (a[j] > 0.f && a[j] < tile) tile = a[j];
+        }
+        const float footprint = t * 4.096f * (tile < 1e8f ? tile : 1.f);   // the same tier rule as Frame, with the texel size as the pixel footprint
+        int K = 0; while (K < 6 && std::ldexp(1.f, K + 2) <= footprint / 1.25f) K += 2;
+        for (int b = 0; b < pb.count; ++b) {
+            const BiomeInfo* bi = Find(pb.ids[b]);
+            const BiomeLayerSet* set = arrays_.Peek(bi->reg_index, frame, K / 2);
+            if (!set) { arrays_.Request(bi->reg_index, K / 2); return; }   // not resident: baked once it is (the strip is retried next frame)
+            g.biome[g.biome_count].pack = bi->pack; g.biome[g.biome_count].diffuse = set->diffuse.SDLTexture(); g.biome[g.biome_count].normal = set->normal.SDLTexture(); ++g.biome_count;
+        }
+        last_lid = lid; ++nc; u0 = u1;
+    }
+    const float o0 = (float)((s.x0 - ap) + 0.5) * t, o1 = (float)((s.z0 - ap) + 0.5) * t;
+    const float bake0[4] = { o0, o1, 0.f, 0.f };
+    const float bake2[4] = { tr ? 0.f : t, tr ? t : 0.f, tr ? t : 0.f, tr ? 0.f : t };
+    if (!pass_.Bake(cmd, cache_.StripTargets(), w, h, f, hmap_, bake0, hmap_p_, bake2, cells, nc)) return;
+    // the decode maps fragCoord / viewport to the sampled uv: the viewport is the strip textures' full size, not the baked part
+    if (!pass_.DecodeTo(cmd, cache_.StripTargets(), GroundLiveCache::kMaxLong + 2 * ap, GroundLiveCache::kMaxShort + 2 * ap, cache_.StripRgb(), cache_.StripAux())) return;
+    cache_.Store(cmd, r, s, tr);
+    rings.MarkBaked(r, s);
+    ++stats_.cache_strips; stats_.cache_texels += (uint64_t)nx * nz;
+}
+
 }   // namespace md
+

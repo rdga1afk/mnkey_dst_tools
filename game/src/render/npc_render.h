@@ -204,6 +204,7 @@ private:
     // render pass `rp` — order matters (sky first, depth_test=false; see
     // each method's own comments for why).
     void DrawSky(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp);
+    void DrawSkyHdr(const MdCamera& cam, SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, bool stencil_depth);
     void DrawNpcForwardAndDissolve(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp);
     void DrawTerrainAndProps(FrameCtx& fc, const MdCamera& cam, float now_s, SDL_GPURenderPass* rp);
     // #163 5b-2: the ground resolve draw (all its arguments from the camera and the light), into `rp` -- the main pass, or the ground pass opened before it.

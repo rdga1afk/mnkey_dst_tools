@@ -529,6 +529,10 @@ void SceneRender::Init() {
         sky_pipeline.Create(sd);
         sd.frag_path = "shaders/sky_kenshi.frag"; sd.frag_samplers = 1;
         sky_kenshi_pipeline.Create(sd);
+        sd.color_format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT; sd.color_rgb_only = true;
+        sky_kenshi_hdr_pipeline[0].Create(sd);
+        sd.depth_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
+        sky_kenshi_hdr_pipeline[1].Create(sd);
     }
 
     // G-3: Water plane (translucent, depth test ON, depth write OFF)

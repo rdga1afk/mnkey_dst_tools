@@ -28,7 +28,7 @@ bool GroundCacheRings::Update(float cam_x, float cam_z) {
     return moved;
 }
 
-bool GroundCacheRings::NextStrip(int64_t max_texels, int* ring, CacheRect* strip) const {
+bool GroundCacheRings::NextStrip(int64_t max_texels, int* ring, CacheRect* strip, int32_t max_depth) const {
     if (max_texels < 1) return false;
     for (int r = 0; r < kRings; ++r) {
         const Ring& g = ring_[r];
@@ -36,7 +36,7 @@ bool GroundCacheRings::NextStrip(int64_t max_texels, int* ring, CacheRect* strip
         const CacheRect& w = g.want; const CacheRect& b = g.baked;
         if (b.Empty()) {   // first rows: the full width, centred on the camera row
             const int32_t width = w.x1 - w.x0;
-            const int32_t d = (int32_t)std::max<int64_t>(1, std::min<int64_t>(w.z1 - w.z0, max_texels / width));
+            const int32_t d = (int32_t)std::max<int64_t>(1, std::min<int64_t>(std::min<int64_t>(w.z1 - w.z0, max_depth), max_texels / width));
             const int32_t cz = (w.z0 + w.z1) / 2;
             *ring = r; *strip = CacheRect{ w.x0, cz - d / 2, w.x1, cz - d / 2 + d };
             return true;
@@ -47,7 +47,7 @@ bool GroundCacheRings::NextStrip(int64_t max_texels, int* ring, CacheRect* strip
         for (int s = 0; s < 4; ++s) if (miss[s] > best) { best = miss[s]; side = s; }
         if (side < 0) continue;   // complete
         const int32_t len = side < 2 ? (b.x1 - b.x0) : (b.z1 - b.z0);
-        const int32_t d = (int32_t)std::max<int64_t>(1, std::min<int64_t>(best, max_texels / std::max(len, 1)));
+        const int32_t d = (int32_t)std::max<int64_t>(1, std::min<int64_t>(std::min<int64_t>(best, max_depth), max_texels / std::max(len, 1)));
         CacheRect s;
         if (side == 0) s = CacheRect{ b.x0, b.z0 - d, b.x1, b.z0 };
         else if (side == 1) s = CacheRect{ b.x0, b.z1, b.x1, b.z1 + d };

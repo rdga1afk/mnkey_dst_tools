@@ -68,6 +68,12 @@ public:
     SDL_GPUTexture* AuxB() const { return aux_; }   // Decode(): the world normal as stored (rgb, 0..1) + the distance (a, 0 = not written), RGBA16F
     SDL_GPUTexture* AlbedoRgb() const { return rgb_; }   // Decode(): decodePixel of the albedo target + gloss in alpha, RGBA16F
     bool Decode(SDL_GPUCommandBuffer* cmd);                // after Run()
+    bool DecodeTo(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const src[3], int w, int h, SDL_GPUTexture* out_rgb, SDL_GPUTexture* out_aux);   // the same decode over other targets (the cache bake)
+    // Live-ground cache (MD_GROUND_CACHE): the program over a strip of ring texels into dst (RGBA8, RGBA8, R32F, w x h); one draw per cell (scissor x0..y1 in dst pixels),
+    // the surface from the world heightmap (GW_BAKE in ground_live_glue.hlsl: bake0 origin, bake1 height range / extent / resolution, bake2 axes)
+    bool Bake(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const dst[3], int w, int h, const GroundLiveFrame& f, SDL_GPUTexture* hmap, const float bake0[4], const float bake1[4], const float bake2[4],
+              const GroundLiveGroup* cells, int n);
+    bool BakeReady() const { return bake_ok_; }
     // After Run(): the ORIGINAL main_fs (deferred.hlsl, no shadow) over the three raw targets; Lit() = rgb light (HDR, before fog / exposure), alpha 1 where the pass wrote a pixel (0 = clipped / not written).
     bool Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveLightParams& p);
     SDL_GPUTexture* Lit() const { return lit_; }
@@ -87,6 +93,9 @@ private:
     SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4];
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
     SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
+    Variant bake_[4]; bool bake_ok_ = false;
+    static void SetIn(Variant& v, const std::string& name, const float* val, int count, int idx = 0);
+    void FillGroup(Variant& v, const GroundLiveFrame& f, const GroundLiveGroup& grp, int tw, int th, SDL_GPUTextureSamplerBinding* tb);
     Variant fog_; struct FogPipe { SDL_GPUTextureFormat c = SDL_GPU_TEXTUREFORMAT_INVALID, d = SDL_GPU_TEXTUREFORMAT_INVALID; SDL_GPUGraphicsPipeline* pipe = nullptr; } fog_pipes_[4]; int n_fog_pipes_ = 0;   // one pipeline per (colour, depth) format of the ground pass
 };
 

@@ -19,7 +19,7 @@ public:
     // Camera position in metres (world corner origin). Updates the wanted rectangles and trims the baked ones; true when any ring moved.
     bool Update(float cam_x, float cam_z);
     // The next strip to bake (world texel rect of ring *ring), at most max_texels; false when every ring is complete. Nearest ring first.
-    bool NextStrip(int64_t max_texels, int* ring, CacheRect* strip) const;
+    bool NextStrip(int64_t max_texels, int* ring, CacheRect* strip, int32_t max_depth = 1 << 30) const;   // max_depth: the strip's thickness across its length
     // The bake of a strip returned by NextStrip finished: the baked rectangle grows by it (the strip is adjacent to it by construction).
     void MarkBaked(int ring, const CacheRect& strip);
     // A world rectangle in metres is fully served by ring r (inside its baked texels).
