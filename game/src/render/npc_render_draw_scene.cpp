@@ -139,7 +139,7 @@ bool water_any = false;
             water_any |= wet;
         }
     }
-    if (g_kenshi_water && water_any && KenshiWaterTexturesReady()) WaterLiveReady();
+    if (g_kenshi_water && KenshiWaterTexturesReady()) WaterLiveReady();   // at the first frame, not when water first comes into view (town: a 225 ms frame on the first water)
     if (water_any)
         SceneRender::Get().water_mask_ssbo.UploadInCmd(fc.cmd, water_mask, (int)sizeof(water_mask));
 }
