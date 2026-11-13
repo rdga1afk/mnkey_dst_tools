@@ -10,7 +10,18 @@ extern const char* const md_build_title;   // generated at build time: cmake/bui
 // Hot-reload stub: editor_console.cpp /reload-shaders — no-op in game build.
 void EditorReloadAllShaderPipelines() {}
 // scenario bursts paced by the real game loop's frame cap (md.set_burst_paced, power runs); the platform header stays in main.cpp
-bool g_dynres_input_event = false; // a key, wheel or button-held mouse motion since the last rendered frame (dynres v2 step 4; the controller clears it)
+bool g_dynres_input_event = false; // a camera input since the last rendered frame (dynres v2 step 4; the controller clears it)
+// dynres v2 step 4: the camera inputs only (coordinator 6846926508): WASD, arrows, Q / E, the wheel, a right-button drag
+bool DynresCameraInput(const SDL_Event& e) {
+    if (e.type == SDL_EVENT_MOUSE_WHEEL) return true;
+    if (e.type == SDL_EVENT_MOUSE_MOTION) return (e.motion.state & SDL_BUTTON_RMASK) != 0;
+    if (e.type != SDL_EVENT_KEY_DOWN) return false;
+    switch (e.key.scancode) {
+    case SDL_SCANCODE_W: case SDL_SCANCODE_A: case SDL_SCANCODE_S: case SDL_SCANCODE_D: case SDL_SCANCODE_Q: case SDL_SCANCODE_E:
+    case SDL_SCANCODE_UP: case SDL_SCANCODE_DOWN: case SDL_SCANCODE_LEFT: case SDL_SCANCODE_RIGHT: return true;
+    default: return false;
+    }
+}
 void ScenarioPacedFrameWait(uint64_t& prev_ns) { window_frame_cap_wait(prev_ns); }
 void ScenarioNoteActivity() { window_note_activity(); }
 #endif
@@ -105,7 +116,7 @@ int main(int argc, char** argv)
         {
             SDL_Event _ev;
             while (SDL_PollEvent(&_ev)) {
-                if (_ev.type == SDL_EVENT_KEY_DOWN || _ev.type == SDL_EVENT_MOUSE_WHEEL || (_ev.type == SDL_EVENT_MOUSE_MOTION && _ev.motion.state != 0)) g_dynres_input_event = true;
+                if (DynresCameraInput(_ev)) g_dynres_input_event = true;
 #ifdef MONKEY_DUST_EDITOR
                 ImGui_ImplSDL3_ProcessEvent(&_ev);
 #endif

@@ -89,13 +89,13 @@ static const int kAnisoLv[3] = { 1, 4, 16 };
 static int   s_set_ga        = 0;      // "ga": index in kAnisoLv (ground texture filtering): 0 = footprint mip (default), 1 = aniso 4, 2 = aniso 16 (Kenshi)
 static float s_set_vdist     = 5000.f; // "vd": View Distance, Kenshi 5000 (1500...12000)
 static int   s_set_chain     = 5;      // "grc": ground reuse chain (#207, owner 27.10): 0 Standard, 3, 5 (default)
-static int   s_set_gp        = 0;      // "gp": Ground quality preset (#193, owner 22.10): 0 dyn075_a1 (default, #194), 1 dyn075, 2 reuse05, 3 Custom
+static int   s_set_gp        = 0;      // "gp": Ground quality preset (#193, owner 22.10): 0 dyn067_a1 (default, #194), 1 dyn067, 2 reuse05, 3 Custom
 static int   s_set_wres      = -1;     // "wres": index in kWinRes, -1 = the window as it is
 static const int kWinRes[][2] = { {1280, 720}, {1366, 768}, {1600, 900}, {1920, 1080} };
-static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, owner 17.10): 0 off, 1 = 0.75 (default), 2 = 0.5
-static float dyn_scale_of(int m) { return m == 1 ? 0.75f : (m == 2 ? 0.5f : 0.f); }
+static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, owner 17.10; 0.67 owner 13.11): 0 off, 1 = 0.67 (default), 2 = 0.5
+static float dyn_scale_of(int m) { return m == 1 ? 0.67f : (m == 2 ? 0.5f : 0.f); }
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
-// #193 "Ground quality": the preset whose three settings equal the current ones (0 dyn075_a1, 1 dyn075, 2 reuse05), else 3 = Custom
+// #193 "Ground quality": the preset whose three settings equal the current ones (0 dyn067_a1, 1 dyn067, 2 reuse05), else 3 = Custom
 static int ground_preset_now() {
     for (int n = 0; n < 3; ++n) { int a, c; float d; md_settings_ground_preset(n, &a, &d, &c); if (a == kAnisoLv[s_set_ga] && d == dyn_scale_of(s_set_dyn) && c == md_settings_get_ground_reuse_cr()) return n; }
     return 4;
@@ -164,7 +164,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
         if (strstr(buf, "\"tbld\"")) s_set_tbld = f3_parse_f(buf, "\"tbld\"") != 0.f;
         if (strstr(buf, "\"ovr\"")) { s_set_ovr = f3_parse_f(buf, "\"ovr\""); if (s_set_ovr < 100.f || s_set_ovr > 800.f) s_set_ovr = 300.f; }
-        if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); s_set_gp = s_set_gp < 0 ? 0 : (s_set_gp > 3 ? 3 : s_set_gp); }   // the old numbering had aniso1 at 0 (= dyn075_a1 now) and Custom at 4
+        if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); s_set_gp = s_set_gp < 0 ? 0 : (s_set_gp > 3 ? 3 : s_set_gp); }   // the old numbering had aniso1 at 0 (= dyn067_a1 now) and Custom at 4
         if (strstr(buf, "\"grc\"")) { s_set_chain = (int)f3_parse_f(buf, "\"grc\""); if (s_set_chain != 0 && s_set_chain != 3) s_set_chain = 5; }
         if (strstr(buf, "\"fcap\"")) { s_set_fcap = (int)f3_parse_f(buf, "\"fcap\""); if (s_set_fcap != 30 && s_set_fcap != 0 && s_set_fcap != 60) s_set_fcap = -1; }
         if (strstr(buf, "\"vsy\"")) s_set_vsync = f3_parse_f(buf, "\"vsy\"") != 0.f;
@@ -475,7 +475,7 @@ void EditorCore::Update(float dt) {
                 ImGui::TextUnformatted("Upscaling");
                 {
                     {   // #193 (owner 22.10): one switch over the three ground settings; a manual change below makes it Custom
-                        static const char* kGpNm[] = { "dyn075_a1 (default)", "dyn075", "reuse05", "Custom" };
+                        static const char* kGpNm[] = { "dyn067_a1 (default)", "dyn067", "reuse05", "Custom" };
                         s_set_gp = ground_preset_now();
                         int gp = s_set_gp;
                         ImGui::SetNextItemWidth(220.f);
@@ -485,7 +485,7 @@ void EditorCore::Update(float dt) {
                     ImGui::TextUnformatted("Resolution while moving");
                     if (ImGui::RadioButton("Off##dyn0", s_set_dyn == 0)) { s_set_dyn = 0; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     ImGui::SameLine();
-                    if (ImGui::RadioButton("0.75##dyn1", s_set_dyn == 1)) { s_set_dyn = 1; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
+                    if (ImGui::RadioButton("0.67##dyn1", s_set_dyn == 1)) { s_set_dyn = 1; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     ImGui::SameLine();
                     if (ImGui::RadioButton("0.5##dyn2", s_set_dyn == 2)) { s_set_dyn = 2; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     // #207 (owner 31.10): the sharpen of the upscale, only while C15 has lowered the resolution; Quality = 5 taps + adaptive (~3 ms), Fast = 3 taps (~1.3 ms), Off = 1 tap (~0.75 ms)

@@ -9,7 +9,7 @@
 int   g_up_sharp = 0;            // #207 md.set_upscale_sharpness / Settings «Sharpening while moving» (owner 31.10): 0 Quality (5 taps + adaptive, default), 1 Fast (3 taps), 2 Off (1 tap); only the upscale of a lowered scene
 float g_speed_override = -1.f;   // md.set_speed(v): C15 and the ring switch take the camera speed (m/s, turn rate 0) from the scenario instead of measuring it (< 0 = measure); a scenario renders a variable number of frames per pose, so a measured speed is not the one it plans
 bool  g_dynres_on = true;   // #182 md.set_dyn_res (default on, owner 17.10): the scene renders at g_dynres_scale only while the camera moves, native when it stands; only with the native scene (no fixed scale)
-float g_dynres_scale = 0.75f, g_dynres_cur = 1.f, g_dynres_v_move = 2.f, g_dynres_w_move = 10.f, g_dynres_v_stop = 0.5f, g_dynres_w_stop = 3.f;
+float g_dynres_scale = 0.67f, g_dynres_cur = 1.f, g_dynres_v_move = 2.f, g_dynres_w_move = 10.f, g_dynres_v_stop = 0.5f, g_dynres_w_stop = 3.f;
 int   g_dynres_down = 5, g_dynres_up = 2, g_dynres_cnt = 0;
 extern bool g_dynres_input_event;
 float g_dynres_ema = 0.9f; int g_dynres_hold = 0, g_dynres_hold_left = 0; long g_dynres_changes = 0;   // damping (dynres v2 step 3; md.set_dyn_res_damping, defaults = off = the old behaviour): EMA factor of the speed / turn signals (0 = off), frames a change holds the level, count of level changes
@@ -175,9 +175,9 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         if (g_speed_override >= 0.f) { v = g_speed_override; w = 0.f; }
         if (g_dynres_ema > 0.f) { static float ev_ = 0.f, ew_ = 0.f; if (v > 1000.f) { ev_ = 0.f; ew_ = 0.f; v = 0.f; w = 0.f; }   // a jump of > 1000 m/s is a teleport, not motion: without this the EMA of one km-sized jump kept the level low for ~100 frames (gate frames at EMA 0.9: 0.75 at every capture)
             ev_ = g_dynres_ema * ev_ + (1.f - g_dynres_ema) * v; ew_ = g_dynres_ema * ew_ + (1.f - g_dynres_ema) * w; v = ev_; w = ew_; }
-        // dynres v2 step 4 (MD_DYNRES_INPUT=1, default off): a camera input (key, wheel, button-held mouse motion; main.cpp) drops to the motion level on the input frame,
+        // dynres v2 step 4 (default on, MD_DYNRES_INPUT=0 off): a camera input (main.cpp DynresCameraInput) drops to the motion level on the input frame,
         // before the speed EMA rises; the return is today's stop path
-        static const bool input_on = getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '1';
+        static const bool input_on = !(getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '0');
         if (input_on && g_dynres_input_event && g_dynres_cur >= 0.999f) { g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
         const bool low = g_dynres_cur < 0.999f;
         const bool want_low = (input_on && g_dynres_input_event) || (low ? (v > g_dynres_v_stop || w > g_dynres_w_stop) : (v > g_dynres_v_move || w > g_dynres_w_move));
@@ -638,10 +638,10 @@ void md_settings_set_terrain_lod(float detail, float distant, float threshold) {
 extern int g_terrain_ground_aniso_level;
 int  md_settings_get_ground_reuse_cr() { return g_opt_ground_reuse_cr; }   // #193 presets: 3 = history rejected at fractional motion > 0.25 px (default), 1 = never rejected (0.5 px)
 void md_settings_set_ground_reuse_cr(int cr) { g_opt_ground_reuse_cr = cr; }
-// #193 "Ground quality" (owner 22.10, aniso1 removed 22.10 #194): n 0 dyn075_a1 = footprint mip + resolution 0.75 while moving (default); 1 dyn075 = aniso x16 + resolution 0.75 while moving;
+// #193 "Ground quality" (owner 22.10, aniso1 removed 22.10 #194; motion level 0.67, owner 13.11): n 0 dyn_a1 = footprint mip + resolution 0.67 while moving (default); 1 dyn = aniso x16 + resolution 0.67 while moving;
 // 2 reuse05 = aniso x16, resolution fixed, history never rejected. False for n out of range.
 bool md_settings_ground_preset(int n, int* aniso, float* dyn_scale, int* cr) {
-    static const int   kA[3] = { 1, 16, 16 }; static const float kD[3] = { 0.75f, 0.75f, 0.f }; static const int kC[3] = { 3, 3, 1 };
+    static const int   kA[3] = { 1, 16, 16 }; static const float kD[3] = { 0.67f, 0.67f, 0.f }; static const int kC[3] = { 3, 3, 1 };
     if (n < 0 || n > 2) return false;
     *aniso = kA[n]; *dyn_scale = kD[n]; *cr = kC[n]; return true;
 }

@@ -7,6 +7,7 @@
 #include <monkey_dust/render/md_camera.h>
 bool g_scenario_render_frame_pending = false;
 extern bool g_dynres_input_event;   // main.cpp
+bool DynresCameraInput(const SDL_Event& e);   // main.cpp
 float g_scenario_last_frame_ms = 0.f;
 static constexpr float LOGIC_TICK_S = 0.1f;   // one scenario tick = 0.1 s of world time (10 TPS)
 #include <cstdio>
@@ -386,11 +387,11 @@ int RunScenarioMode(const ScenarioConfig& cfg,
             if (g_scenario_burst_paced) { static uint64_t paced_ns = 0; ScenarioPacedFrameWait(paced_ns); }   // md.set_burst_paced(true): the frame cap of the real loop also paces md.render_frame (owner 13.11: cap 60 for runs that do not measure frame cost)
             { static uint64_t prev_pc = 0; const uint64_t pc = SDL_GetPerformanceCounter(); if (prev_pc) g_scenario_last_frame_ms = (float)((double)(pc - prev_pc) * 1000.0 / (double)SDL_GetPerformanceFrequency()); prev_pc = pc; }   // md.get_frame_ms(): wall time between consecutive md.render_frame() renders (frame_dt() is not ticked on this path and returned 0)
             SDL_PumpEvents();
-            {   // dynres v2 step 4 (MD_DYNRES_INPUT=1): this loop has no event poll of its own, so the camera inputs a scenario pushes (md.push_key) are taken here, as main.cpp does
-                static const bool input_on = getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '1';
+            {   // dynres v2 step 4 (default on, MD_DYNRES_INPUT=0 off): this loop has no event poll of its own, so the camera inputs a scenario pushes (md.push_key) are taken here, as main.cpp does
+                static const bool input_on = !(getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '0');
                 SDL_Event ev[16]; int n = 0;
                 while (input_on && (n = SDL_PeepEvents(ev, 16, SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_MOUSE_WHEEL)) > 0)
-                    for (int i = 0; i < n; ++i) if (ev[i].type == SDL_EVENT_KEY_DOWN || ev[i].type == SDL_EVENT_MOUSE_WHEEL || (ev[i].type == SDL_EVENT_MOUSE_MOTION && ev[i].motion.state != 0)) g_dynres_input_event = true;
+                    for (int i = 0; i < n; ++i) if (DynresCameraInput(ev[i])) g_dynres_input_event = true;
             }
             EditorCore::Get().UpdateEditorCamera(LOGIC_TICK_S, false);
             MdCamera active_cam = EditorCore::Get().editor_cam;
