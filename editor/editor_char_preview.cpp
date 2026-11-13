@@ -48,7 +48,8 @@ std::unique_ptr<md::render_backend::SdlGpuBackend> g_backend;
 GpuPipeline    g_body_pipe, g_hair_pipe, g_bg_pipe, g_scene_pipe, g_plat_pipe;
 GpuStaticBuffer g_vbo, g_ibo, g_scene_vbo, g_scene_ibo, g_plat_vbo, g_plat_ibo;
 GpuTexture     g_irr_cube, g_spec_cube;   // Kenshi's environment cubes (the character screen's lighting)
-GpuTexture     g_tex, g_tex_head, g_tex_none, g_bg_sand, g_bg_dune, g_plat_tex, g_plat_tex2;
+GpuTexture     g_tex, g_tex_head, g_tex_none, g_bg_sand, g_bg_dune, g_plat_tex, g_plat_tex2, g_plat_n1, g_plat_m1, g_plat_n2, g_plat_m2;
+GpuStaticBuffer g_plat_vbo_t;   // platform vertices with a tangent frame for the install program (MD_CHAR_LIVE)
 int g_plat_ni = 0;
 GpuColorTexture g_color, g_depth;
 int g_ni = 0, g_scene_ni = 0, g_rtt_w = 0, g_rtt_h = 0;
@@ -228,6 +229,36 @@ void LoadPlatform() {
     g_plat_vbo.Init(0x8892u, v.data(), uint32_t(v.size() * sizeof(float)));
     g_plat_ibo.Init(0x8893u, sm.indices.data(), uint32_t(sm.indices.size() * sizeof(uint32_t)));
     g_plat_ni = int(sm.indices.size());
+#ifdef MD_HLSL_RUNTIME
+    if (getenv("MD_CHAR_LIVE")) {   // the install platform program: normal and metal atlases, and a tangent frame from the mesh UVs
+        const size_t nv = p.size() / 3; std::vector<float> tn(nv * 3, 0.f), bn(nv * 3, 0.f);
+        for (size_t t = 0; t + 2 < sm.indices.size(); t += 3) {
+            const uint32_t ia = sm.indices[t], ib = sm.indices[t + 1], ic = sm.indices[t + 2];
+            float e1[3], e2[3]; for (int k = 0; k < 3; ++k) { e1[k] = p[ib * 3 + k] - p[ia * 3 + k]; e2[k] = p[ic * 3 + k] - p[ia * 3 + k]; }
+            const float du1 = uv[ib * 2] - uv[ia * 2], dv1 = uv[ib * 2 + 1] - uv[ia * 2 + 1], du2 = uv[ic * 2] - uv[ia * 2], dv2 = uv[ic * 2 + 1] - uv[ia * 2 + 1];
+            const float det = du1 * dv2 - du2 * dv1; if (fabsf(det) < 1e-12f) continue; const float r = 1.f / det;
+            for (int k = 0; k < 3; ++k) {
+                const float tk = (e1[k] * dv2 - e2[k] * dv1) * r, bk = (e2[k] * du1 - e1[k] * du2) * r;
+                for (uint32_t i : {ia, ib, ic}) { tn[i * 3 + k] += tk; bn[i * 3 + k] += bk; }
+            }
+        }
+        std::vector<float> vt(nv * 16);
+        for (size_t i = 0; i < nv; ++i) {
+            memcpy(&vt[i * 16], &v[i * 12], 12 * sizeof(float));
+            float tx = -tn[i * 3], ty = tn[i * 3 + 1], tz = -tn[i * 3 + 2], bx = -bn[i * 3], by = bn[i * 3 + 1], bz = -bn[i * 3 + 2];   // the same half turn as the positions
+            const float nx = vt[i * 16 + 3], ny = vt[i * 16 + 4], nz = vt[i * 16 + 5];
+            const float d = tx * nx + ty * ny + tz * nz; tx -= nx * d; ty -= ny * d; tz -= nz * d;   // orthogonal to the normal
+            const float l = sqrtf(tx * tx + ty * ty + tz * tz); if (l > 1e-8f) { tx /= l; ty /= l; tz /= l; } else { tx = 1.f; ty = tz = 0.f; }
+            const float cx = ty * nz - tz * ny, cy = tz * nx - tx * nz, cz = tx * ny - ty * nx;   // cross(tangent, normal)
+            const float w = (cx * bx + cy * by + cz * bz) < 0.f ? -1.f : 1.f;
+            vt[i * 16 + 12] = tx; vt[i * 16 + 13] = ty; vt[i * 16 + 14] = tz; vt[i * 16 + 15] = w;
+        }
+        g_plat_vbo_t.Init(0x8892u, vt.data(), uint32_t(vt.size() * sizeof(float)));
+        auto ld = [&](GpuTexture& t, const char* name) { const std::string pth = ss.Resources().Path(name); const char* c = pth.c_str(); return !pth.empty() && t.InitFromDDSArray(&c, 1, rep); };
+        if (!ld(g_plat_n1, "props_atlas_regular_normal.dds") || !ld(g_plat_n2, "props_atlas_worn_normal.dds") || !ld(g_plat_m1, "props_atlas_regular_metalness.dds")) fprintf(stderr, "[CharPreview] platform normal / metal atlas missing, the GLSL platform stays\n");
+        // the install has no worn metalness atlas (a lookup of the missing name walks the whole install): the dummy (0) is bound
+    }
+#endif
 }
 
 // Loads the body, skeleton and textures of the session's current race and gender.
@@ -464,7 +495,12 @@ void Draw(md::GpuCommandBufferHandle cmd) {
         pv.Draw(3, 1, 0, 0);
     }
     const bool plat = g_plat_pipe.SDLPipeline() && g_plat_vbo.SDLBuffer() && g_plat_tex.SDLTexture() && g_plat_tex2.SDLTexture() && g_plat_ni > 0;
-    if (plat) {
+#ifdef MD_HLSL_RUNTIME
+    const bool plat_live = md::charlive::PlatformReady() && g_plat_vbo_t.SDLBuffer() && g_plat_n1.SDLTexture() && g_plat_n2.SDLTexture() && g_plat_m1.SDLTexture() && plat;
+#else
+    const bool plat_live = false;
+#endif
+    if (plat && !plat_live) {
         pv.BindPipeline(&g_plat_pipe);
         pv.BindVertexBuffer(&g_plat_vbo);
         pv.BindIndexBuffer(&g_plat_ibo, SDL_GPU_INDEXELEMENTSIZE_32BIT);
@@ -507,6 +543,13 @@ void Draw(md::GpuCommandBufferHandle cmd) {
             for (int k = 0; k < 3; ++k) hd.colour[k] = hrgb[k];
             for (int k = 0; k < 4; ++k) { hd.diffuse[k] = at->diffuse[k]; hd.alpha[k] = at->alpha[k]; }
             hd.threshold = at->threshold; hd.specular = at->specular;
+        }
+        M4 pmv = Mul(view, scale), pmvp = Mul(mvp, scale);
+        if (plat_live) {
+            auto tp = [&](GpuTexture& t, GpuTexture& fb) { GpuTexture& u = t.SDLTexture() ? t : fb; return SDL_GPUTextureSamplerBinding{u.SDLTexture(), u.SDLSampler()}; };
+            md::charlive::PlatformDraw& pd = ba.platform; ba.has_platform = true;
+            pd.vbo = g_plat_vbo_t.SDLBuffer(); pd.ibo = g_plat_ibo.SDLBuffer(); pd.ni = uint32_t(g_plat_ni); pd.mvp = pmvp.data(); pd.mv = pmv.data();
+            pd.tex[0] = tp(g_plat_tex, none); pd.tex[1] = tp(g_plat_n1, none); pd.tex[2] = tp(g_plat_m1, none); pd.tex[3] = tp(g_plat_tex2, none); pd.tex[4] = tp(g_plat_n2, none); pd.tex[5] = tp(g_plat_m2, none);
         }
         md::charlive::DrawBody(ba);
         GpuCommandBuffer::ColorPassDesc c2; c2.cmd = cmd; c2.color_tex[0] = g_color.SDLTexture(); c2.depth_tex = g_depth.SDLTexture(); c2.load_color = true; c2.load_depth = true;

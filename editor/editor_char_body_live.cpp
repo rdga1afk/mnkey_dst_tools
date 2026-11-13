@@ -60,6 +60,39 @@ VO main(VI i) {
 // returns transparent black here (the head layer at body UVs and the body layer at head UVs add nothing, as the program expects).
 const char* kBorder = "float4 md_border_tex2D(sampler2D s, float2 uv) { float4 c = tex2D(s, uv); return (any(uv < 0.0) || any(uv > 1.0)) ? float4(0.0, 0.0, 0.0, 0.0) : c; }\n#define tex2D md_border_tex2D\n";
 
+// Vertex glue of the platform: static mesh, outputs in the order of objects.hlsl main_ps (texCoord, normal, binormal, tangent, cameraDir, worldPos, colour at locations 0..6), view space.
+const char* kPlatVert = R"(uniform float4 mvpc[4];
+uniform float4 mvc[4];
+struct VI { [[vk::location(0)]] float3 pos : POSITION; [[vk::location(1)]] float3 nrm : NORMAL; [[vk::location(2)]] float2 uv : TEXCOORD0; [[vk::location(3)]] float4 col : COLOR0; [[vk::location(4)]] float4 tan : TANGENT; };
+struct VO {
+    float4 pos : SV_Position;
+    [[vk::location(0)]] float2 uv : TEXCOORD0; [[vk::location(1)]] float3 normal : TEXCOORD1; [[vk::location(2)]] float3 binormal : TEXCOORD2; [[vk::location(3)]] float3 tangent : TEXCOORD3;
+    [[vk::location(4)]] float3 camDir : TEXCOORD4; [[vk::location(5)]] float3 worldPos : TEXCOORD5; [[vk::location(6)]] float4 colour : COLOR0;
+};
+float3 vrot(float3 v) { return mvc[0].xyz * v.x + mvc[1].xyz * v.y + mvc[2].xyz * v.z; }
+VO main(VI i) {
+    VO o; float4 p = float4(i.pos, 1.0);
+    o.pos = mvpc[0] * p.x + mvpc[1] * p.y + mvpc[2] * p.z + mvpc[3];
+    o.uv = i.uv;
+    o.normal = vrot(i.nrm); o.tangent = vrot(i.tan.xyz); o.binormal = vrot(cross(i.tan.xyz, i.nrm) * i.tan.w);
+    o.camDir = float3(0, 0, 0);
+    o.worldPos = (mvc[0] * p.x + mvc[1] * p.y + mvc[2] * p.z + mvc[3]).xyz;
+    o.colour = i.col;
+    return o;
+}
+)";
+
+// objects.hlsl main_ps takes its textures and sampler as entry parameters (D3D11 style), which glslang turns into stage inputs; this wrapper owns them as globals and calls the original.
+const char* kPlatFragWrap = R"(SamplerState md_samp : register(s6);
+Texture2D md_t0 : register(t0); Texture2D md_t1 : register(t1); Texture2D md_t2 : register(t2); Texture2D md_t3 : register(t3); Texture2D md_t4 : register(t4); Texture2D md_t5 : register(t5);
+uniform float3 cameraPos; uniform float farClip; uniform float waterHeightRel; uniform float wetness; uniform float glossMult;
+void main(float4 fragCoord : SV_Position, [[vk::location(0)]] float2 texCoord : TEXCOORD0, [[vk::location(1)]] float3 normal : TEXCOORD1, [[vk::location(2)]] float3 binormal : TEXCOORD2,
+          [[vk::location(3)]] float3 tangent : TEXCOORD3, [[vk::location(4)]] float3 cameraDir : TEXCOORD4, [[vk::location(5)]] float3 worldPos : TEXCOORD5, [[vk::location(6)]] float4 colour : COLOR0,
+          out GBuffer buffer) {
+    ob_orig_ps(fragCoord, texCoord, normal, binormal, tangent, cameraDir, worldPos, colour, md_samp, md_t0, md_t1, md_t2, md_t3, md_t4, md_t5, cameraPos, farClip, waterHeightRel, wetness, glossMult, buffer);
+}
+)";
+
 // Light pass glue: a full-screen triangle that hands the original rtt main_fs its texCoord / ray / screen.
 const char* kLightVert = R"(uniform float4 rayScale;
 struct VO { float4 pos : SV_Position; [[vk::location(0)]] float2 uv : TEXCOORD0; [[vk::location(1)]] float3 ray : TEXCOORD1; [[vk::location(2)]] float2 screen : TEXCOORD2; };
@@ -79,12 +112,12 @@ struct Stage {
 
 struct State {
     SDL_GPUDevice* dev = nullptr;
-    Stage bvs, bfs, hfs, lvs, lfs;
-    SDL_GPUGraphicsPipeline *gpipe = nullptr, *hpipe = nullptr, *lpipe = nullptr;
+    Stage bvs, bfs, hfs, pvs, pfs, lvs, lfs;
+    SDL_GPUGraphicsPipeline *gpipe = nullptr, *hpipe = nullptr, *ppipe = nullptr, *lpipe = nullptr;
     SDL_GPUSampler* point = nullptr;
     SDL_GPUTexture* gb[3] = {};
     int gw = 0, gh = 0;
-    bool ready = false;
+    bool ready = false, plat_ok = false;
 };
 State S;
 
@@ -143,6 +176,10 @@ bool Init(SDL_GPUDevice* dev) {
     if (!Build(S.bvs, kBodyVert, {}, 'v', 0, "body vertex")) return false;
     if (!Build(S.bfs, std::string(kBorder) + "#define VPOS SV_Position\n#define main_fs main\n#include \"" + chr + "\"\n", Deps(dir, chr), 'f', 13, "body fragment (character.hlsl)")) return false;
     if (!Build(S.hfs, std::string(kBorder) + "#define VPOS SV_Position\n#define hair_fs main\n#include \"" + chr + "\"\n", Deps(dir, chr), 'f', 3, "hair fragment (character.hlsl hair_fs)")) return false;
+    const std::string obj = dir + "deferred/objects.hlsl";
+    if (std::filesystem::exists(obj)) {   // optional: without it the platform stays on the preview's own draw
+        if (Build(S.pvs, kPlatVert, {}, 'v', 0, "platform vertex") && Build(S.pfs, std::string("#define DX11\n#define COLOURING\n#define DUAL_TEXTURE\n#define main_ps ob_orig_ps\n#include \"") + obj + "\"\n#undef main_ps\n" + kPlatFragWrap, Deps(dir, obj), 'f', 6, "platform fragment (objects.hlsl main_ps)")) S.plat_ok = true;
+    }
     if (!Build(S.lvs, kLightVert, {}, 'v', 0, "light vertex")) return false;
     if (!Build(S.lfs, "#define VPOS SV_Position\n#define main_fs main\n#include \"" + rtt + "\"\n", Deps(dir, rtt), 'f', 5, "light fragment (rtt.hlsl)")) return false;
 
@@ -165,6 +202,17 @@ bool Init(SDL_GPUDevice* dev) {
     S.hpipe = SDL_CreateGPUGraphicsPipeline(dev, &gi);
     if (!S.hpipe) { fprintf(stderr, "[CharBodyLive] hair pipeline: %s\n", SDL_GetError()); return false; }
 
+    if (S.plat_ok) {
+        SDL_GPUVertexBufferDescription pb = {}; pb.slot = 0; pb.pitch = kPlatformStride; pb.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        SDL_GPUVertexAttribute pa[5] = {};
+        const SDL_GPUVertexElementFormat pf[5] = { SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4 };
+        const uint32_t po[5] = { 0, 12, 24, 32, 48 };
+        for (int i = 0; i < 5; ++i) { pa[i].location = i; pa[i].buffer_slot = 0; pa[i].format = pf[i]; pa[i].offset = po[i]; }
+        SDL_GPUGraphicsPipelineCreateInfo pi = gi; pi.vertex_shader = S.pvs.sh; pi.fragment_shader = S.pfs.sh; pi.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        pi.vertex_input_state.vertex_buffer_descriptions = &pb; pi.vertex_input_state.vertex_attributes = pa; pi.vertex_input_state.num_vertex_attributes = 5;
+        S.ppipe = SDL_CreateGPUGraphicsPipeline(dev, &pi);
+        if (!S.ppipe) { fprintf(stderr, "[CharBodyLive] platform pipeline: %s\n", SDL_GetError()); S.plat_ok = false; }
+    }
     SDL_GPUColorTargetDescription lc = {}; lc.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     lc.blend_state.enable_blend = true; lc.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE; lc.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     lc.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD; lc.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE; lc.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
@@ -183,6 +231,7 @@ bool Init(SDL_GPUDevice* dev) {
 }
 
 bool Ready() { return S.ready; }
+bool PlatformReady() { return S.ready && S.plat_ok; }
 
 void DrawBody(const BodyArgs& a) {
     if (!S.ready) return;
@@ -194,6 +243,20 @@ void DrawBody(const BodyArgs& a) {
         SDL_GPUDepthStencilTargetInfo dti = {}; dti.texture = a.depth; dti.load_op = SDL_GPU_LOADOP_LOAD; dti.store_op = SDL_GPU_STOREOP_STORE; dti.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE; dti.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
         SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(a.cmd, cti, 3, &dti);
         if (!rp) return;
+        if (a.has_platform && S.plat_ok) {
+            const PlatformDraw& pd = a.platform;
+            SDL_BindGPUGraphicsPipeline(rp, S.ppipe);
+            Ub pv(S.pvs);
+            for (int c = 0; c < 4; ++c) { pv.set("mvpc", pd.mvp + 4 * c, 4, c); pv.set("mvc", pd.mv + 4 * c, 4, c); }
+            SDL_PushGPUVertexUniformData(a.cmd, 0, pv.b.data(), (Uint32)pv.b.size());
+            Ub pf(S.pfs); const float far_c = 100.f, dry = -1.0e5f, wet0 = 0.f, gloss1 = 1.f;
+            pf.set("cameraPos", a.zero4, 3); pf.set("farClip", &far_c, 1); pf.set("waterHeightRel", &dry, 1); pf.set("wetness", &wet0, 1); pf.set("glossMult", &gloss1, 1);
+            SDL_PushGPUFragmentUniformData(a.cmd, 0, pf.b.data(), (Uint32)pf.b.size());
+            SDL_GPUBufferBinding pvb = { pd.vbo, 0 }, pib = { pd.ibo, 0 };
+            SDL_BindGPUVertexBuffers(rp, 0, &pvb, 1); SDL_BindGPUIndexBuffer(rp, &pib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            SDL_BindGPUFragmentSamplers(rp, 0, pd.tex, 6);
+            SDL_DrawGPUIndexedPrimitives(rp, pd.ni, 1, 0, 0, 0);
+        }
         SDL_BindGPUGraphicsPipeline(rp, S.gpipe);
         Ub vu(S.bvs);
         for (int c = 0; c < 4; ++c) { vu.set("mvpc", a.mvp + 4 * c, 4, c); vu.set("mvc", a.mv + 4 * c, 4, c); }
