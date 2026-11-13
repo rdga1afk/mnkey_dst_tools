@@ -1,3 +1,6 @@
+#include <cstdlib>
+#include <thread>
+#include <atomic>
 #include <monkey_dust/render/ground_slot.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -136,6 +139,27 @@ static std::string PlacementKey(const HubPlacement& p) {
 
 // One GPU texture per file for the whole process. Called from the zone worker (Prepare) so the file read, texture create and upload happen
 // off the render thread (3..14 ms each); Step() then only finds it. A caller that meets a load in flight waits for it.
+static std::atomic<uint64_t> s_hub_frame{0};
+static std::atomic<bool> s_hub_main_set{false};
+static std::thread::id s_hub_main;
+void HubSpike::FrameTick() {
+    if (!s_hub_main_set.load()) { s_hub_main = std::this_thread::get_id(); s_hub_main_set.store(true); }
+    s_hub_frame.fetch_add(1);
+}
+// MD_HUB_TEX_PER_FRAME=n (default 0 = off): the worker's texture create + upload + mip generation competes with the frame on the GPU (town: frames > 33 ms
+// 5 / 3 with the textures, 2 / 0 without them); the worker waits until the render thread has advanced a frame once it started n uploads in this one
+static void HubTextureThrottle() {
+    static const int per = getenv("MD_HUB_TEX_PER_FRAME") ? std::atoi(getenv("MD_HUB_TEX_PER_FRAME")) : 0;
+    if (per <= 0 || !s_hub_main_set.load() || std::this_thread::get_id() == s_hub_main) return;
+    static std::mutex tm; std::lock_guard<std::mutex> g(tm);
+    static uint64_t frame = ~0ull; static int n = 0;
+    for (int waited = 0;; ++waited) {   // at most 100 ms: no frames (shutdown, town off) must not hold the worker
+        const uint64_t cur = s_hub_frame.load();
+        if (cur != frame) { frame = cur; n = 0; }
+        if (n < per || waited >= 100) { ++n; return; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
 static GpuTexture* HubTexture(const std::string& tp) {
     static std::mutex mu; static std::condition_variable cv;
     static std::unordered_map<std::string, GpuTexture*> cache; static std::unordered_set<std::string> loading;
@@ -145,6 +169,7 @@ static GpuTexture* HubTexture(const std::string& tp) {
     if (it != cache.end()) return it->second;
     loading.insert(tp);
     lk.unlock();
+    HubTextureThrottle();
     std::string load = tp; GpuTexture* t = new GpuTexture; GpuSamplerDesc sd; sd.gen_mipmap = true;
     bool ok = t->InitFromFile(load.c_str(), sd);
     if (!ok) { const size_t hi = load.rfind("_HI.dds"); if (hi != std::string::npos) { load.erase(hi, 3); ok = t->InitFromFile(load.c_str(), sd); } }   // the record names the high-quality variant, the install may only have the plain one

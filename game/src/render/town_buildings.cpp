@@ -67,6 +67,7 @@ void TownBuildings::Shutdown() {
 
 void TownBuildings::Tick(float cam_x, float cam_z) {
     if (!enabled_) return;
+    HubSpike::FrameTick();
     const auto t0 = std::chrono::steady_clock::now();
     const double now_s = std::chrono::duration<double>(t0.time_since_epoch()).count();
     const float R = range_ + 100.f;
