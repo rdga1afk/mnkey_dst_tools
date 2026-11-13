@@ -457,6 +457,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("get_frame_ms",        l_md_get_frame_ms);
     sys.RegisterNamespaceFunction("set_gpu_sync_timing", l_md_set_gpu_sync_timing);
     sys.RegisterNamespaceFunction("get_gpu_ms",          l_md_get_gpu_ms);
+    sys.RegisterNamespaceFunction("gpu_poll",            l_md_gpu_poll);
     sys.RegisterNamespaceFunction("set_terrain_resolve_repeat", l_md_set_terrain_resolve_repeat);
     sys.RegisterNamespaceFunction("set_time_of_day", l_md_set_time_of_day);
     sys.RegisterNamespaceFunction("light_tick", l_md_light_tick);

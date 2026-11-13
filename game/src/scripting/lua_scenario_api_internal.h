@@ -148,6 +148,7 @@ int l_md_set_window_size(lua_State* L);
 int l_md_get_frame_ms(lua_State* L);
 int l_md_set_gpu_sync_timing(lua_State* L);
 int l_md_get_gpu_ms(lua_State* L);
+int l_md_gpu_poll(lua_State* L);
 int l_md_set_terrain_resolve_repeat(lua_State* L);
 int l_md_set_time_of_day(lua_State* L);
 int l_md_set_weather(lua_State* L);

@@ -512,6 +512,12 @@ int l_md_get_gpu_ms(lua_State* L) {
     return 1;
 }
 
+// md.gpu_poll() -> ms, first: GpuDevice::PolledGpuMs() / PolledAtFirstCheck() (dynres v2 step 3 probe, MD_GPU_POLL=1)
+int l_md_gpu_poll(lua_State* L) {
+    lua_pushnumber(L, (lua_Number)md::GpuDevice::Get().PolledGpuMs()); lua_pushboolean(L, md::GpuDevice::Get().PolledAtFirstCheck());
+    return 2;
+}
+
 // ── md.set_terrain_resolve_repeat(n) ──────────────────────────────────────
 // terrain-perf-measure falsification probe (2026-08-12): see scene_render.h
 // SceneRender::terrain_resolve_repeat_debug's doc comment. Re-runs the
