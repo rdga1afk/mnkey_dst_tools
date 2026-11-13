@@ -79,6 +79,31 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
             if (!v.pipe) bake_ok_ = false;
         }
         MD_LOG(bake_ok_ ? MD_LOG_INFO : MD_LOG_WARNING, "ground live: cache bake variants %s", bake_ok_ ? "ready" : "failed");
+        if (bake_ok_) {   // the fetch draw (ground_live_cache.hlsl): writes the program's targets from the rings and sets stencil bit 5
+            std::string cg = ReadAll(DataPath("game/src/render/ground_live_cache.hlsl")); const std::string gb = dir + "deferred/gbuffer.hlsl";
+            const std::string gbuf = std::filesystem::absolute(DataPath("game/src/render/ground_live_gbuf.hlsl")).string();
+            if (!cg.empty()) { cg.replace(cg.find("@ORIG@"), 6, gb); cg.replace(cg.find("@GBUF@"), 6, gbuf); }
+            hlsl::Compiled cc;
+            if (cg.empty() || !hlsl::Compile(cg, { gb, gbuf }, 'f', cc)) { MD_LOG(MD_LOG_WARNING, "ground live: cache fetch: %s", cc.log.c_str()); bake_ok_ = false; }
+            std::vector<hlsl::UniformMember> mem; uint32_t sz = 0;
+            if (bake_ok_ && hlsl::GlobalBlockMembers(cc.spv, mem, sz)) {
+                fetch_.ub_size = sz; fetch_.ub.assign(sz + 16, 0); for (const auto& u : mem) fetch_.mem.push_back({ u.name, { u.offset, u.array_stride } });
+                SDL_GPUShaderCreateInfo sf = sv; sf.code = (const Uint8*)cc.spv.data(); sf.code_size = cc.spv.size() * 4; sf.stage = SDL_GPU_SHADERSTAGE_FRAGMENT; sf.num_samplers = 8; sf.num_uniform_buffers = 1;
+                fetch_.fs = SDL_CreateGPUShader(dev, &sf);
+                SDL_GPUColorTargetDescription ct[3] = {};
+                ct[0].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; ct[1].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; ct[2].format = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
+                SDL_GPUGraphicsPipelineCreateInfo gi = {}; gi.vertex_shader = vs_; gi.fragment_shader = fetch_.fs; gi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+                gi.target_info.color_target_descriptions = ct; gi.target_info.num_color_targets = 3;
+                gi.target_info.has_depth_stencil_target = true; gi.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
+                gi.depth_stencil_state.enable_stencil_test = true; gi.depth_stencil_state.compare_mask = 0xff; gi.depth_stencil_state.write_mask = 0x20;
+                gi.depth_stencil_state.front_stencil_state.compare_op = SDL_GPU_COMPAREOP_ALWAYS; gi.depth_stencil_state.front_stencil_state.pass_op = SDL_GPU_STENCILOP_REPLACE; gi.depth_stencil_state.back_stencil_state = gi.depth_stencil_state.front_stencil_state;
+                fetch_.pipe = fetch_.fs ? SDL_CreateGPUGraphicsPipeline(dev, &gi) : nullptr;
+                SDL_GPUSamplerCreateInfo rs = {}; rs.min_filter = rs.mag_filter = SDL_GPU_FILTER_LINEAR; rs.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+                rs.address_mode_u = rs.address_mode_v = rs.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+                repeat_ = SDL_CreateGPUSampler(dev, &rs);
+            }
+            if (!fetch_.pipe || !repeat_) { MD_LOG(MD_LOG_WARNING, "ground live: cache fetch pipeline failed"); bake_ok_ = false; }
+        }
     }
     {   // classification: five bit-plane draws fill the stencil with the slot (write mask = one bit each)
         std::string bg = ReadAll(DataPath("game/src/render/ground_live_bits.hlsl"));
@@ -173,6 +198,8 @@ void GroundLivePass::Shutdown() {
     if (!dev_) return;
     for (auto& v : var_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
     for (auto& v : bake_) { if (v.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, v.pipe); if (v.fs) SDL_ReleaseGPUShader(dev_, v.fs); v = Variant(); }
+    if (fetch_.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, fetch_.pipe); if (fetch_.fs) SDL_ReleaseGPUShader(dev_, fetch_.fs); fetch_ = Variant();
+    if (repeat_) SDL_ReleaseGPUSampler(dev_, repeat_); repeat_ = nullptr;
     bake_ok_ = false;
     for (int k = 0; k < 5; ++k) { if (bits_[k].pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, bits_[k].pipe); }
     if (bits_[0].fs) SDL_ReleaseGPUShader(dev_, bits_[0].fs);
@@ -283,6 +310,17 @@ bool GroundLivePass::Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, co
             SDL_PushGPUFragmentUniformData(cmd, 0, v.ub.data(), v.ub_size);
             SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
         }
+    }
+    if (cache_view_ && cache_view_->a[0] && fetch_.pipe) {   // the cache fetch: ring pixels get the program's outputs and stencil bit 5 (the groups then skip them)
+        const GroundLiveCacheView& cv = *cache_view_;
+        const float cam4[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], cv.d_min }, far4[4] = { f.far_clip, cv.min_ny, 0.f, 0.f };
+        setIn(fetch_, "cs_invVP", f.inv_vp, 16); setIn(fetch_, "cs_cam", cam4, 4); setIn(fetch_, "cs_far", far4, 4);
+        setIn(fetch_, "cs_rect0", cv.rect[0], 4); setIn(fetch_, "cs_rect1", cv.rect[1], 4); setIn(fetch_, "cs_rect2", cv.rect[2], 4);
+        const SDL_GPUTextureSamplerBinding tb[8] = { { f.depth, nearest_ }, { f.packed, nearest_ }, { cv.a[0], repeat_ }, { cv.b[0], repeat_ }, { cv.a[1], repeat_ }, { cv.b[1], repeat_ }, { cv.a[2], repeat_ }, { cv.b[2], repeat_ } };
+        SDL_Rect full = { 0, 0, tw_, th_ }; SDL_SetGPUScissor(rp, &full);
+        SDL_BindGPUGraphicsPipeline(rp, fetch_.pipe); SDL_BindGPUFragmentSamplers(rp, 0, tb, 8); SDL_SetGPUStencilReference(rp, 0xff);
+        SDL_PushGPUFragmentUniformData(cmd, 0, fetch_.ub.data(), fetch_.ub_size);
+        SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
     }
     static const bool class_only = getenv("MD_GROUND_LIVE_CLASSONLY") != nullptr || getenv("MD_GROUND_LIVE_IDONLY") != nullptr;   // measurement: cost split
     for (int gi = 0; gi < n && !class_only; ++gi) {

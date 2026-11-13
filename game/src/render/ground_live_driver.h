@@ -21,7 +21,7 @@ public:
     static GroundLiveDriver& Get();
     static bool Wanted();   // MD_GROUND_LIVE=1
     static bool OrigLight();   // MD_GROUND_LIVE_ORIGLIGHT=1 (with MD_GROUND_LIVE_LIGHT): the ground is lit by the original main_fs (GroundLivePass::Light) instead of TS_KenshiLight
-    struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; uint64_t cache_strips = 0, cache_texels = 0; };
+    struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; uint64_t cache_strips = 0, cache_texels = 0, cache_invalidations = 0, cache_waits = 0, cache_nolist = 0; };
     // Before the nodes are uploaded: sets nodes[i].list_slot (0 = none) from the node's biome list; the nearest lists get slots 1..max_groups.
     void AssignSlots(TerrainLodNode* nodes, int n, const float cam[3]);
     // After the G-buffer pass (no pass open): depth = G-buffer depth, packed = R16G16B16A16_UINT, slot = the R8_UINT second target. inv_vp column-major; cam in metres (granite absolute).

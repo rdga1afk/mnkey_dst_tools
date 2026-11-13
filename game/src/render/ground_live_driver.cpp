@@ -182,6 +182,20 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     memcpy(f.inv_vp, inv_vp, sizeof(f.inv_vp)); memcpy(f.cam_ws, cam, sizeof(f.cam_ws)); f.far_clip = far_clip_; f.wetness = SkyClouds::OverrideWetness();
     static const bool no_decode = getenv("MD_GROUND_LIVE_NODECODE") != nullptr;   // measurement: cost split
     { static const bool ph = getenv("MD_GROUND_LIVE_PHASE") != nullptr; pass_.SetPhase(ph ? (int)(frame & 7) : -1); }   // measurement: upper bound of the 1/8 reuse
+    static GroundLiveCacheView cview;   // the rings baked in earlier frames (this frame's bake runs after the pass)
+    static const bool serve = !(getenv("MD_GROUND_CACHE_SERVE") && getenv("MD_GROUND_CACHE_SERVE")[0] == '0');   // 0: bake only (measurement)
+    bool use_cache = false;
+    if (serve && cache_.Ready() && pass_.BakeReady()) {
+        for (int r = 0; r < GroundCacheRings::kRings; ++r) {
+            const CacheRect& b = cache_.Rings().Baked(r); const float t = GroundCacheRings::kTexel[r];
+            cview.a[r] = cache_.RingA(r); cview.b[r] = cache_.RingB(r);
+            cview.rect[r][0] = b.x0 * t; cview.rect[r][1] = b.z0 * t; cview.rect[r][2] = b.x1 * t; cview.rect[r][3] = b.z1 * t;   // empty: x1 <= x0, nothing passes
+        }
+        static const float dmin = getenv("MD_GROUND_CACHE_D") ? (float)std::atof(getenv("MD_GROUND_CACHE_D")) : 150.f;
+        static const float min_ny = getenv("MD_GROUND_CACHE_MINNY") ? (float)std::atof(getenv("MD_GROUND_CACHE_MINNY")) : 0.7f;
+        cview.d_min = dmin; cview.min_ny = min_ny; use_cache = true;
+    }
+    pass_.SetCacheView(use_cache ? &cview : nullptr);
     const bool ran = pass_.Run(cmd, f, groups, ng);
     if (ran && !no_decode) pass_.Decode(cmd);
     if (pass_.BakeReady()) BakeCache(dev, cmd, f, frame);
@@ -211,8 +225,12 @@ void GroundLiveDriver::BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, 
     if (!cache_.Ready() || !hmap_) return;
     cache_.DumpTick(cmd, frame);
     GroundCacheRings& rings = cache_.Rings();
-    if (f.wetness != cache_wetness_) { cache_wetness_ = f.wetness; rings.Invalidate(); }   // §3: wetness is a global input of the program; everything is baked again, progressively
+    if (f.wetness != cache_wetness_) { cache_wetness_ = f.wetness; rings.Invalidate(); ++stats_.cache_invalidations; }   // §3: wetness is a global input of the program; everything is baked again, progressively
     rings.Update(f.cam_ws[0], f.cam_ws[2]);
+    static const bool log = getenv("MD_GROUND_LIVE_LOG") != nullptr;
+    if (log && frame % 60 == 0) MD_LOG(MD_LOG_INFO, "[GroundCache] frame %llu: strips %llu texels %llu invalidations %llu waits %llu nolist %llu, baked %.2f / %.2f / %.2f Mtexel", (unsigned long long)frame,
+                                      (unsigned long long)stats_.cache_strips, (unsigned long long)stats_.cache_texels, (unsigned long long)stats_.cache_invalidations, (unsigned long long)stats_.cache_waits, (unsigned long long)stats_.cache_nolist,
+                                      rings.Baked(0).Area() / 1e6, rings.Baked(1).Area() / 1e6, rings.Baked(2).Area() / 1e6);
     static const int64_t budget = getenv("MD_GROUND_CACHE_BUDGET") ? std::atoll(getenv("MD_GROUND_CACHE_BUDGET")) : 65536;   // texels per frame (§5: the 1.5 ms cap is checked by the probe)
     int r = 0; CacheRect s;
     if (!rings.NextStrip(budget, &r, &s, GroundLiveCache::kMaxShort)) return;
@@ -222,36 +240,47 @@ void GroundLiveDriver::BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, 
     if (nlong > GroundLiveCache::kMaxLong || nshort > GroundLiveCache::kMaxShort) return;
     const float t = GroundCacheRings::kTexel[r];
     const int w = nlong + 2 * ap, h = nshort + 2 * ap;
-    // cells along the long axis, about 64 m each; a cell's biome list is the original's rule on its box (an enclosing box gives the same weights, see the header)
-    const int32_t cell = std::max<int32_t>(16, (int32_t)(64.f / t));
-    static GroundLiveGroup cells[160]; int nc = 0;
-    int last_lid = -2;
-    for (int32_t u0 = -ap; u0 < nlong + ap && nc < 160;) {
-        const int32_t u1 = std::min<int32_t>(nlong + ap, u0 + cell);
-        // the cell's box in world texels: u along the long axis, the whole short axis (apron included)
-        const int32_t ax0 = tr ? s.x0 - ap : s.x0 + u0, ax1 = tr ? s.x1 + ap : s.x0 + u1, az0 = tr ? s.z0 + u0 : s.z0 - ap, az1 = tr ? s.z0 + u1 : s.z1 + ap;
-        const float x0 = (float)((ax0 * (double)t + 0.01) - 14745.6) * 10.f, z0 = (float)((az0 * (double)t + 0.01) - 14745.6) * 10.f;
-        const float x1 = (float)((ax1 * (double)t - 0.01) - 14745.6) * 10.f, z1 = (float)((az1 * (double)t - 0.01) - 14745.6) * 10.f;
-        const PatchBiomes pb = kbi_.Query(x0, z0, x1, z1);
-        const int lid = pb.count > 0 ? ListIdOf(pb) : -1;
-        if (lid < 0) return;   // no list (outside the map): the strip stays unbaked, those pixels keep the program path
-        if (lid == last_lid && nc > 0) { cells[nc - 1].x1 = u1 + ap; u0 = u1; continue; }
-        GroundLiveGroup& g = cells[nc]; g = GroundLiveGroup(); g.slot = 0; g.biome_count = 0;
-        g.x0 = u0 + ap; g.x1 = u1 + ap; g.y0 = 0; g.y1 = h;
-        float tile = 1e9f;
-        for (int b = 0; b < pb.count; ++b) {
-            const BiomeInfo* bi = Find(pb.ids[b]); if (!bi || !bi->valid) return;
-            for (const float* a : { bi->pack.scalesA, bi->pack.scalesB, bi->pack.scalesC }) for (int j = 0; j < 4; ++j) if (a[j] > 0.f && a[j] < tile) tile = a[j];
+    // cells: the strip split at the cells of the biome-list map (Kbi1, 29491.2 m / Dim() each), so a cell's box lies in one map cell like a terrain node's does; the list is the
+    // original's rule on the box between the first and last texel centres (an enclosing box gives the same weights, see the header); equal neighbours along u are merged
+    static const bool leaf = !(getenv("MD_GROUND_CACHE_LEAF") && getenv("MD_GROUND_CACHE_LEAF")[0] == '0');   // split at the map's sub-cells too (one leaf mask per box)
+    const double kcell = 29491.2 / std::max(kbi_.Dim(), 1) / (leaf ? std::max(kbi_.Res(), 1) : 1);
+    const int32_t su = (tr ? s.z0 : s.x0) - ap, sv = (tr ? s.x0 : s.z0) - ap;   // world texel of target pixel 0 along u / v
+    auto segs = [&](int32_t start, int32_t n, int32_t* a, int max) {   // [a[k], a[k+1]) runs of target pixels in one map cell
+        int m = 0; a[m++] = 0; long last = (long)std::floor((start + 0.5) * t / kcell);
+        for (int32_t i = 1; i < n && m < max; ++i) { const long c = (long)std::floor((start + i + 0.5) * t / kcell); if (c != last) { a[m++] = i; last = c; } }
+        a[m] = n; return m;
+    };
+    static int32_t ua[1024], va[64]; const int nu = segs(su, w, ua, 1023), nv = segs(sv, h, va, 63);
+    static GroundLiveGroup cells[512]; int nc = 0;
+    for (int jv = 0; jv < nv; ++jv) {
+        int last_lid = -2;
+        for (int ju = 0; ju < nu && nc < 512; ++ju) {
+            const int32_t u0 = ua[ju], u1 = ua[ju + 1], v0 = va[jv], v1 = va[jv + 1];
+            const double cu0 = (su + u0 + 0.5) * t, cu1 = (su + u1 - 0.5) * t, cv0 = (sv + v0 + 0.5) * t, cv1 = (sv + v1 - 0.5) * t;   // texel centres, metres
+            const double bx0 = tr ? cv0 : cu0, bx1 = tr ? cv1 : cu1, bz0 = tr ? cu0 : cv0, bz1 = tr ? cu1 : cv1;
+            const PatchBiomes pb = kbi_.Query((float)((bx0 - 14745.6) * 10.0), (float)((bz0 - 14745.6) * 10.0), (float)((bx1 - 14745.6) * 10.0), (float)((bz1 - 14745.6) * 10.0));
+            const int lid = pb.count > 0 ? ListIdOf(pb) : -1;
+            if (lid < 0) { ++stats_.cache_nolist; return; }   // no list (outside the map): the strip stays unbaked, those pixels keep the program path
+            if (lid == last_lid && nc > 0) { cells[nc - 1].x1 = u1; continue; }
+            GroundLiveGroup& g = cells[nc]; g = GroundLiveGroup(); g.slot = 0; g.biome_count = 0;
+            g.x0 = u0; g.x1 = u1; g.y0 = v0; g.y1 = v1;
+            float tile = 1e9f;
+            for (int b = 0; b < pb.count; ++b) {
+                const BiomeInfo* bi = Find(pb.ids[b]); if (!bi || !bi->valid) return;
+                for (const float* a : { bi->pack.scalesA, bi->pack.scalesB, bi->pack.scalesC }) for (int k = 0; k < 4; ++k) if (a[k] > 0.f && a[k] < tile) tile = a[k];
+            }
+            const float footprint = t * 4.096f * (tile < 1e8f ? tile : 1.f);   // the same tier rule as Frame, with the texel size as the pixel footprint
+            int K = 0; while (K < 6 && std::ldexp(1.f, K + 2) <= footprint / 1.25f) K += 2;
+            for (int b = 0; b < pb.count; ++b) {
+                const BiomeInfo* bi = Find(pb.ids[b]);
+                const BiomeLayerSet* set = nullptr;   // the rule of Frame: the finest resident tier at or below the wanted one, else request it and take a coarser resident one
+                for (int tt = K / 2; tt >= 0 && !set; --tt) set = arrays_.Peek(bi->reg_index, frame, tt);
+                if (!set) { arrays_.Request(bi->reg_index, K / 2); for (int tt = K / 2 + 1; tt <= 3 && !set; ++tt) set = arrays_.Peek(bi->reg_index, frame, tt); }
+                if (!set) { ++stats_.cache_waits; return; }   // nothing resident: the strip is retried next frame
+                g.biome[g.biome_count].pack = bi->pack; g.biome[g.biome_count].diffuse = set->diffuse.SDLTexture(); g.biome[g.biome_count].normal = set->normal.SDLTexture(); ++g.biome_count;
+            }
+            last_lid = lid; ++nc;
         }
-        const float footprint = t * 4.096f * (tile < 1e8f ? tile : 1.f);   // the same tier rule as Frame, with the texel size as the pixel footprint
-        int K = 0; while (K < 6 && std::ldexp(1.f, K + 2) <= footprint / 1.25f) K += 2;
-        for (int b = 0; b < pb.count; ++b) {
-            const BiomeInfo* bi = Find(pb.ids[b]);
-            const BiomeLayerSet* set = arrays_.Peek(bi->reg_index, frame, K / 2);
-            if (!set) { arrays_.Request(bi->reg_index, K / 2); return; }   // not resident: baked once it is (the strip is retried next frame)
-            g.biome[g.biome_count].pack = bi->pack; g.biome[g.biome_count].diffuse = set->diffuse.SDLTexture(); g.biome[g.biome_count].normal = set->normal.SDLTexture(); ++g.biome_count;
-        }
-        last_lid = lid; ++nc; u0 = u1;
     }
     const float o0 = (float)((s.x0 - ap) + 0.5) * t, o1 = (float)((s.z0 - ap) + 0.5) * t;
     const float bake0[4] = { o0, o1, 0.f, 0.f };

@@ -39,6 +39,13 @@ struct GroundLiveFrame {
 };
 
 // The inputs of the original main_fs that come from the weather / engine (docs/research/MAIN_LIGHT_INPUTS_2026-11-10.md).
+struct GroundLiveCacheView {               // the baked rings for the fetch draw (MD_GROUND_CACHE); null textures = no fetch
+    SDL_GPUTexture* a[3] = {}; SDL_GPUTexture* b[3] = {};
+    float rect[3][4] = {};                // baked rectangle of each ring, metres (x0, z0, x1, z1)
+    float d_min = 150.f;                  // D: nearer pixels keep the program
+    float min_ny = 0.7f;                  // steeper pixels keep the program
+};
+
 struct GroundLiveLightParams {
     float sun_dir[3] = { 0.f, 1.f, 0.f }, sun_colour[4] = { 1.f, 1.f, 1.f, 1.f }, env_w = 1.f, ambient_w = 1.f;   // sunDirection, sunColour (w = strength), envColour.w, ambientParams.w
     float world_origin_xz[2] = { 0.f, 0.f }, world_extent = 294912.f;   // camera position (Kenshi units, centred on the world centre) and the extent of the ambient map: exe sets worldSize = (1/(147456 - -147456), same, 0.5 + size * camera.x, 0.5 + size * camera.z)
@@ -74,6 +81,7 @@ public:
     bool Bake(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const dst[3], int w, int h, const GroundLiveFrame& f, SDL_GPUTexture* hmap, const float bake0[4], const float bake1[4], const float bake2[4],
               const GroundLiveGroup* cells, int n);
     bool BakeReady() const { return bake_ok_; }
+    void SetCacheView(const GroundLiveCacheView* v) { cache_view_ = v; }   // the next Run() serves the rings (null: off)
     // After Run(): the ORIGINAL main_fs (deferred.hlsl, no shadow) over the three raw targets; Lit() = rgb light (HDR, before fog / exposure), alpha 1 where the pass wrote a pixel (0 = clipped / not written).
     bool Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveLightParams& p);
     SDL_GPUTexture* Lit() const { return lit_; }
@@ -93,7 +101,7 @@ private:
     SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4];
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
     SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
-    Variant bake_[4]; bool bake_ok_ = false;
+    Variant bake_[4]; bool bake_ok_ = false; Variant fetch_; SDL_GPUSampler* repeat_ = nullptr; const GroundLiveCacheView* cache_view_ = nullptr;
     static void SetIn(Variant& v, const std::string& name, const float* val, int count, int idx = 0);
     void FillGroup(Variant& v, const GroundLiveFrame& f, const GroundLiveGroup& grp, int tw, int th, SDL_GPUTextureSamplerBinding* tb);
     Variant fog_; struct FogPipe { SDL_GPUTextureFormat c = SDL_GPU_TEXTUREFORMAT_INVALID, d = SDL_GPU_TEXTUREFORMAT_INVALID; SDL_GPUGraphicsPipeline* pipe = nullptr; } fog_pipes_[4]; int n_fog_pipes_ = 0;   // one pipeline per (colour, depth) format of the ground pass
