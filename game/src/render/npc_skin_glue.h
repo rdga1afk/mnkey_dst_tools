@@ -6,6 +6,8 @@ namespace md::npcskin {
 
 // deferred/character.material: Character_FP_HLSL = character.hlsl main_fs (no defines); the texture units in register order s0..s12 (the human body is `material Character : Skinned`).
 inline constexpr float kDiffuseMipBias = -2.f;   // inherited from `material Skinned`: diffuseMap trilinear, mipmap_bias -2
+inline constexpr const char* kMaterial = "Character";   // the human body
+inline constexpr const char* kSource = "character.hlsl";
 inline constexpr const char* kEntry = "main_fs";
 inline constexpr const char* kTextureUnits[13] = { "diffuseMap", "normalMap", "colorMap", "maskMap", "bodyBlendNormal", "headDiffuse", "headNormal", "headMask", "hairMap", "beardMap", "vestDiffuse", "vestNormal", "blood" };
 
