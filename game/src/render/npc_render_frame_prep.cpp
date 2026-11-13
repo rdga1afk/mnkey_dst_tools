@@ -591,7 +591,7 @@ if (sr_prepass.terrain_granite_ready) {
                     if (sr_prepass.terrain_shading_projected_.PvtReady()) mixk((uint32_t)sr_prepass.terrain_shading_projected_.PvtStats().baked_total);   // a PVT tile arrived
                     {   // every render setting that reaches the ground picture (F3 / md.set_*): a change shows on the next frame
                         auto mixv = [&](const void* p, size_t n) { const unsigned char* b = (const unsigned char*)p; for (size_t i = 0; i < n; ++i) mixk(b[i]); };
-                        extern int g_opt_ground_reuse, g_opt_ground_reuse_chain, g_opt_ground_reuse_cr, g_opt_ground_reuse_period, g_kenshi_sky;
+                        extern bool g_opt_ground_reuse; extern int g_opt_ground_reuse_chain, g_opt_ground_reuse_cr, g_opt_ground_reuse_period, g_kenshi_sky;
                         mixv(&g_opt_ground_reuse, sizeof g_opt_ground_reuse); mixv(&g_opt_ground_reuse_chain, sizeof g_opt_ground_reuse_chain); mixv(&g_opt_ground_reuse_cr, sizeof g_opt_ground_reuse_cr);
                         mixv(&g_opt_ground_reuse_period, sizeof g_opt_ground_reuse_period); mixv(&g_opt_skip_flat_on_cliff, sizeof g_opt_skip_flat_on_cliff); mixv(&g_kenshi_sky, sizeof g_kenshi_sky);
                         mixv(&g_terrain_cliff_normal_flip, sizeof g_terrain_cliff_normal_flip); mixv(&g_terrain_detail_n_atten, sizeof g_terrain_detail_n_atten); mixv(&g_terrain_ground_aniso_level, sizeof g_terrain_ground_aniso_level);

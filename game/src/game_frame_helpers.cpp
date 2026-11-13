@@ -1,5 +1,6 @@
 #include "game_common.h"
 #include <monkey_dust/render/ambient_probe.h>
+#include "render/ground_live_driver.h"
 
 // Shared by F9/F10 (below) — same `import`-based capture, factored out so F9
 // can pair a screenshot with its bug report under one matching timestamp
@@ -178,6 +179,7 @@ audio_shutdown();
 // similar async-upload case) -- tools/editor/main.cpp already calls it
 // in this exact position (after app-level GPU resource cleanup, before
 // window_shutdown()); the game binary never did.
+if (md::GroundLiveDriver::Wanted()) md::GroundLiveDriver::Get().Shutdown();   // its worker thread uploads to the device: stopped first
 md::GpuDevice::Get().Shutdown();
 // Same X11/xcb teardown-order constraint as GpuDevice above, confirmed
 // live for Granite's WSI in M2 Крок 3: must be destroyed before
