@@ -17,6 +17,7 @@
 #include <monkey_dust/render/md_camera.h>  // MdCamera::ViewProjMatrix — md.scan_terrain_screen_gaps
 #include <monkey_dust/render/render_quality.h>  // RenderQualityConfig — md.scan_terrain_seam_tjunctions
 #include <monkey_dust/components/nav_agent.h>
+#include <monkey_dust/components/animator.h>
 #include <monkey_dust/components/player_controller.h>
 #include <monkey_dust/components/health.h>
 #include <monkey_dust/components/renderable.h>
@@ -79,6 +80,7 @@ MdEntity ToEntity(lua_State* L, int idx);
 int l_md_rand(lua_State* L);
 int l_md_teleport_camera(lua_State* L);
 int l_md_teleport_player(lua_State* L);
+int l_md_spawn_npc(lua_State* L);
 
 int l_md_terrain_height(lua_State* L);
 int l_md_ray_ground(lua_State* L);

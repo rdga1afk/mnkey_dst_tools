@@ -399,6 +399,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("rand",               l_md_rand);
     sys.RegisterNamespaceFunction("teleport_camera",     l_md_teleport_camera);
     sys.RegisterNamespaceFunction("teleport_player",     l_md_teleport_player);
+    sys.RegisterNamespaceFunction("spawn_npc",           l_md_spawn_npc);
     sys.RegisterNamespaceFunction("terrain_height",      l_md_terrain_height);
     sys.RegisterNamespaceFunction("ray_ground",          l_md_ray_ground);
     sys.RegisterNamespaceFunction("pvt_sample",          l_md_pvt_sample);

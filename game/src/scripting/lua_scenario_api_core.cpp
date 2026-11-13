@@ -110,6 +110,33 @@ int l_md_teleport_player(lua_State* L) {
     return 0;
 }
 
+// ── md.spawn_npc(x, z, count) -> count: test-only. Real absolute metres like md.teleport_player; each NPC gets WorldTransform + a TransformSoA
+// slot + NavAgent + AnimatorComponent (what the NPC render query needs), in a row 1.5 m apart along x. No AI, no faction.
+int l_md_spawn_npc(lua_State* L) {
+    const float wx = (float)luaL_checknumber(L, 1);
+    const float wz = (float)luaL_checknumber(L, 2);
+    const int n = (int)luaL_optinteger(L, 3, 1);
+    auto& sr = SceneRender::Get();
+    auto& reg = MdRegistry::Get();
+    int made = 0;
+    for (int i = 0; i < n; ++i) {
+        const float x = wx + 1.5f * (float)i + sr.tnoff_x - (float)sr.zone_ox * CHUNK_SIZE;
+        const float z = wz + sr.tnoff_z - (float)sr.zone_oz * CHUNK_SIZE;
+        auto e = reg.Create();
+        reg.Handle(e).emplace<WorldTransform>();
+        auto& tr = reg.Handle(e).get_mut<WorldTransform>();
+        tr.x = x; tr.z = z; tr.y = TerrainQuery::Get().GetHeight(x, z) + 0.1f; tr.rot_y = 0.f;
+        tr.slot = TransformSoA::Get().Alloc(e, x, z, 0);
+        if (tr.slot == TransformSoA::INVALID_SLOT) { MD_LOG(MD_LOG_WARNING, "[md.spawn_npc] no free slot"); break; }
+        TransformSoA::Get().py[tr.slot] = tr.y; TransformSoA::Get().MarkTransformDirty(tr.slot);
+        reg.Handle(e).emplace<NavAgent>();
+        reg.Handle(e).emplace<AnimatorComponent>();
+        ++made;
+    }
+    lua_pushinteger(L, made);
+    return 1;
+}
+
 // ── md.terrain_height(x, z) -> h | nil ───────────────────────────────────────
 // Via TerrainQuery — the single source of truth (terrain_query.h) — never
 // TerrainChunk::SampleHeight() ad-hoc.
