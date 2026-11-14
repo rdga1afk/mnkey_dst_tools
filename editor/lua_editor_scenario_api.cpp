@@ -95,6 +95,7 @@ static int l_md_char_editor_digest_tab(lua_State* L) {   // md.char_editor_diges
 }
 // md.char_io(mode, path) -> ok, err: what OK of the IMPORT (1) / EXPORT (2) dialog does
 static int l_md_char_ui_multislider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugMultiSlider((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
+static int l_md_char_ui_slider_pos(lua_State* L) { lua_pushinteger(L, CharacterMyGui::DebugSliderPos(luaL_checkstring(L, 1))); return 1; }
 static int l_md_char_ui_char_index(lua_State* L) { lua_pushinteger(L, CharacterMyGui::DebugCharIndex((int)luaL_optinteger(L, 1, 0))); return 1; }
 static int l_md_char_ui_slider_key(lua_State* L) { const char* k = CharacterMyGui::DebugSliderKey((int)luaL_checkinteger(L, 1)); if (k) lua_pushstring(L, k); else lua_pushnil(L); return 1; }
 static int l_md_char_ui_dialog(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugDialog(luaL_optstring(L, 1, ""))); return 1; }
@@ -341,6 +342,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_file", l_md_char_file);
     sys.RegisterNamespaceFunction("char_ui_dialog", l_md_char_ui_dialog);
     sys.RegisterNamespaceFunction("char_ui_slider_key", l_md_char_ui_slider_key);
+    sys.RegisterNamespaceFunction("char_ui_slider_pos", l_md_char_ui_slider_pos);
     sys.RegisterNamespaceFunction("char_ui_char_index", l_md_char_ui_char_index);
     sys.RegisterNamespaceFunction("char_ui_multislider", l_md_char_ui_multislider);
     sys.RegisterNamespaceFunction("char_ui_dump", l_md_char_ui_dump);

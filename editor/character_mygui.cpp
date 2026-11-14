@@ -539,6 +539,14 @@ bool DebugSetSlider(const char* caption, int value) {
     return false;
 }
 
+int DebugSliderPos(const char* key) {   // scroll position of the slider row of the open tab with this key, -1 when absent
+    if (!g.content) return -1;
+    for (size_t i = 0; i < g.content->getChildCount(); ++i)
+        if (auto* sl = g.content->getChildAt(i)->castType<mdui::Slider>(false))
+            if (sl->getUserString("slider") == key) return (int)sl->getScrollPosition();
+    return -1;
+}
+
 const char* DebugFirstSlider() {
     static std::string key;
     if (!g.content) return nullptr;
@@ -599,6 +607,7 @@ bool DebugTextFit(int&, int&, std::string&) { return false; }
 void DebugPointer(bool) {}
 void DebugDraw(bool) {}
 bool DebugSetSlider(const char*, int) { return false; }
+int DebugSliderPos(const char*) { return -1; }
 const char* DebugFirstSlider() { return nullptr; }
 bool DebugListStep(int) { return false; }
 bool DebugMultiSlider(int, int) { return false; }

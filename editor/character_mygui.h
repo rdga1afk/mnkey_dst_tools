@@ -26,6 +26,7 @@ int DebugTab();   // open tab index (0 BODY, 1 FACE, 2 HAIR)
 const char* DebugFocus();   // MyGUI widget under the mouse (nullptr: none)
 bool DebugWidgetCentre(const char* widget, float& x, float& y);   // screen px of a widget centre, for real-input clicks
 bool DebugSetSlider(const char* slider_caption, int value);
+int DebugSliderPos(const char* key);   // scroll position of the open tab's slider row with this key (-1: none)
 const char* DebugFirstSlider();
 void DebugDraw(bool on);               // measurement: the window is (not) drawn
 void DebugPointer(bool visible);       // shows / hides the MyGUI mouse pointer (scenarios hide it)
