@@ -268,7 +268,11 @@ void GroundLivePass::FillGroup(Variant& v, const GroundLiveFrame& f, const Groun
         const std::string s = b ? std::to_string(b) : ""; const GroundPack& p = grp.biome[b].pack;
         set("scalesA" + s, p.scalesA, 4); set("scalesB" + s, p.scalesB, 4); set("scalesC" + s, p.scalesC, 4);
         set("slopeMin" + s, p.slopeMin, 4); set("slopeMax" + s, p.slopeMax, 4); set("slopeBlend" + s, p.slopeBlend, 4);
-        set("overlayMult" + s, p.overlayMult, 4); set("textureFade" + s, p.textureFade, 4);
+        set("overlayMult" + s, p.overlayMult, 4);
+        { float tf[4] = { p.textureFade[0], p.textureFade[1], p.textureFade[2], p.textureFade[3] };
+          static const float fade_scale = getenv("MD_GROUND_FADE_SCALE") ? (float)atof(getenv("MD_GROUND_FADE_SCALE")) : 0.25f;   // DEVIATION DE-265: scale of the distant-fade rate (textureFade.a); 1 = the original value (parity)
+          tf[3] *= fade_scale;
+          set("textureFade" + s, tf, 4); }
         const float a2[8] = { p.absorbance[0], p.absorbance[1], p.absorbance[2], p.absorbance[3], p.absorbance[4], p.absorbance[5], 0, 0 };
         set("absorbance" + s, a2, 4, 0); set("absorbance" + s, a2 + 4, 4, 1);
         bright[b] = p.brightnessFix;
