@@ -299,7 +299,8 @@ if (SceneRender::Get().depth_alias_ && fc.ac > 0 && prepass_pipeline.SDLPipeline
         }
         if (WaterLiveReady() && scene_depth.SDLTexture()) {   // MD_WATER_LIVE=1: the screen-space depth map the original's depthmap (s3) reads, built from the scene depth before the pass that samples it
             const float asp = (float)window_get_width() / (float)window_get_height();
-            const Mat4 vpd = cam.ViewProjMatrix(asp); const float c3[3] = { cam.pos.x, cam.pos.y, cam.pos.z };
+            MdCamera c0 = cam; c0.target = { cam.target.x - cam.pos.x, cam.target.y - cam.pos.y, cam.target.z - cam.pos.z }; c0.pos = { 0.f, 0.f, 0.f };   // camera at the origin: the inverse holds no large translation (Dagor render/viewVecs.cpp:33-41)
+            const Mat4 vpd = c0.ViewProjMatrix(asp); const float c3[3] = { 0.f, 0.f, 0.f };
             s_water_live.BuildDepthMap(fc.cmd, scene_depth.SDLTexture(), sc_w, sc_h, mat4_ptr(vpd), c3);
         }
         cb.BeginColorPass(cpd);
