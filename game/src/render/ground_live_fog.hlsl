@@ -28,6 +28,7 @@ float4 main(float4 fragCoord : SV_Position, float2 texCoord : TEXCOORD0, float3 
     camera = float3(0, 0, 0); farClip = md_farClip; offset = float4(0, 0, 0, 0); fogColour = float4(0, 0, 0, 0); fogDensity = 0.0; sunColour = float4(0, 0, 0, 0);
     float4 lit = tex2D(litTex, texCoord);
     if (lit.a < 0.5) discard;
+    lit.rgb = all(isfinite(lit.rgb)) ? max(lit.rgb, float3(0.0, 0.0, 0.0)) : float3(0.0, 0.0, 0.0);   // DEVIATION DE-017: the original has no guard; a NaN / Inf / negative texel would spread through the bloom and the luminance sums
     float4 f = atmosphere_fog_fs(fragCoord, texCoord, ray);
     return float4(lerp(lit.rgb, f.rgb, f.a) * md_exposure, 1.0);
 }
