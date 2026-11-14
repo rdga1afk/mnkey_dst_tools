@@ -109,15 +109,14 @@ int GroundLiveDriver::SlotAt(float x, float z) {
     return best;
 }
 
-void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam[3]) {
+void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam[3], const TerrainLodNode* pre, int n_pre) {
     if (!data_tried_) { data_tried_ = true; data_ok_ = InitData(); }
     stats_.assign_ms = 0; n_slots_ = 0;
     if (!data_ok_) { for (int i = 0; i < n; ++i) nodes[i].list_slot = 0; return; }
     const auto t0 = std::chrono::steady_clock::now();
-    for (PatchList& l : lists_) l.dmin = 1e30f;
+    for (PatchList& l : lists_) { l.dmin = 1e30f; l.dmin_pre = 1e30f; }
     static thread_local int lid_of[8192]; if (n > 8192) n = 8192;
-    for (int i = 0; i < n; ++i) {
-        const TerrainLodNode& nd = nodes[i];
+    auto list_of = [&](const TerrainLodNode& nd) -> int {
         const uint64_t key = ((uint64_t)std::lround(nd.origin_x * 4.f) << 24) ^ ((uint64_t)std::lround(nd.origin_z * 4.f) << 6) ^ (uint64_t)nd.level;
         auto it = node_list_.find(key); int lid;
         if (it != node_list_.end()) lid = it->second;
@@ -127,11 +126,23 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
             lid = pb.count > 0 ? ListIdOf(pb) : -1; node_list_.emplace(key, lid);
             if (lid < 0 && getenv("MD_GROUND_LIVE_LOG")) MD_LOG(MD_LOG_INFO, "[GroundLive] node without a list: level %d origin (%.1f, %.1f) size %.1f", nd.level, nd.origin_x, nd.origin_z, nd.size);
         }
+        return lid;
+    };
+    for (int i = 0; i < n; ++i) {
+        const TerrainLodNode& nd = nodes[i];
+        const int lid = list_of(nd);
         lid_of[i] = lid;
         if (lid < 0) continue;
         const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f);
         const float d2 = dx * dx + dz * dz; if (d2 < lists_[(size_t)lid].dmin) lists_[(size_t)lid].dmin = d2;
     }
+    // the nodes the horizon cull dropped still decide the array tier of their list (the tier rule uses the list's nearest node): without them a list whose near nodes are hidden would take a coarser tier and the picture would differ from the picture without the cull
+    if (pre && n_pre > 0) for (int i = 0; i < n_pre && i < 8192; ++i) {
+        const TerrainLodNode& nd = pre[i]; const int lid = list_of(nd); if (lid < 0) continue;
+        const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f);
+        const float d2 = dx * dx + dz * dz; if (d2 < lists_[(size_t)lid].dmin_pre) lists_[(size_t)lid].dmin_pre = d2;
+    }
+    for (PatchList& l : lists_) if (l.dmin < l.dmin_pre) l.dmin_pre = l.dmin;
     if (GroundLiveRtState().groups > 0) max_groups_ = GroundLiveRtState().groups;   // md.set_ground_live_switch("groups", n)
     // the nearest lists get slots 1..max_groups
     static thread_local int order[1024]; int m = 0;
@@ -139,7 +150,7 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
     std::sort(order, order + m, [&](int a, int b) { return lists_[(size_t)a].dmin < lists_[(size_t)b].dmin; });
     stats_.lists_seen = m; stats_.over_limit = std::max(0, m - max_groups_);
     stats_.lists_near = 0; for (int k = 0; k < m; ++k) if (lists_[(size_t)order[k]].dmin < 3000.f * 3000.f) ++stats_.lists_near;   // within the original's DistantTerrain distance (3 km)
-    for (int k = 0; k < m && k < max_groups_; ++k) { lists_[(size_t)order[k]].slot = k + 1; slot_list_[k + 1] = order[k]; slot_dmin_[k + 1] = std::sqrt(lists_[(size_t)order[k]].dmin); n_slots_ = k + 1; }
+    for (int k = 0; k < m && k < max_groups_; ++k) { lists_[(size_t)order[k]].slot = k + 1; slot_list_[k + 1] = order[k]; slot_dmin_[k + 1] = std::sqrt(lists_[(size_t)order[k]].dmin_pre); n_slots_ = k + 1; }
     stats_.no_slot_nodes = 0;
     stats_.no_slot_near = 0;
     for (int i = 0; i < n; ++i) {

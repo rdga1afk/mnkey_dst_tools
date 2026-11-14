@@ -529,6 +529,8 @@ if (sr_prepass.terrain_granite_ready) {
             qt_count = sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp,
                                                                          lod_nodes, md::TerrainLodTree::kMaxNodes);
             const double sel_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sel_t0).count();
+            static md::TerrainLodNode pre_cull_nodes[8192]; int n_pre_cull = 0;   // the selection before the horizon cull: it keeps deciding the array tier of the ground lists (AssignSlots)
+            if (md::GroundLiveDriver::Wanted() && md::HorizonCullEnabled()) { n_pre_cull = std::min(qt_count, 8192); memcpy(pre_cull_nodes, lod_nodes, (size_t)n_pre_cull * sizeof(md::TerrainLodNode)); }
             qt_count = md::HorizonCullFilter(sr_prepass.granite_abs_cam_, lod_nodes, qt_count);   // #207 horizon map: drops nodes hidden behind terrain; off by default (md.set_horizon_cull)
             {   // #207 H13.4: the selected nodes are drawn nearest first (early-Z rejects more of the far terrain); default on (owner Gates-approved 30.10), MD_LOD_SORT=0 restores the old order
                 static const bool lod_sort = !(getenv("MD_LOD_SORT") && atoi(getenv("MD_LOD_SORT")) == 0);
@@ -541,7 +543,7 @@ if (sr_prepass.terrain_granite_ready) {
                         return bucket > 0.f ? floorf(pd / bucket) < floorf(qd / bucket) : pd < qd; });
                 }
             }
-            if (md::GroundLiveDriver::Wanted()) md::GroundLiveDriver::Get().AssignSlots(lod_nodes, qt_count, sr_prepass.granite_abs_cam_);   // before the nodes are uploaded
+            if (md::GroundLiveDriver::Wanted()) md::GroundLiveDriver::Get().AssignSlots(lod_nodes, qt_count, sr_prepass.granite_abs_cam_, pre_cull_nodes, n_pre_cull);   // before the nodes are uploaded
             for (int& c : g_terrain_lod_levels) c = 0;
             for (int i = 0; i < qt_count; ++i) ++g_terrain_lod_levels[lod_nodes[i].level];
             if (md::GroundLiveDriver::Wanted() && getenv("MD_GROUND_LIVE_COUNT")) {   // measurement: share of LOD nodes whose AABB corners lie in different blendinfo cells (921.6 m), where the original's list is empty

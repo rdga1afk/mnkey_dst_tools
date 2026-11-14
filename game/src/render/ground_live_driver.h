@@ -28,7 +28,7 @@ public:
     static bool OrigLight();   // MD_GROUND_LIVE_ORIGLIGHT=1 (with MD_GROUND_LIVE_LIGHT): the ground is lit by the original main_fs (GroundLivePass::Light) instead of TS_KenshiLight
     struct Stats { int skipped = 0, waiting = 0, groups = 0, lists_seen = 0, no_slot_nodes = 0, over_limit = 0, lists_near = 0, no_slot_near = 0, tiers[4] = {}, resident = 0; uint64_t resident_bytes = 0, builds = 0, evictions = 0; float min_margin = 0.f; double assign_ms = 0; uint64_t cache_strips = 0, cache_texels = 0, cache_invalidations = 0, cache_waits = 0, cache_nolist = 0; };
     // Before the nodes are uploaded: sets nodes[i].list_slot (0 = none) from the node's biome list; the nearest lists get slots 1..max_groups.
-    void AssignSlots(TerrainLodNode* nodes, int n, const float cam[3]);
+    void AssignSlots(TerrainLodNode* nodes, int n, const float cam[3], const TerrainLodNode* pre = nullptr, int n_pre = 0);   // pre = the nodes before the horizon cull: their nearest distance per list sets the array tier
     // The slot of the smallest node of the last AssignSlots that contains (x, z), metres (granite absolute); a point outside every visible node takes its own list's slot, else the nearest visible node's; 0 = none. TERRAIN-mode features write it (md::GroundSlotAt).
     int SlotAt(float x, float z);
     // After the G-buffer pass (no pass open): depth = G-buffer depth, packed = R16G16B16A16_UINT, slot = the R8_UINT second target. inv_vp column-major; cam in metres (granite absolute).
@@ -48,7 +48,7 @@ private:
     bool InitGpu(SDL_GPUDevice* dev);
     struct BiomeInfo { GroundPack pack; int reg_index = -1; bool valid = false; };
     const BiomeInfo* Find(int raw) const;
-    struct PatchList { PatchBiomes pb; float dmin = 1e30f; int slot = 0; };
+    struct PatchList { PatchBiomes pb; float dmin = 1e30f, dmin_pre = 1e30f; int slot = 0; };
     int ListIdOf(const PatchBiomes& pb);
     bool data_tried_ = false, data_ok_ = false, gpu_tried_ = false, gpu_ok_ = false;
     std::string kenshi_dir_;
