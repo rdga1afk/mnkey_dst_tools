@@ -189,6 +189,7 @@ bool GroundLivePass::Init(SDL_GPUDevice* dev, const std::string& kd) {
     nearest_ = SDL_CreateGPUSampler(dev, &si);
     si.min_filter = si.mag_filter = SDL_GPU_FILTER_LINEAR; si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR; si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT; si.max_anisotropy = 1; si.max_lod = 16;
     linear_ = SDL_CreateGPUSampler(dev, &si);
+    { const float bias[2] = { getenv("MD_GROUND_B_BIAS1") ? (float)atof(getenv("MD_GROUND_B_BIAS1")) : 2.f, getenv("MD_GROUND_B_BIAS2") ? (float)atof(getenv("MD_GROUND_B_BIAS2")) : 3.f }; for (int k = 0; k < 2; ++k) { SDL_GPUSamplerCreateInfo sb = si; sb.mip_lod_bias = bias[k]; biased_[k] = SDL_CreateGPUSampler(dev, &sb); } }
     ready_ = nearest_ && linear_;
     return ready_;
 }
@@ -223,6 +224,7 @@ void GroundLivePass::Shutdown() {
     ds_ = nullptr;
     if (vs_) SDL_ReleaseGPUShader(dev_, vs_);
     if (nearest_) SDL_ReleaseGPUSampler(dev_, nearest_);
+    for (auto*& b : biased_) { if (b) SDL_ReleaseGPUSampler(dev_, b); b = nullptr; }
     if (linear_) SDL_ReleaseGPUSampler(dev_, linear_);
     for (auto& t : t_) if (t) SDL_ReleaseGPUTexture(dev_, t);
     vs_ = nullptr; nearest_ = linear_ = nullptr; t_[0] = t_[1] = t_[2] = nullptr; ready_ = false; dev_ = nullptr;
@@ -279,10 +281,11 @@ void GroundLivePass::FillGroup(Variant& v, const GroundLiveFrame& f, const Groun
     set("gw_invVP", f.inv_vp, 16); const float cam4[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], 0.f }; set("gw_camWs", cam4, 4); set("gw_originM", origin, 4);
     SDL_GPUTexture* tex[kSamplers];
     for (auto& t : tex) t = f.interior;
-    tex[0] = grp.biome[0].diffuse; tex[1] = grp.biome[0].normal; tex[2] = f.overlay; tex[3] = f.colour; tex[4] = f.interior;
+    tex[0] = grp.biome[0].diffuse; tex[1] = grp.biome[0].normal; tex[2] = grp.no_tint && f.black ? f.black : f.overlay; tex[3] = grp.no_tint && f.white ? f.white : (grp.cls == 1 && f.colour_l3 ? f.colour_l3 : (grp.cls == 2 && f.colour_l4 ? f.colour_l4 : f.colour)); tex[4] = f.interior;
     if (grp.biome_count > 1) { tex[5] = f.blend_map; for (int k = 1; k < grp.biome_count; ++k) { tex[4 + 2 * k] = grp.biome[k].diffuse; tex[5 + 2 * k] = grp.biome[k].normal; } }
     tex[12] = f.depth; tex[13] = f.packed;
     for (int i = 0; i < kSamplers; ++i) tb[i] = { tex[i], (i >= 12 || i == 5) ? nearest_ : linear_ };
+    { if (grp.layer_bias && grp.cls > 0 && biased_[grp.cls - 1]) for (int i : { 0, 1, 6, 7, 8, 9, 10, 11 }) tb[i].sampler = biased_[grp.cls - 1]; }   // B2: the old path's layer lod bias at distance
 }
 
 bool GroundLivePass::Run(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveGroup* groups, int n) {

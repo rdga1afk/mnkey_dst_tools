@@ -1,6 +1,7 @@
 #include "monkey_dust/render/ground_slot.h"
 #include "ground_live_driver.h"
 #include "sky_clouds.h"
+#include <monkey_dust/world/terrain_colour_dds.h>
 #include <monkey_dust/io/fcs_gamedata.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/platform/md_log.h>
@@ -24,6 +25,25 @@ SDL_GPUTexture* MakeTex(SDL_GPUDevice* dev, SDL_GPUTextureFormat fm, int w, int 
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev); SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTextureTransferInfo s = { up, 0, (Uint32)w, (Uint32)h }; SDL_GPUTextureRegion d = {}; d.texture = t; d.w = w; d.h = h; d.d = 1; SDL_UploadToGPUTexture(cp, &s, &d, false);
     SDL_EndGPUCopyPass(cp); SDL_GPUFence* f = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd); SDL_WaitForGPUFences(dev, true, &f, 1); SDL_ReleaseGPUFence(dev, f); SDL_ReleaseGPUTransferBuffer(dev, up);
+    return t;
+}
+
+// The cached colour map (BC1, 16384^2, 15 levels) from its mip `first` as a texture of its own: the colour map the install program would sample at the old path's distance LOD (NOW-0 B1).
+SDL_GPUTexture* MakeColourFromLevel(SDL_GPUDevice* dev, const std::string& path, int first) {
+    FILE* f = fopen(path.c_str(), "rb"); if (!f) return nullptr;
+    uint32_t hdr[32]; if (fread(hdr, 4, 32, f) != 32 || hdr[0] != 0x20534444u) { fclose(f); return nullptr; }
+    const int W = (int)hdr[4]; const int nlev = 12 - first + 1;   // down to 4 x 4
+    size_t off = 128; for (int l = 0; l < first; ++l) { const size_t bw = std::max(1, (W >> l) / 4); off += bw * bw * 8; }
+    std::vector<unsigned char> data; std::vector<size_t> lvoff;
+    for (int l = first; l < first + nlev; ++l) { const size_t bw = std::max(1, (W >> l) / 4), sz = bw * bw * 8; lvoff.push_back(data.size()); data.resize(data.size() + sz); fseek(f, (long)off, SEEK_SET); if (fread(data.data() + lvoff.back(), 1, sz, f) != sz) { fclose(f); return nullptr; } off += sz; }
+    fclose(f);
+    SDL_GPUTextureCreateInfo ti = {}; ti.type = SDL_GPU_TEXTURETYPE_2D; ti.format = SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM; ti.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER; ti.width = (Uint32)(W >> first); ti.height = ti.width; ti.layer_count_or_depth = 1; ti.num_levels = (Uint32)nlev;
+    SDL_GPUTexture* t = SDL_CreateGPUTexture(dev, &ti); if (!t) return nullptr;
+    SDL_GPUTransferBufferCreateInfo bi = {}; bi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD; bi.size = (Uint32)data.size(); SDL_GPUTransferBuffer* up = SDL_CreateGPUTransferBuffer(dev, &bi);
+    memcpy(SDL_MapGPUTransferBuffer(dev, up, false), data.data(), data.size()); SDL_UnmapGPUTransferBuffer(dev, up);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev); SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    for (int i = 0; i < nlev; ++i) { const Uint32 dim = std::max(4, (W >> (first + i))); SDL_GPUTextureTransferInfo s = { up, (Uint32)lvoff[(size_t)i], dim, dim }; SDL_GPUTextureRegion d = {}; d.texture = t; d.mip_level = (Uint32)i; d.w = dim; d.h = dim; d.d = 1; SDL_UploadToGPUTexture(cp, &s, &d, false); }
+    SDL_EndGPUCopyPass(cp); SDL_GPUFence* fe = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd); SDL_WaitForGPUFences(dev, true, &fe, 1); SDL_ReleaseGPUFence(dev, fe); SDL_ReleaseGPUTransferBuffer(dev, up);
     return t;
 }
 
@@ -77,6 +97,11 @@ bool GroundLiveDriver::InitGpu(SDL_GPUDevice* dev) {
       if (dm) { distant_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, dw, dh, dm, (size_t)dw * dh * 4); stbi_image_free(dm); } }
     white_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1, 1, white, 4); clear_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, 1, 1, zero, 4);
     if (!blend_ || !white_ || !clear_) return false;
+    if (getenv("MD_GROUND_B") && atoi(getenv("MD_GROUND_B")) >= 1) {   // NOW-0 B1: the colour map at mip 3 / 4 as textures of their own
+        const std::string cp = md::EnsureTerrainColourDds(kenshi_dir_);
+        if (!cp.empty()) { colour_l3_ = MakeColourFromLevel(dev, cp, 3); colour_l4_ = MakeColourFromLevel(dev, cp, 4); }
+        MD_LOG(MD_LOG_INFO, "[GroundLive] B variant %s: far colour maps %s", getenv("MD_GROUND_B"), colour_l3_ && colour_l4_ ? "ready" : "FAILED");
+    }
     arrays_.SetBuildGapMs(getenv("MD_GROUND_LIVE_GAP_MS") ? atoi(getenv("MD_GROUND_LIVE_GAP_MS")) : 40);
     if (const char* e = getenv("MD_GROUND_LIVE_MB")) arrays_.SetBudgetBytes((uint64_t)atoi(e) << 20);
     if (!pass_.Init(dev, kenshi_dir_)) return false;
@@ -87,6 +112,28 @@ bool GroundLiveDriver::InitGpu(SDL_GPUDevice* dev) {
 int GroundLiveDriver::ListIdOf(const PatchBiomes& pb) {
     for (size_t i = 0; i < lists_.size(); ++i) if (SameList(lists_[i].pb, pb)) return (int)i;
     PatchList pl; pl.pb = pb; lists_.push_back(pl); return (int)lists_.size() - 1;
+}
+
+int GroundLiveDriver::VariantOf(int lid, bool untinted, int cls) {   // the list twin for (untinted, cls), created on demand; (false, 0) is the list itself
+    const int k = (untinted ? 3 : 0) + cls; if (k == 0) return lid;
+    if (lists_[(size_t)lid].alt[k] >= 0) return lists_[(size_t)lid].alt[k];
+    PatchList a = lists_[(size_t)lid]; a.untinted = untinted; a.cls = cls; for (int& x : a.alt) x = -1; a.slot = 0; lists_.push_back(a);
+    lists_[(size_t)lid].alt[k] = (int)lists_.size() - 1; return lists_[(size_t)lid].alt[k];
+}
+
+// The original enables the colour / overlay maps of a tile (an 8 x 8 zone overlay, colour.X.Y.png) while the focus lies inside its rect +- 1474.56 m and keeps them to +- 2211.84 m (ZoneMap update FUN_140a12c70 ->
+// ZoneMapOverlay::enable FUN_140a11d70 / FUN_140a0ba70, constants 14745.6 and 7372.8 in 0.1 m units); a tile that is not enabled uses white.dds / nothing.dds (FUN_140a14c90). The focus is the camera
+// until the original's focus argument is traced (UNKNOWN). MD_GROUND_TINT_ALL=1: every tile always enabled (the behaviour before 14.11).
+void GroundLiveDriver::UpdateTiles(const float cam[3]) {
+    static const bool all = getenv("MD_GROUND_TINT_ALL") && getenv("MD_GROUND_TINT_ALL")[0] == '1';
+    const float T = 29491.2f / 8.f, pad = T / 2048.f, en = 1474.56f, keep = 1474.56f + 737.28f;
+    for (int tz = 0; tz < 8; ++tz) for (int tx = 0; tx < 8; ++tx) {
+        const float x0 = tx * T - pad, x1 = (tx + 1) * T + pad, z0 = tz * T - pad, z1 = (tz + 1) * T + pad;
+        const bool in_en = cam[0] >= x0 - en && cam[0] <= x1 + en && cam[2] >= z0 - en && cam[2] <= z1 + en;
+        const bool out_keep = cam[0] < x0 - keep || cam[0] > x1 + keep || cam[2] < z0 - keep || cam[2] > z1 + keep;
+        bool& on = tile_on_[tz * 8 + tx];
+        if (all || in_en) on = true; else if (out_keep) on = false;
+    }
 }
 
 int GroundLiveDriver::SlotAt(float x, float z) {
@@ -115,6 +162,7 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
     if (!data_ok_) { for (int i = 0; i < n; ++i) nodes[i].list_slot = 0; return; }
     const auto t0 = std::chrono::steady_clock::now();
     for (PatchList& l : lists_) { l.dmin = 1e30f; l.dmin_pre = 1e30f; }
+    UpdateTiles(cam);
     static thread_local int lid_of[8192]; if (n > 8192) n = 8192;
     auto list_of = [&](const TerrainLodNode& nd) -> int {
         const uint64_t key = ((uint64_t)std::lround(nd.origin_x * 4.f) << 24) ^ ((uint64_t)std::lround(nd.origin_z * 4.f) << 6) ^ (uint64_t)nd.level;
@@ -128,9 +176,22 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
         }
         return lid;
     };
+    static const int bvar = getenv("MD_GROUND_B") ? atoi(getenv("MD_GROUND_B")) : 0;   // NOW-0 variants: 0 = the install program as it runs; 1 = B1 (far colour map); 2 = B2 (B1 + layer lod bias)
+    auto tinted_of = [&](const TerrainLodNode& nd, int lid) -> int {   // the node's tile (by its centre) decides whether its list is drawn with the colour / overlay maps; B: its distance class
+        if (lid < 0) return lid;
+        const float T = 29491.2f / 8.f; const int tx = std::max(0, std::min(7, (int)std::floor((nd.origin_x + nd.size * 0.5f) / T))), tz = std::max(0, std::min(7, (int)std::floor((nd.origin_z + nd.size * 0.5f) / T)));
+        int cls = 0;
+        bool no_colour = false;
+        if (bvar == 3) { const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f), dy = std::max(std::max(nd.y_min - cam[1], cam[1] - nd.y_max), 0.f); no_colour = std::sqrt(dx * dx + dy * dy + dz * dz) >= 250.f; }   // B3: no colour / overlay map beyond the near range
+        if (bvar >= 1 && bvar <= 2 && colour_l3_ && colour_l4_) {
+            const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f), dy = std::max(std::max(nd.y_min - cam[1], cam[1] - nd.y_max), 0.f);
+            const float d = std::sqrt(dx * dx + dy * dy + dz * dz); cls = d >= 700.f ? 2 : (d >= 250.f ? 1 : 0);
+        }
+        return VariantOf(lid, !tile_on_[tz * 8 + tx] || no_colour, cls);
+    };
     for (int i = 0; i < n; ++i) {
         const TerrainLodNode& nd = nodes[i];
-        const int lid = list_of(nd);
+        const int lid = tinted_of(nd, list_of(nd));
         lid_of[i] = lid;
         if (lid < 0) continue;
         const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f);
@@ -138,7 +199,7 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
     }
     // the nodes the horizon cull dropped still decide the array tier of their list (the tier rule uses the list's nearest node): without them a list whose near nodes are hidden would take a coarser tier and the picture would differ from the picture without the cull
     if (pre && n_pre > 0) for (int i = 0; i < n_pre && i < 8192; ++i) {
-        const TerrainLodNode& nd = pre[i]; const int lid = list_of(nd); if (lid < 0) continue;
+        const TerrainLodNode& nd = pre[i]; const int lid = tinted_of(nd, list_of(nd)); if (lid < 0) continue;
         const float dx = std::max(std::max(nd.origin_x - cam[0], cam[0] - (nd.origin_x + nd.size)), 0.f), dz = std::max(std::max(nd.origin_z - cam[2], cam[2] - (nd.origin_z + nd.size)), 0.f);
         const float d2 = dx * dx + dz * dz; if (d2 < lists_[(size_t)lid].dmin_pre) lists_[(size_t)lid].dmin_pre = d2;
     }
@@ -190,7 +251,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     static GroundLiveGroup groups[32]; int ng = 0;
     for (int s = 1; s <= n_slots_; ++s) {
         const PatchBiomes& pb = lists_[(size_t)slot_list_[s]].pb;
-        GroundLiveGroup& g = groups[ng]; g.slot = s; g.biome_count = 0; g.far = false; g.x0 = g.x1 = g.y0 = g.y1 = 0;
+        GroundLiveGroup& g = groups[ng]; g.slot = s; g.biome_count = 0; g.far = false; g.x0 = g.x1 = g.y0 = g.y1 = 0; g.no_tint = lists_[(size_t)slot_list_[s]].untinted; g.cls = lists_[(size_t)slot_list_[s]].cls; { static const int bv = getenv("MD_GROUND_B") ? atoi(getenv("MD_GROUND_B")) : 0; g.layer_bias = bv >= 2 && g.cls > 0; }
         float tile = 1e9f; bool ok = true;
         const float d = slot_dmin_[s] + 1.f;
         for (int b = 0; b < pb.count; ++b) {
@@ -223,7 +284,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
                                        (unsigned long long)stats_.builds, (unsigned long long)stats_.evictions, stats_.waiting, stats_.skipped, stats_.assign_ms);
     if (ng < 1) return;
     GroundLiveFrame f;
-    f.depth = depth; f.packed = packed; f.blend_map = blend_; f.overlay = overlay_ ? overlay_ : white_; f.colour = colour_ ? colour_ : white_; f.interior = clear_; f.distant = distant_; f.slot_tex = slot;
+    f.depth = depth; f.packed = packed; f.blend_map = blend_; f.overlay = overlay_ ? overlay_ : white_; f.colour = colour_ ? colour_ : white_; f.interior = clear_; f.white = white_; f.black = clear_; f.colour_l3 = colour_l3_; f.colour_l4 = colour_l4_; f.distant = distant_; f.slot_tex = slot;
     memcpy(f.inv_vp, inv_vp, sizeof(f.inv_vp)); memcpy(f.cam_ws, cam, sizeof(f.cam_ws)); f.far_clip = far_clip_; f.wetness = SkyClouds::OverrideWetness();
     static const bool no_decode = getenv("MD_GROUND_LIVE_NODECODE") != nullptr;   // measurement: cost split
     { static const bool ph = getenv("MD_GROUND_LIVE_PHASE") != nullptr; pass_.SetPhase(ph ? (int)(frame & 7) : -1); }   // measurement: upper bound of the 1/8 reuse

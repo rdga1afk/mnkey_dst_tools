@@ -18,6 +18,9 @@ struct GroundLiveBiome {
 struct GroundLiveGroup {                  // the pixels of one biome list
     int slot = 1;                         // value of this group in the slot target (1..31)
     int biome_count = 1;                  // 1..4, main biome first
+    bool no_tint = false;                 // the colour / overlay maps of the tile are not enabled: white.dds / nothing.dds (ZoneMapOverlay::enable, FUN_140a11d70)
+    bool layer_bias = false;              // B2: the layers of this far class are sampled with a positive lod bias (the old path's layer LOD at distance)
+    int cls = 0;                          // NOW-0 B variants: 1 / 2 = far classes (colour map two / three mips coarser, layer lod bias); 0 = as the install program runs
     bool far = false;                     // no layer set resident yet: drawn with the original far program (distant.png) instead of being skipped
     GroundLiveBiome biome[4];
     int x0 = 0, y0 = 0, x1 = 0, y1 = 0;   // scissor (pixels); x1 <= x0 = the whole target
@@ -29,6 +32,9 @@ struct GroundLiveFrame {
     SDL_GPUTexture* blend_map = nullptr;  // read with >= 2 biomes
     SDL_GPUTexture* overlay = nullptr;
     SDL_GPUTexture* colour = nullptr;
+    SDL_GPUTexture* colour_l3 = nullptr, *colour_l4 = nullptr;   // the colour map from its mip 3 / 4 (NOW-0 B1)
+    SDL_GPUTexture* white = nullptr;      // white.dds stand-in (colour map of a tile that is not enabled)
+    SDL_GPUTexture* black = nullptr;      // nothing.dds stand-in (overlay map of a tile that is not enabled)
     SDL_GPUTexture* interior = nullptr;   // "no interior" 1x1
     SDL_GPUTexture* distant = nullptr;    // data/newland/land/overlaymaps/distant.png (the far program's distantColour)
     float inv_vp[16] = {};                // gw_invVP in column-major memory order (glm layout)
@@ -105,7 +111,7 @@ private:
         unsigned ub_size = 0;
     };
     SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4]; Variant far_;
-    SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
+    SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr; SDL_GPUSampler* biased_[2] = {};
     SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
     Variant bake_[4]; bool bake_ok_ = false; Variant fetch_; SDL_GPUSampler* repeat_ = nullptr; const GroundLiveCacheView* cache_view_ = nullptr;
     static void SetIn(Variant& v, const std::string& name, const float* val, int count, int idx = 0);

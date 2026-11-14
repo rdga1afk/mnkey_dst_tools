@@ -48,7 +48,10 @@ private:
     bool InitGpu(SDL_GPUDevice* dev);
     struct BiomeInfo { GroundPack pack; int reg_index = -1; bool valid = false; };
     const BiomeInfo* Find(int raw) const;
-    struct PatchList { PatchBiomes pb; float dmin = 1e30f, dmin_pre = 1e30f; int slot = 0; };
+    struct PatchList { PatchBiomes pb; float dmin = 1e30f, dmin_pre = 1e30f; int slot = 0; bool untinted = false; int cls = 0; int alt[6] = { -1, -1, -1, -1, -1, -1 }; };   // untinted: the same biome list drawn with white.dds / nothing.dds (an overlay tile that is not enabled); alt: its index
+    int VariantOf(int lid, bool untinted, int cls);   // the list twin drawn untinted (white / nothing maps) and / or with the far colour map and layer bias of class cls
+    void UpdateTiles(const float cam[3]);
+    bool tile_on_[64] = {};   // ZoneMapOverlay enabled state of the 8 x 8 colour tiles (FUN_140a12c70)
     int ListIdOf(const PatchBiomes& pb);
     bool data_tried_ = false, data_ok_ = false, gpu_tried_ = false, gpu_ok_ = false;
     std::string kenshi_dir_;
@@ -59,7 +62,7 @@ private:
     const GroundLiveLightParams* light_ = nullptr;
     NpcHook npc_hook_ = nullptr; void* npc_user_ = nullptr;
     GroundLiveFrame last_frame_; bool lit_frame_ = false;   // the inputs of the last Frame() that ran the light pass (DrawFog)
-    SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *clear_ = nullptr, *distant_ = nullptr;
+    SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *colour_l3_ = nullptr, *colour_l4_ = nullptr, *clear_ = nullptr, *distant_ = nullptr;
     float far_clip_ = 40000.f; int max_groups_ = 31;
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)
     float slot_dmin_[32] = {};
