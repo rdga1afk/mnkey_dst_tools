@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_cmd_driver import Driver, median  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RELEASE_EXE = REPO_ROOT / "build_release" / "game" / "monkey_dust"
+RELEASE_EXE = REPO_ROOT / "build" / "game" / "monkey_dust"
 BASELINE_PATH = REPO_ROOT / "tools" / "qa" / "baselines" / "perf_gate_baseline.json"
 POINTS_PATH = REPO_ROOT / "tools" / "qa" / "baselines" / "perf_gate_points.json"
 PHASE4_CSV = REPO_ROOT / "tools" / "qa" / "reports" / "phase4_world_scan.csv"

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_cmd_driver import Driver  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RELEASE_EXE = REPO_ROOT / "build_release" / "game" / "monkey_dust"
+RELEASE_EXE = REPO_ROOT / "build" / "game" / "monkey_dust"
 FREQ_PATH = Path("/sys/class/drm/card1/gt_cur_freq_mhz")
 OUT_DIR = REPO_ROOT / "docs" / "audit" / "raw"
 

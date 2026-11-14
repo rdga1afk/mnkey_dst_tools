@@ -32,7 +32,7 @@ md.get_gpu_ms/md.granite_terrain_stats are all registered unconditionally
 
 Usage:
     python3 tools/qa/resolve_pass_measure.py --zone worst
-    python3 tools/qa/resolve_pass_measure.py --zone canyon --exe build_release/game/monkey_dust
+    python3 tools/qa/resolve_pass_measure.py --zone canyon --exe build/game/monkey_dust
 """
 import argparse
 import sys
@@ -130,7 +130,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--zone", required=True, choices=list(ZONES.keys()))
-    ap.add_argument("--exe", default=str(REPO_ROOT / "build_release" / "game" / "monkey_dust"))
+    ap.add_argument("--exe", default=str(REPO_ROOT / "build" / "game" / "monkey_dust"))
     ap.add_argument("--freq-mismatch-pct", type=float, default=5.0,
                      help="max allowed %% difference between block A/B avg "
                           "gt_cur_freq_mhz before the delta is flagged untrustworthy")

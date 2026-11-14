@@ -24,7 +24,7 @@ from game_cmd_driver import Driver, STDOUT_PATH  # noqa: E402
 from qa_stats import percentile  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RELEASE_EXE = REPO_ROOT / "build_release" / "game" / "monkey_dust"
+RELEASE_EXE = REPO_ROOT / "build" / "game" / "monkey_dust"
 
 CHUNK_SIZE = 460.8
 ZONE = (24, 12)

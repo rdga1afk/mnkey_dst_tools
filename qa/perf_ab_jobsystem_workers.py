@@ -9,7 +9,7 @@ Point: zone(24,12) "horizon" pose -- the documented worst point in
 tools/qa/baselines/perf_gate_baseline.json ("24,12,horizon": 13.518 gpu_ms).
 Same CHUNK_SIZE/pose convention as tools/qa/perf_phase4_world_scan.py.
 
-Caller is responsible for rebuilding build_release/game/monkey_dust with
+Caller is responsible for rebuilding build/game/monkey_dust with
 the desired game/data/tasks.cfg worker_threads value BEFORE each side of
 the A/B (this script does not edit source or rebuild -- see the shell
 wrapper this is invoked from). Each invocation is one side of the A/B;
@@ -30,7 +30,7 @@ from game_cmd_driver import Driver, median, stdev  # noqa: E402
 from qa_stats import percentile as _percentile  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RELEASE_EXE = REPO_ROOT / "build_release" / "game" / "monkey_dust"
+RELEASE_EXE = REPO_ROOT / "build" / "game" / "monkey_dust"
 STDOUT_PATH = REPO_ROOT / "tmp_" / "game_cmd" / "game_stdout.log"
 
 CHUNK_SIZE = 460.8
