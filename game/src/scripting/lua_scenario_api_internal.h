@@ -125,6 +125,7 @@ int l_md_render_burst(lua_State* L);
 int l_md_render_burst_ms(lua_State* L);
 int l_md_render_burst_freq(lua_State* L);
 int l_md_set_burst_paced(lua_State* L);
+int l_md_set_render_dt(lua_State* L);
 int l_md_render_burst_cpu_ms(lua_State* L);
 int l_md_render_burst_path(lua_State* L);
 int l_md_render_burst_dynres(lua_State* L);

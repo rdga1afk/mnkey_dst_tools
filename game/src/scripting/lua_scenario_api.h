@@ -43,6 +43,7 @@ extern std::vector<float> g_scenario_burst_cpu_ms; // per-frame CPU ms of the bu
 // every tick_every frames the player is moved to the camera and the terrain streaming of the logic tick runs (as in the interactive loop). Per-frame outputs below.
 extern std::vector<float> g_scenario_path;      // 5 floats per frame
 extern int g_scenario_path_tick; extern float g_scenario_path_dt;
+extern float g_scenario_render_dt;   // md.set_render_dt(s): the dt md.render_frame hands to the render (0 = the logic tick, 0.1 s)
 extern std::vector<float> g_scenario_burst_dynres;   // dynres scale in use (g_dynres_cur) per frame
 extern std::vector<int> g_scenario_burst_stream;     // 1 when the terrain window shifted (zone_ox / zone_oz changed) in that frame
 extern std::vector<float> g_scenario_burst_stream_ms; // ms the streaming step took in that frame (0 when none ran)

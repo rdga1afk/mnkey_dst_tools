@@ -13,7 +13,7 @@ bool g_scenario_burst_paced = false;
 std::vector<float> g_scenario_burst_ms;
 std::vector<int> g_scenario_burst_freq;
 std::vector<float> g_scenario_burst_cpu_ms;
-std::vector<float> g_scenario_path; int g_scenario_path_tick = 6; float g_scenario_path_dt = 1.f / 60.f;
+std::vector<float> g_scenario_path; int g_scenario_path_tick = 6; float g_scenario_path_dt = 1.f / 60.f; float g_scenario_render_dt = 0.f;
 std::vector<float> g_scenario_burst_dynres, g_scenario_burst_stream_ms; std::vector<int> g_scenario_burst_stream;
 
 namespace {
@@ -222,6 +222,7 @@ int l_md_render_burst_path(lua_State* L) {
     g_scenario_burst_n = n;
     return 0;
 }
+int l_md_set_render_dt(lua_State* L) { g_scenario_render_dt = (float)luaL_optnumber(L, 1, 0.0); return 0; }
 static void PushF(lua_State* L, const std::vector<float>& v) { lua_newtable(L); for (size_t i = 0; i < v.size(); ++i) { lua_pushnumber(L, v[i]); lua_rawseti(L, -2, (int)i + 1); } }
 int l_md_render_burst_dynres(lua_State* L) { PushF(L, g_scenario_burst_dynres); return 1; }
 int l_md_render_burst_stream_ms(lua_State* L) { PushF(L, g_scenario_burst_stream_ms); return 1; }

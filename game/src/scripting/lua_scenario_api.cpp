@@ -436,6 +436,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("render_burst_ms",     l_md_render_burst_ms);
     sys.RegisterNamespaceFunction("render_burst_freq",   l_md_render_burst_freq);
     sys.RegisterNamespaceFunction("set_burst_paced",     l_md_set_burst_paced);
+    sys.RegisterNamespaceFunction("set_render_dt",       l_md_set_render_dt);
     sys.RegisterNamespaceFunction("render_burst_cpu_ms", l_md_render_burst_cpu_ms);
     sys.RegisterNamespaceFunction("render_burst_path", l_md_render_burst_path);
     sys.RegisterNamespaceFunction("render_burst_dynres", l_md_render_burst_dynres);

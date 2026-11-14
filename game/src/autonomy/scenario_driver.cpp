@@ -396,7 +396,7 @@ int RunScenarioMode(const ScenarioConfig& cfg,
             EditorCore::Get().UpdateEditorCamera(LOGIC_TICK_S, false);
             MdCamera active_cam = EditorCore::Get().editor_cam;
             RenderDocHook_BeginFrame();
-            NpcRender::Get().RenderFrame(active_cam, now_s, LOGIC_TICK_S,
+            NpcRender::Get().RenderFrame(active_cam, now_s, g_scenario_render_dt > 0.f ? g_scenario_render_dt : LOGIC_TICK_S,
                                           player_entity, cam_x, cam_z,
                                           0.f, 0.f);
             RenderDocHook_EndFrame();
