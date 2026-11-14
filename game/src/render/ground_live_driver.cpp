@@ -13,6 +13,8 @@
 #include <cstdlib>
 #include <cstring>
 
+extern float g_dump_pr[16];   // projection * rotation of this frame, camera at the origin (npc_render_frame_prep.cpp)
+
 namespace md {
 namespace {
 
@@ -241,6 +243,20 @@ void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam
     stats_.assign_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 }
 
+// Inverse of a column-major 4x4 in double (Gauss-Jordan, partial pivoting); the matrices here are projection * rotation, well conditioned.
+static void InvertColumnMajor(const float m[16], float out[16]) {
+    double a[4][8] = {};
+    for (int r = 0; r < 4; ++r) { for (int c = 0; c < 4; ++c) a[r][c] = m[c * 4 + r]; a[r][4 + r] = 1.0; }
+    for (int i = 0; i < 4; ++i) {
+        int piv = i; for (int r = i + 1; r < 4; ++r) if (std::fabs(a[r][i]) > std::fabs(a[piv][i])) piv = r;
+        if (std::fabs(a[piv][i]) < 1e-30) { memset(out, 0, 64); return; }
+        if (piv != i) for (int c = 0; c < 8; ++c) std::swap(a[i][c], a[piv][c]);
+        const double d = a[i][i]; for (int c = 0; c < 8; ++c) a[i][c] /= d;
+        for (int r = 0; r < 4; ++r) if (r != i) { const double k = a[r][i]; for (int c = 0; c < 8; ++c) a[r][c] -= k * a[i][c]; }
+    }
+    for (int r = 0; r < 4; ++r) for (int c = 0; c < 4; ++c) out[c * 4 + r] = (float)a[r][4 + c];
+}
+
 void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* depth, SDL_GPUTexture* packed, SDL_GPUTexture* slot, int w, int h, const float inv_vp[16], const float cam[3], uint64_t) {
     const uint64_t frame = ++frame_counter_;
     lit_frame_ = false;
@@ -305,6 +321,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     if (ng < 1) return;
     GroundLiveFrame f;
     f.depth = depth; f.packed = packed; f.blend_map = blend_; f.overlay = overlay_ ? overlay_ : white_; f.colour = colour_ ? colour_ : white_; f.interior = clear_; f.white = white_; f.black = clear_; f.colour_l3 = colour_l3_; f.colour_l4 = colour_l4_; f.distant = distant_; f.slot_tex = slot;
+    InvertColumnMajor(g_dump_pr, f.inv_pr);
     memcpy(f.inv_vp, inv_vp, sizeof(f.inv_vp)); memcpy(f.cam_ws, cam, sizeof(f.cam_ws)); f.far_clip = far_clip_; f.wetness = SkyClouds::OverrideWetness();
     static const bool no_decode = getenv("MD_GROUND_LIVE_NODECODE") != nullptr;   // measurement: cost split
     { static const bool ph = getenv("MD_GROUND_LIVE_PHASE") != nullptr; pass_.SetPhase(ph ? (int)(frame & 7) : -1); }   // measurement: upper bound of the 1/8 reuse

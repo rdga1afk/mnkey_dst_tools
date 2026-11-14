@@ -40,6 +40,7 @@ struct GroundLiveFrame {
     SDL_GPUTexture* distant = nullptr;    // data/newland/land/overlaymaps/distant.png (the far program's distantColour)
     float inv_vp[16] = {};                // gw_invVP in column-major memory order (glm layout)
     float cam_ws[3] = {};                 // camera position in metres, world corner origin
+    float inv_pr[16] = {};                // the inverse of projection * rotation (camera at the origin), column-major: a clip position maps to a camera-relative world position, no 1e4 m translation in the matrix
     float cam_dir[3] = { 0.f, 0.f, 1.f };    // unit view direction
     float far_clip = 40000.f,   // units (0.1 m)
     wetness = 0.f, water_height_rel = -1.0e8f;

@@ -406,10 +406,21 @@ bool GroundLivePass::Bake(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const dst[3
     return true;
 }
 
+// The three corner rays of the full-screen triangle, camera-relative, from the inverse of projection * rotation in double: the world-space inverse view-projection (a 1e4 m translation in float32) put metres of random error into the reconstructed position of a pixel at 2 km.
+template <class Set> static void SetCornerRays(const GroundLiveFrame& f, Set&& setv) {
+    const double cx[3] = { -1.0, 3.0, -1.0 }, cy[3] = { -1.0, -1.0, 3.0 }; const char* nm[3] = { "vl_ray0", "vl_ray1", "vl_ray2" };
+    for (int k = 0; k < 3; ++k) {
+        const double v[4] = { cx[k], cy[k], 1.0, 1.0 }; double r[4];
+        for (int i = 0; i < 4; ++i) r[i] = (double)f.inv_pr[i] * v[0] + (double)f.inv_pr[4 + i] * v[1] + (double)f.inv_pr[8 + i] * v[2] + (double)f.inv_pr[12 + i] * v[3];
+        const float ray[4] = { (float)(r[0] / r[3]), (float)(r[1] / r[3]), (float)(r[2] / r[3]), 0.f };
+        setv(nm[k], ray);
+    }
+}
+
 bool GroundLivePass::Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveLightParams& p) {
     if (!ready_ || !lit_ || !light_.pipe || !p.ambient_map || !p.irr_cube || !p.spec_cube) return false;
     auto set = [&](Variant& v, const char* name, const float* val, int count) { for (const auto& m : v.mem) if (m.first == name) { memcpy(&v.ub[m.second.first], val, 4 * count); return; } };
-    set(light_vsv_, "vl_invVP", f.inv_vp, 16); const float cam[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], 0.f }; set(light_vsv_, "vl_cam", cam, 4);   // the ray is only a direction: the unit of cam does not matter
+    SetCornerRays(f, [&](const char* n, const float* v) { set(light_vsv_, n, v, 4); });
     const float sun_colour[4] = { p.sun_colour[0], p.sun_colour[1], p.sun_colour[2], p.sun_colour[3] }, env[4] = { 1.f, 1.f, 1.f, p.env_w }, fog[4] = { f.far_clip, 0.f, 0.f, 0.f };
     const float world_size[4] = { 1.f / p.world_extent, 1.f / p.world_extent, 0.5f, 0.5f }, world_off[3] = { p.world_origin_xz[0], 0.f, p.world_origin_xz[1] };
     const float viewport[4] = { (float)tw_, (float)th_, 1.f / tw_, 1.f / th_ }, zero4[4] = {}, amb[4] = { 1.f, 1.f, 1.f, p.ambient_w };
@@ -444,7 +455,7 @@ bool GroundLivePass::DrawFog(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, c
         if (!pipe) { MD_LOG(MD_LOG_WARNING, "ground live: fog consumer pipeline create failed (%d / %d)", (int)cfmt, (int)dfmt); return false; }
     }
     auto set = [&](Variant& v, const char* name, const float* val, int count) { for (const auto& m : v.mem) if (m.first == name) { memcpy(&v.ub[m.second.first], val, 4 * count); return; } };
-    set(light_vsv_, "vl_invVP", f.inv_vp, 16); const float cam[4] = { f.cam_ws[0], f.cam_ws[1], f.cam_ws[2], 0.f }; set(light_vsv_, "vl_cam", cam, 4);
+    SetCornerRays(f, [&](const char* n, const float* v) { set(light_vsv_, n, v, 4); });
     // the SkyX constants the exe gives the fog material (F040804; the same numbers as SkyPanorama's SkyUniforms): inner 9.77501, outer 10.2963, height 0.01, Kr 0.0022, Km 0.000675, ESun 30, exposure 1.4
     const float inner = 9.77501f, outer = 10.2963f, thick = outer - inner, PI = 3.14159265f, kr = 0.0022f, km = 0.000675f;
     const float cam_pos[3] = { 0.f, inner + thick * 0.01f, 0.f }, inv_wl[3] = { 1.f / powf(0.57f, 4.f), 1.f / powf(0.48f, 4.f), 1.f / powf(0.44f, 4.f) };
