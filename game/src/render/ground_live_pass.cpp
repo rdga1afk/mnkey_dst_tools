@@ -282,7 +282,7 @@ void GroundLivePass::FillGroup(Variant& v, const GroundLiveFrame& f, const Groun
     SDL_GPUTexture* tex[kSamplers];
     for (auto& t : tex) t = f.interior;
     tex[0] = grp.biome[0].diffuse; tex[1] = grp.biome[0].normal; tex[2] = grp.no_tint && f.black ? f.black : f.overlay; tex[3] = grp.no_tint && f.white ? f.white : (grp.cls == 1 && f.colour_l3 ? f.colour_l3 : (grp.cls == 2 && f.colour_l4 ? f.colour_l4 : f.colour)); tex[4] = f.interior;
-    if (grp.biome_count > 1) { tex[5] = f.blend_map; for (int k = 1; k < grp.biome_count; ++k) { tex[4 + 2 * k] = grp.biome[k].diffuse; tex[5 + 2 * k] = grp.biome[k].normal; } }
+    if (grp.biome_count > 1) { tex[5] = grp.blend_map ? grp.blend_map : f.blend_map; for (int k = 1; k < grp.biome_count; ++k) { tex[4 + 2 * k] = grp.biome[k].diffuse; tex[5 + 2 * k] = grp.biome[k].normal; } }
     tex[12] = f.depth; tex[13] = f.packed;
     for (int i = 0; i < kSamplers; ++i) tb[i] = { tex[i], i >= 12 ? nearest_ : linear_ };   // s5 blend map: the original reads it with `Sample(Linear)` (terrainfp4.hlsl:216), one bilinear tap
     { if (grp.layer_bias && grp.cls > 0 && biased_[grp.cls - 1]) for (int i : { 0, 1, 6, 7, 8, 9, 10, 11 }) tb[i].sampler = biased_[grp.cls - 1]; }   // B2: the old path's layer lod bias at distance

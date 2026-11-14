@@ -1,4 +1,6 @@
 #pragma once
+#include <map>
+#include <vector>
 // Ground live pass in the game (MD_GROUND_LIVE=1, default off). The biome list is chosen per terrain patch, as the original does (ZoneMap::getBiomes on the patch box, common Morton
 // ancestor mask): AssignSlots gives every LOD node the slot of its list, the terrain G-buffer pass writes the slot into a second R8_UINT target (engine: ground_slot.h), and Frame runs
 // GroundLivePass (stencil groups from the slot target) + the original decodePixel after the pass. Every enclosing node's list gives identical weights (private leaf-vs-patch proof,
@@ -62,6 +64,8 @@ private:
     const GroundLiveLightParams* light_ = nullptr;
     NpcHook npc_hook_ = nullptr; void* npc_user_ = nullptr;
     GroundLiveFrame last_frame_; bool lit_frame_ = false;   // the inputs of the last Frame() that ran the light pass (DrawFog)
+    std::vector<unsigned char> blend_rgba_; int blend_w_ = 0, blend_h_ = 0; std::map<int, SDL_GPUTexture*> blend_perm_;   // the blend map with its channels permuted to the entry order of a list (BLEND<k> = the entry's slot in the original)
+    SDL_GPUTexture* BlendFor(SDL_GPUDevice* dev, const PatchBiomes& pb);
     SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *colour_l3_ = nullptr, *colour_l4_ = nullptr, *clear_ = nullptr, *distant_ = nullptr;
     float far_clip_ = 40000.f; int max_groups_ = 31;
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)

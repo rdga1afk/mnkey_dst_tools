@@ -91,7 +91,7 @@ bool GroundLiveDriver::InitData() {
 bool GroundLiveDriver::InitGpu(SDL_GPUDevice* dev) {
     int w = 0, h = 0, nc = 0; unsigned char* bm = stbi_load((kenshi_dir_ + "/data/newland/land/blendmap.png").c_str(), &w, &h, &nc, 4);
     if (!bm) { MD_LOG(MD_LOG_WARNING, "[GroundLive] blendmap.png missing"); return false; }
-    blend_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, bm, (size_t)w * h * 4); stbi_image_free(bm);
+    blend_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, bm, (size_t)w * h * 4); blend_rgba_.assign(bm, bm + (size_t)w * h * 4); blend_w_ = w; blend_h_ = h; stbi_image_free(bm);
     const Uint8 white[4] = { 255, 255, 255, 255 }, zero[4] = {};
     { int dw = 0, dh = 0, dn = 0; unsigned char* dm = stbi_load((kenshi_dir_ + "/data/newland/land/overlaymaps/distant.png").c_str(), &dw, &dh, &dn, 4);   // the far program's distantColour
       if (dm) { distant_ = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, dw, dh, dm, (size_t)dw * dh * 4); stbi_image_free(dm); } }
@@ -154,6 +154,19 @@ int GroundLiveDriver::SlotAt(float x, float z) {
         if (d2 < best_d2) { best_d2 = d2; best = q.slot; }
     }
     return best;
+}
+
+// The original defines BLEND<k> of a list's entry k as that entry's slot = its blend-map channel (FUN_140a14c90 builds the program name from the slots); our variants fix BLEND<k> = k, so a list whose entry k sits in another channel
+// gets the blend map with channel k = that slot (data only; the program text is untouched). Entry order = descending slot, entry 0 (main) has no channel of its own.
+SDL_GPUTexture* GroundLiveDriver::BlendFor(SDL_GPUDevice* dev, const PatchBiomes& pb) {
+    bool same = true; for (int k = 1; k < pb.count; ++k) if (pb.channels[k] != k) same = false;
+    if (same || pb.count < 2 || blend_rgba_.empty()) return blend_;
+    int key = 0; for (int k = 1; k < pb.count; ++k) key = key * 8 + pb.channels[k] + 1;
+    auto it = blend_perm_.find(key); if (it != blend_perm_.end()) return it->second;
+    std::vector<unsigned char> o(blend_rgba_.size());
+    for (size_t i = 0; i < blend_rgba_.size(); i += 4) { o[i] = blend_rgba_[i]; o[i + 1] = blend_rgba_[i + 1]; o[i + 2] = blend_rgba_[i + 2]; o[i + 3] = blend_rgba_[i + 3]; for (int k = 1; k < pb.count && k < 4; ++k) if (pb.channels[k] >= 0 && pb.channels[k] < 4) o[i + (size_t)k] = blend_rgba_[i + (size_t)pb.channels[k]]; }
+    SDL_GPUTexture* t = MakeTex(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, blend_w_, blend_h_, o.data(), o.size());
+    blend_perm_[key] = t ? t : blend_; return t ? t : blend_;
 }
 
 void GroundLiveDriver::AssignSlots(TerrainLodNode* nodes, int n, const float cam[3], const TerrainLodNode* pre, int n_pre) {
@@ -251,7 +264,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     static GroundLiveGroup groups[32]; int ng = 0;
     for (int s = 1; s <= n_slots_; ++s) {
         const PatchBiomes& pb = lists_[(size_t)slot_list_[s]].pb;
-        GroundLiveGroup& g = groups[ng]; g.slot = s; g.biome_count = 0; g.far = false; g.x0 = g.x1 = g.y0 = g.y1 = 0; g.no_tint = lists_[(size_t)slot_list_[s]].untinted; g.cls = lists_[(size_t)slot_list_[s]].cls; { static const int bv = getenv("MD_GROUND_B") ? atoi(getenv("MD_GROUND_B")) : 0; g.layer_bias = bv >= 2 && g.cls > 0; }
+        GroundLiveGroup& g = groups[ng]; g.slot = s; g.biome_count = 0; g.far = false; g.x0 = g.x1 = g.y0 = g.y1 = 0; g.blend_map = BlendFor(dev, pb); g.no_tint = lists_[(size_t)slot_list_[s]].untinted; g.cls = lists_[(size_t)slot_list_[s]].cls; { static const int bv = getenv("MD_GROUND_B") ? atoi(getenv("MD_GROUND_B")) : 0; g.layer_bias = bv >= 2 && g.cls > 0; }
         float tile = 1e9f; bool ok = true;
         const float d = slot_dmin_[s] + 1.f;
         for (int b = 0; b < pb.count; ++b) {
@@ -369,7 +382,7 @@ void GroundLiveDriver::BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, 
             const int lid = pb.count > 0 ? ListIdOf(pb) : -1;
             if (lid < 0) { ++stats_.cache_nolist; return; }   // no list (outside the map): the strip stays unbaked, those pixels keep the program path
             if (lid == last_lid && nc > 0) { cells[nc - 1].x1 = u1; continue; }
-            GroundLiveGroup& g = cells[nc]; g = GroundLiveGroup(); g.slot = 0; g.biome_count = 0;
+            GroundLiveGroup& g = cells[nc]; g = GroundLiveGroup(); g.slot = 0; g.biome_count = 0; g.blend_map = BlendFor(dev, pb);
             g.x0 = u0; g.x1 = u1; g.y0 = v0; g.y1 = v1;
             float tile = 1e9f;
             for (int b = 0; b < pb.count; ++b) {

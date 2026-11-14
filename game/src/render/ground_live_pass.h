@@ -22,6 +22,7 @@ struct GroundLiveGroup {                  // the pixels of one biome list
     bool layer_bias = false;              // B2: the layers of this far class are sampled with a positive lod bias (the old path's layer LOD at distance)
     int cls = 0;                          // NOW-0 B variants: 1 / 2 = far classes (colour map two / three mips coarser, layer lod bias); 0 = as the install program runs
     bool far = false;                     // no layer set resident yet: drawn with the original far program (distant.png) instead of being skipped
+    SDL_GPUTexture* blend_map = nullptr;  // the blend map with the channels of this list's entries (see GroundLiveDriver::BlendFor); null = f.blend_map
     GroundLiveBiome biome[4];
     int x0 = 0, y0 = 0, x1 = 0, y1 = 0;   // scissor (pixels); x1 <= x0 = the whole target
 };
