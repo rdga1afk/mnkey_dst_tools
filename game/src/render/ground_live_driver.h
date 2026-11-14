@@ -73,6 +73,7 @@ private:
     struct NodeSlot { float x0, z0, size; int slot; };
     NodeSlot node_slot_[8192]; int n_node_slot_ = 0;   // the nodes of the last AssignSlots (SlotAt)
     Stats stats_; uint64_t frame_counter_ = 0;
+    int tier_k_[1024] = {};   // per list: the layer tier K of the last frame (hysteresis); constructed to -1 in InitGpu
     // live-ground cache (MD_GROUND_CACHE): bake strips of the rings after the frame's pass, within a texel budget per frame
     void BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, uint64_t frame);
     GroundLiveCache cache_; bool cache_tried_ = false; float cache_wetness_ = -1.f;

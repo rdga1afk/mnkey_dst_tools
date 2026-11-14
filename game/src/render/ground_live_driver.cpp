@@ -245,19 +245,21 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     const uint64_t frame = ++frame_counter_;
     lit_frame_ = false;
     if (!data_ok_) return;
-    if (!gpu_tried_) { gpu_tried_ = true; gpu_ok_ = InitGpu(dev); }
+    if (!gpu_tried_) { gpu_tried_ = true; for (int& k : tier_k_) k = -1; gpu_ok_ = InitGpu(dev); }
     if (!gpu_ok_ || !depth || !packed || !slot || w < 16 || h < 16) return;
     if (!pass_.EnsureTargets(w, h)) return;
     // pixel angle from the inverse view-projection: two neighbouring pixels at the same depth
-    auto unproj = [&](float nx, float ny, float out[3]) {
-        const float* m = inv_vp; const float v[4] = { nx, ny, 0.5f, 1.f }; float r[4];
-        for (int i = 0; i < 4; ++i) r[i] = m[i] * v[0] + m[4 + i] * v[1] + m[8 + i] * v[2] + m[12 + i] * v[3];
+    // double: the world position of a pixel is ~1e3-1e4 m and two neighbouring pixels at the depth 0.5 (~1 m from the camera) lie ~1e-3 m apart, below the float resolution of the position, so the float
+    // cancellation made the angle (and with it the layer array tier of a list) jump by +-30 % from frame to frame
+    auto unproj = [&](double nx, double ny, double out[3]) {
+        const float* m = inv_vp; const double v[4] = { nx, ny, 0.5, 1.0 }; double r[4];
+        for (int i = 0; i < 4; ++i) r[i] = (double)m[i] * v[0] + (double)m[4 + i] * v[1] + (double)m[8 + i] * v[2] + (double)m[12 + i] * v[3];
         out[0] = r[0] / r[3]; out[1] = r[1] / r[3]; out[2] = r[2] / r[3];
     };
-    float p0[3], p1[3]; unproj(0.f, 0.f, p0); unproj(2.f / h, 0.f, p1);
-    const float dd = std::sqrt((p0[0] - cam[0]) * (p0[0] - cam[0]) + (p0[1] - cam[1]) * (p0[1] - cam[1]) + (p0[2] - cam[2]) * (p0[2] - cam[2]));
-    const float sep = std::sqrt((p1[0] - p0[0]) * (p1[0] - p0[0]) + (p1[1] - p0[1]) * (p1[1] - p0[1]) + (p1[2] - p0[2]) * (p1[2] - p0[2]));
-    const float pix_angle = dd > 1e-3f ? sep / dd : 0.f;
+    double p0[3], p1[3]; unproj(0.0, 0.0, p0); unproj(2.0 / h, 0.0, p1);
+    const double dd = std::sqrt((p0[0] - cam[0]) * (p0[0] - cam[0]) + (p0[1] - cam[1]) * (p0[1] - cam[1]) + (p0[2] - cam[2]) * (p0[2] - cam[2]));
+    const double sep = std::sqrt((p1[0] - p0[0]) * (p1[0] - p0[0]) + (p1[1] - p0[1]) * (p1[1] - p0[1]) + (p1[2] - p0[2]) * (p1[2] - p0[2]));
+    const float pix_angle = dd > 1e-3 ? (float)(sep / dd) : 0.f;
     arrays_.Poll(frame);
     const int skipped0 = 0; (void)skipped0;
     stats_.skipped = stats_.waiting = stats_.groups = 0; stats_.min_margin = 1e9f; for (int& t : stats_.tiers) t = 0;
@@ -274,6 +276,11 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
         if (!ok) { g.far = true; ++stats_.skipped; ++ng; continue; }   // a biome without data: the original far program (never left unwritten)
         const float footprint = pix_angle * d * 4.096f * (tile < 1e8f ? tile : 1.f);   // base texels per pixel along the minor axis
         int K = 0; while (K < 6 && std::ldexp(1.f, K + 2) <= footprint / 1.25f) K += 2;
+        {   // hysteresis: a list changes its tier only when the footprint is 15 % past the boundary (a footprint that hovers at a boundary flipped the whole list between two layer resolutions from frame to frame)
+            const int li = slot_list_[s]; int& kl = tier_k_[li & 1023]; const float x = footprint / 1.25f;
+            if (kl >= 0 && K != kl) { if (K > kl ? x < std::ldexp(1.f, kl + 2) * 1.15f : x > std::ldexp(1.f, kl) / 1.15f) K = kl; }
+            kl = K;
+        }
         const int tier_rec = K / 2; if (K > 0) stats_.min_margin = std::min(stats_.min_margin, footprint / 1.25f / std::ldexp(1.f, K));
         for (int b = 0; b < pb.count; ++b) {
             const BiomeInfo* bi = Find(pb.ids[b]);
