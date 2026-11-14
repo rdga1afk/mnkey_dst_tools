@@ -77,6 +77,22 @@ static int l_md_char_editor_digest(lua_State* L) {   // FNV-1a hash of all slide
     lua_pushinteger(L, (lua_Integer)(h >> 1)); lua_pushinteger(L, n);
     return 2;
 }
+static int l_md_char_editor_digest_tab(lua_State* L) {   // md.char_editor_digest_tab(tab 0 Body / 1 Face / 2 Hair): hash of the values of that tab only (its slider names, and its list choice: stance / head / hair + beard)
+    static const char* kCat[3] = {"Body", "Face", "Hair"};
+    const int tab = (int)luaL_checkinteger(L, 1); const auto& se = CharacterEditor::GetSession();
+    uint64_t h = 1469598103934665603ull; int n = 0;
+    auto add = [&](const std::string& name) {
+        auto it = se.Values().values.find(name); if (it == se.Values().values.end()) return;
+        for (char c : name) { h ^= (unsigned char)c; h *= 1099511628211ull; }
+        const float v = it->second; unsigned char b[4]; memcpy(b, &v, 4); for (unsigned char c : b) { h ^= c; h *= 1099511628211ull; } ++n;
+    };
+    const auto* cfg = se.Limits(); const auto* cat = (cfg && tab >= 0 && tab < 3) ? cfg->Find(kCat[tab]) : nullptr;
+    if (cat) { for (const auto& r : cat->ranges) add(r.name); for (const auto& r : cat->colour_ranges) add(r.name); }
+    if (tab == 2) { add("Hair Colour"); add("Hair Saturation"); add("Hair Brightness"); }
+    const size_t lists[2] = { tab == 0 ? se.stance() : tab == 1 ? se.head() : se.hair_index(), tab == 2 ? se.beard_index() : 0 };
+    for (size_t v : lists) { h ^= (uint64_t)v + 0x9e3779b97f4a7c15ull; h *= 1099511628211ull; }
+    lua_pushinteger(L, (lua_Integer)(h >> 1)); lua_pushinteger(L, n); return 2;
+}
 // md.char_io(mode, path) -> ok, err: what OK of the IMPORT (1) / EXPORT (2) dialog does
 static int l_md_char_ui_multislider(lua_State* L) { lua_pushboolean(L, CharacterMyGui::DebugMultiSlider((int)luaL_checkinteger(L, 1), (int)luaL_checkinteger(L, 2))); return 1; }
 static int l_md_char_ui_char_index(lua_State* L) { lua_pushinteger(L, CharacterMyGui::DebugCharIndex((int)luaL_optinteger(L, 1, 0))); return 1; }
@@ -296,6 +312,7 @@ void RegisterLuaEditorScenarioAPI(LuaSystem& sys) {
     sys.RegisterNamespaceFunction("char_editor_confirm", l_md_char_editor_confirm);
     sys.RegisterNamespaceFunction("char_editor_get", l_md_char_editor_get);
     sys.RegisterNamespaceFunction("char_editor_digest", l_md_char_editor_digest);
+    sys.RegisterNamespaceFunction("char_editor_digest_tab", l_md_char_editor_digest_tab);
     sys.RegisterNamespaceFunction("char_ui_click", l_md_char_ui_click);
     sys.RegisterNamespaceFunction("char_ui_list_step", l_md_char_ui_list_step);
     sys.RegisterNamespaceFunction("char_ui_type", l_md_char_ui_type);
