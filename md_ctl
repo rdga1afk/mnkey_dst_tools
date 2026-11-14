@@ -109,19 +109,19 @@ def cmd_test(args) -> int:
     if args.filter == "scenario":
         # scenario_* aren't gtest cases — they're real `monkey_dust --exec`
         # process runs registered as ctest tests (tests/CMakeLists.txt Etap 3
-        # section). Run from build/tests/ (ctest's registration scope for
+        # section). Run from build_release/tests/ (ctest's registration scope for
         # this target — see docs/AUTONOMY_LOG.md Etap 3 for why root-level
         # ctest also needed its own enable_testing()).
         cmd = ["ctest", "-L", "scenario", "--output-on-failure"]
-        code, log, tail = run_logged(cmd, cwd=REPO_ROOT / "build/tests", tag="scenario")
+        code, log, tail = run_logged(cmd, cwd=REPO_ROOT / "build_release/tests", tag="scenario")
         print(f"[md_ctl test] scenario: {'PASSED' if code == 0 else 'FAILED'}")
         for line in tail.splitlines()[-15:]:
             print(f"  {line}")
         print(f"  logs: {log}")
         return code
 
-    binaries = [REPO_ROOT / "build/tests/md_tests",
-                REPO_ROOT / "build/tests/md_behavior_tests"]
+    binaries = [REPO_ROOT / "build_release/tests/md_tests",
+                REPO_ROOT / "build_release/tests/md_behavior_tests"]
     overall = 0
     for b in binaries:
         if not b.exists():
@@ -159,7 +159,7 @@ def cmd_run(args) -> int:
     # (ShutdownGame(save_world=false)), not from this directory being a
     # true sandbox yet. Full symlink/CoW population is still Backlog.
 
-    binary = REPO_ROOT / os.environ.get("MD_GAME_BIN", "build/game/monkey_dust")   # MD_GAME_BIN: the release binary for the gates (owner 13.11), same variable as scripts/accept_route.sh
+    binary = REPO_ROOT / os.environ.get("MD_GAME_BIN", "build_release/game/monkey_dust")   # MD_GAME_BIN: the release binary for the gates (owner 13.11), same variable as scripts/accept_route.sh
     if not binary.exists():
         print(f"[md_ctl run] game binary not built: {binary} (run `md_ctl build game`)")
         return 2
@@ -192,7 +192,7 @@ def cmd_probe_height(args) -> int:
     scope note on probe_heights.lua: TerrainQuery goes through TerrainAtlas'
     in-RAM copy, not a raw file read, so an external byte read would not be
     comparing the same thing)."""
-    binary = REPO_ROOT / "build/game/monkey_dust"
+    binary = REPO_ROOT / "build_release/game/monkey_dust"
     if not binary.exists():
         print(f"[md_ctl probe-height] game binary not built: {binary}")
         return 2
@@ -251,7 +251,7 @@ def cmd_qa(args) -> int:
         # VERIFY scenario used to validate Etap 4 itself (real screenshot +
         # RMSE, per-backend baselines — tools/qa/editor_baselines/<backend>/).
         script = "tests/editor_scenarios/editor_verify_hub_screenshot.lua"
-        cmd = ["build/tools/monkey_dust_editor", "--exec", script,
+        cmd = ["build_release/tools/monkey_dust_editor", "--exec", script,
                "--fast", "--seed", "42", "--max-seconds", "180"]
         code, log, tail = run_logged(cmd, tag="qa_editor", timeout=200, env=qa_env)
         if code != 0:
@@ -306,9 +306,9 @@ def cmd_state(args) -> int:
         print(f"[md_ctl state] {sm}/: {len(sm_dirty)} dirty path(s){flag}")
         dirty_any = dirty_any or bool(sm_dirty)
 
-    binary = REPO_ROOT / "build/game/monkey_dust"
+    binary = REPO_ROOT / "build_release/game/monkey_dust"
     build_state = "built" if binary.exists() else "NOT BUILT"
-    print(f"[md_ctl state] build/game/monkey_dust: {build_state}")
+    print(f"[md_ctl state] build_release/game/monkey_dust: {build_state}")
 
     logs = sorted(LOG_DIR.glob("*.log")) if LOG_DIR.exists() else []
     last_log = logs[-1].name if logs else "(none)"

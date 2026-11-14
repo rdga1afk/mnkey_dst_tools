@@ -2,13 +2,11 @@ cmake_minimum_required(VERSION 3.21)
 project(monkey_dust_game CXX)
 
 # Layout after the migration: this file lives in the tools checkout (tools/game). MD_ROOT = the project root that is being built (main), MD_TOOLS_DIR = the tools checkout.
-# MD_SHADER_OVERLAY_DIR = the extra shader directory of the private repo (the translated shaders); empty = tools alone (those features are off or fall back).
 get_filename_component(MD_TOOLS_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(MD_ROOT "${CMAKE_SOURCE_DIR}")
 if(NOT MD_GLSLANG_INC)
     set(MD_GLSLANG_INC "${MD_ROOT}/third_party/glslang_src")   # main: the FetchContent source dir of the root CMake; standalone: set by cmake/standalone.cmake
 endif()
-set(MD_SHADER_OVERLAY_DIR "" CACHE PATH "extra shader sources compiled together with tools/shaders (later directories override)")
 set(MD_SPIRV_OUT_DIR "${MD_ROOT}/shaders/spirv" CACHE PATH "where the SPIR-V is written (the HAL reads <cwd>/shaders/spirv in development; the release embeds it)")
 
 file(GLOB_RECURSE GAME_SOURCES "src/*.cpp")
@@ -25,9 +23,6 @@ add_custom_target(md_build_info
 # #201 R2: the SPIR-V is compiled from shaders/ at build time (scripts/compile_shaders.sh, skips up-to-date files) and embedded in the binary;
 # at run time the HAL reads shaders/spirv/ only when it exists (development) and falls back to the embedded copy (release)
 set(MD_SHADER_DIRS ${MD_TOOLS_DIR}/shaders)
-if(MD_SHADER_OVERLAY_DIR)
-    list(APPEND MD_SHADER_DIRS ${MD_SHADER_OVERLAY_DIR})
-endif()
 set(MD_SHADER_SOURCES)
 foreach(_d ${MD_SHADER_DIRS})
     file(GLOB _s CONFIGURE_DEPENDS ${_d}/*.vert ${_d}/*.frag ${_d}/*.comp ${_d}/*.glsl)
