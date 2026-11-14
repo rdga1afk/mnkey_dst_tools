@@ -1,7 +1,7 @@
 // Ground live pass, HLSL side of our terrain G-buffer (shaders/terrain_gbuf_pack.glsl: the same packing, the same maths): world position and normal of a pixel.
 // posApprox: the world position from the depth reconstruction; distApprox its distance to the camera.
-#define TS_GB_PERIOD 32.0
-#define TS_GB_SNAP_DIST 2000.0
+#define TS_GB_PERIOD 256.0
+#define TS_GB_SNAP_DIST 100000.0
 
 void GbufDecode(uint4 g, float3 posApprox, float distApprox, out float3 pos, out float3 N, out bool skirt)
 {

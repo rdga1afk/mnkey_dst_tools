@@ -5,8 +5,8 @@
 // The whole metres of the position are not stored: the resolve rebuilds the position from the depth (+ inv VP) and snaps it to the stored fraction -- exact
 // whenever that reconstruction is within +-16 m (the depth reconstruction is within 8-16 m at 3 km, a few cm close up), so there is neither the position flicker of the
 // plain depth reconstruction (S7) nor the quantisation of a fixed-point position.
-#define TS_GB_PERIOD   32.0
-#define TS_GB_PERIOD_Y 32.0
+#define TS_GB_PERIOD   256.0   // NOW-0 14.11: was 32 m; with 2000 m as the snap limit the far ground got the unsnapped depth reconstruction (8-16 m error), so the biome border read from it slid
+#define TS_GB_PERIOD_Y 256.0
 
 uvec4 TS_GbufEncode(vec3 pos, vec3 N, bool skirt)
 {
@@ -24,7 +24,7 @@ uvec4 TS_GbufEncode(vec3 pos, vec3 N, bool skirt)
 // posApprox: world position from the depth reconstruction (any error below TS_GB_PERIOD / 2 in XZ and TS_GB_PERIOD_Y / 2 in Y).
 // Beyond TS_GB_SNAP_DIST the depth error (standard D32F, near 0.5 m: 8-16 m at 3 km) can exceed that, and the ground there is on coarse mips:
 // the position is then the depth reconstruction itself, not snapped (a wrong snap would jump by a whole period).
-#define TS_GB_SNAP_DIST 2000.0
+#define TS_GB_SNAP_DIST 100000.0
 void TS_GbufDecode(uvec4 g, vec3 posApprox, float distApprox, out vec3 pos, out vec3 N, out bool skirt)
 {
     vec3 f = vec3(float(g.x) * (1.0 / 65536.0), float(g.z & 0x7FFFu) * (1.0 / 32768.0), float(g.y) * (1.0 / 65536.0));
