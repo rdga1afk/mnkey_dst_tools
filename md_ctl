@@ -120,8 +120,7 @@ def cmd_test(args) -> int:
         print(f"  logs: {log}")
         return code
 
-    binaries = [REPO_ROOT / "build_release/tests/md_tests",
-                REPO_ROOT / "build_release/tests/md_behavior_tests"]
+    binaries = [REPO_ROOT / "build_release/tests/md_tests"]   # md_behavior_tests is not a target any more
     overall = 0
     for b in binaries:
         if not b.exists():

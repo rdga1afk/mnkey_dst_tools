@@ -1,6 +1,7 @@
 // blendinfo.dat reader: layout facts of the player's install (needs KENSHI_DIR) and the query rules of the original's zone map.
 #include <gtest/gtest.h>
 #include <monkey_dust/world/kbi1.h>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <map>
