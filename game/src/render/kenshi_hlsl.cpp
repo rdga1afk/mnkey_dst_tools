@@ -191,7 +191,9 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
         std::string b = ReadFile(path);
         if (!b.empty() && b.size() % 4 == 0) {
             out.spv.assign(reinterpret_cast<const uint32_t*>(b.data()), reinterpret_cast<const uint32_t*>(b.data()) + b.size() / 4);
-            out.from_cache = true; out.compile_ms = 0; ValidateModule(out); return true;
+            out.from_cache = true; out.compile_ms = 0; ValidateModule(out);
+            if (!out.valid) { out.log = "SPIR-V validation: " + out.valid_log; return false; }   // a module that fails the validator is never handed to a pipeline: every caller already falls back on false
+            return true;
         }
     }
     static bool inited = false; if (!inited) { glslang::InitializeProcess(); inited = true; }
@@ -229,6 +231,7 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
     out.from_cache = false;
     out.compile_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     ValidateModule(out);
+    if (!out.valid) { out.log = "SPIR-V validation: " + out.valid_log; return false; }   // not cached
     std::ofstream f(path, std::ios::binary); f.write(reinterpret_cast<const char*>(out.spv.data()), out.spv.size() * 4);
     return true;
 }
