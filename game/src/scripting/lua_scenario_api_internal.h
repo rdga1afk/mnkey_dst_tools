@@ -115,6 +115,7 @@ int l_md_assert_above_terrain(lua_State* L);
 int l_md_screenshot(lua_State* L);
 int l_md_bugcap_start(lua_State* L);
 int l_md_bugcap_stop(lua_State* L);
+int l_md_bugcap_snap(lua_State* L);
 int l_md_render_frame(lua_State* L);
 int l_md_clock_probe(lua_State* L);
 int l_md_gpu_freq_mhz(lua_State* L);

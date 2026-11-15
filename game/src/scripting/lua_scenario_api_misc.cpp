@@ -80,6 +80,7 @@ int l_md_screenshot(lua_State* L) {
 // md.bugcap_start() -> bool / md.bugcap_stop(): the bug video of the camera button (bugcap.cpp) as calls, for tests and for recording from a scenario.
 #include "../bugcap.h"
 int l_md_bugcap_start(lua_State* L) { lua_pushboolean(L, bugcap::Start()); return 1; }
+int l_md_bugcap_snap(lua_State* L) { const char* d = bugcap::SnapKey(); if (d) lua_pushstring(L, d); else lua_pushnil(L); return 1; }   // the F9 snapshot
 int l_md_bugcap_stop(lua_State* L) { (void)L; bugcap::Stop(); return 0; }
 
 // ── md.render_frame() ─────────────────────────────────────────────────────

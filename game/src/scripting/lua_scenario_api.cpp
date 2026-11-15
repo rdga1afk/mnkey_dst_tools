@@ -437,6 +437,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("screenshot",          l_md_screenshot);
     sys.RegisterNamespaceFunction("bugcap_start",        l_md_bugcap_start);
     sys.RegisterNamespaceFunction("bugcap_stop",         l_md_bugcap_stop);
+    sys.RegisterNamespaceFunction("bugcap_snap",         l_md_bugcap_snap);
     sys.RegisterNamespaceFunction("render_frame",        l_md_render_frame);
     sys.RegisterNamespaceFunction("clock_probe",         l_md_clock_probe);
     sys.RegisterNamespaceFunction("gpu_freq_mhz",        l_md_gpu_freq_mhz);

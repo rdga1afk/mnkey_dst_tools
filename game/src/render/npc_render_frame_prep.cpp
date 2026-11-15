@@ -604,6 +604,7 @@ if (sr_prepass.terrain_granite_ready) {
                         const auto& lsk = LightSystem::Get(); mixv(&lsk.sun_dir, sizeof lsk.sun_dir); mixv(&lsk.sun_color, sizeof lsk.sun_color); mixv(&lsk.ambient_color, sizeof lsk.ambient_color);
                     }
                     mixk((uint32_t)g_kenshi_lighting_mode); mixk((uint32_t)g_opt_ground_split);
+                    mixk((uint32_t)md::GroundLiveRtState().debug_view);   // md.set_debug_view / the F9 snapshot views
                     mixk((uint32_t)sr_prepass.terrain_shading_projected_.GBufferDepth().Width()); mixk((uint32_t)sr_prepass.terrain_shading_projected_.GBufferDepth().Height());
                     const bool eq = k == srs.still_key_ && srs.gr_have_ && !srs.gr_reset_;
                     srs.still_key_ = k;

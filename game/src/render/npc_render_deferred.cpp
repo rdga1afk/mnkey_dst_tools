@@ -526,6 +526,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         }
                     }
 
+                    { int _nrw = 0, _nrh = 0; RenderSize(_nrw, _nrh); bugcap::Note(cam, dt, _nrw, _nrh); }   // the pose ring and temp_/pose_log.tsv
 #ifdef MONKEY_DUST_EDITOR
                     char _shot_path[256];
                     if (EditorScreenshot_ConsumePending(_shot_path, sizeof(_shot_path))) {
@@ -544,6 +545,13 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         }
                     } else
 #endif
+                    if (bugcap::SnapWants()) {
+                        // one-key snapshot (F9): this frame is read back into the snapshot folder
+                        uint32_t _bw = 0, _bh = 0;
+                        md::GpuTextureHandle _btex = AcquireRealSwapchain(fc, &_bw, &_bh);
+                        if (!bugcap::SnapSubmit(r_cmd, _btex, _bw, _bh, SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr())))
+                            md::GpuDevice::Get().SubmitFrame(r_cmd);
+                    } else
                     if (bugcap::Active()) {
                         // bug video (the camera button): the frame is copied back without waiting; the submit happens inside
                         uint32_t _bw = 0, _bh = 0;

@@ -1,5 +1,7 @@
 #include "bugcap.h"
 #include "game_common.h"
+#include "stb_image_write.h"
+#include <monkey_dust/render/ground_slot.h>
 #include "render/scene_render.h"
 #include <atomic>
 #include <chrono>
@@ -13,6 +15,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <thread>
+#include <vector>
 
 extern bool g_opt_fxaa, g_opt_ground_reuse, g_opt_force_upscale, g_dynres_on;
 extern int g_opt_ground_reuse_period, g_opt_ground_reuse_cr, g_opt_ground_split, g_dynres_down, g_dynres_up;
@@ -28,6 +31,11 @@ constexpr int kSlots = 3;           // frames in flight on the GPU side
 constexpr int kPool = 12;           // frames waiting for the encoder
 constexpr double kMaxSeconds = 60.0;
 constexpr size_t kMaxPoses = 60 * 60 + 600;
+constexpr int kRing = 300;           // snapshot: the camera path of the last 5 s at 60 frames / s
+constexpr const char* kPoseLog = "temp_/pose_log.tsv";
+constexpr long kPoseLogMax = 10 * 1024 * 1024;
+constexpr int kViews = 5;            // snapshot frames: 0 = the picture, 1..4 = md.set_debug_view modes
+constexpr int kViewSettle = 20;      // full frames after a view change (ground reuse period 16 covers the screen)
 
 struct Row { unsigned frame; double t; float dt, x, y, z, wx, wz, yaw, pitch, speed, dynres; int period, phase, rw, rh; };
 
@@ -129,6 +137,38 @@ void Harvest(Slot& s) {
     s.used = false;
 }
 
+void WriteSettings(const std::string& dir) {
+    if (FILE* f = fopen((dir + "/settings.txt").c_str(), "w")) {
+        fprintf(f, "build=%s\n", md_build_title);
+        fprintf(f, "ground_reuse_period=%d\nground_reuse=%d\nground_reuse_cr=%d\nground_split=%d\nfxaa=%d\nforce_upscale=%d\n", g_opt_ground_reuse_period, (int)g_opt_ground_reuse, g_opt_ground_reuse_cr, g_opt_ground_split, (int)g_opt_fxaa, (int)g_opt_force_upscale);
+        fprintf(f, "dynres_on=%d\ndynres_scale=%.3f\ndynres_down_frames=%d\ndynres_up_frames=%d\nresolution_scale=%.3f\nlighting_mode=%d\ntime_override=%d\ntime_hours=%.3f\nwindow=%dx%d\n",
+                (int)g_dynres_on, g_dynres_scale, g_dynres_down, g_dynres_up, md_settings_get_resolution_scale(), g_kenshi_lighting_mode, (int)LightSystem::Get().time_override_enabled, LightSystem::Get().time_override_hours, window_get_width(), window_get_height());
+        fclose(f);
+    }
+}
+
+void WriteReplay(const std::string& dir, const Row* p, size_t n, unsigned frames) {
+    // replay.lua: the camera path of the frames that reached the video (row N = video frame N), the settings of settings.txt
+    if (FILE* f = fopen((dir + "/replay.lua").c_str(), "w")) {
+        fprintf(f, "-- bug video %s: replays the camera path of its %u frames with the settings of settings.txt; run: tools/md_ctl run %s/replay.lua  (KENSHI_DIR set)\n", dir.c_str(), frames, dir.c_str());
+        fprintf(f, "-- frame N of the video = pose N below; the poses are the ones the game rendered (world coordinates)\n");
+        fprintf(f, "md.wait_ticks(100); md.set_time_of_day(%.3f); md.set_resolution_scale(%.3f)\n", LightSystem::Get().time_override_enabled ? LightSystem::Get().time_override_hours : 12.0f, md_settings_get_resolution_scale());
+        fprintf(f, "for a = 1, 4 do md.place_window_on_largest_display(true); md.wait_ticks(100); md.render_frame(); md.wait_ticks(10) end\n");
+        fprintf(f, "md.set_terrain_lod(true)\n");
+        fprintf(f, "md.set_opt_ground_split(%d); md.set_opt_ground_reuse(%s); md.set_ground_reuse_period(%d); md.set_dyn_res(%s, %.3f)\n", g_opt_ground_split, g_opt_ground_reuse ? "true" : "false", g_opt_ground_reuse_period, g_dynres_on ? "true" : "false", g_dynres_scale);
+        fprintf(f, "for i = 1, 1500 do md.wait_ticks(50); md.render_frame(); md.wait_ticks(5); if (md.granite_terrain_stats().tris_per_node or 0) ~= 512 then break end end\n");
+        if (n) fprintf(f, "md.teleport_player(%.3f, %.3f); md.wait_ticks(300)\n", p[0].wx, p[0].wz);
+        fprintf(f, "local P = {\n");
+        for (size_t i = 0; i < n; ++i) fprintf(f, "  {%.4f, %.4f, %.4f, %.4f, %.4f},\n", p[i].wx, p[i].y, p[i].wz, p[i].yaw, -p[i].pitch);   // md.set_camera_pose_world takes pitch positive = looking down, the csv has elevation (down = negative)
+        fprintf(f, "}\nif #P == 0 then md.log(\"replay: no frames\") md.quit(1) end\n");
+        fprintf(f, "md.set_camera_pose_world(P[1][1], P[1][2], P[1][3], P[1][4], P[1][5]); md.wait_ticks(120)\n");
+        fprintf(f, "for i = 1, 200 do md.render_frame(); md.wait_ticks(10); if md.granite_terrain_stats().lod_fine_covers_cam then break end end\n");
+        fprintf(f, "for i = 1, #P do md.set_camera_pose_world(P[i][1], P[i][2], P[i][3], P[i][4], P[i][5]); md.render_frame(); md.wait_ticks(1); if i %% 10 == 0 or i == #P then md.screenshot(string.format(\"temp_/bugcap_replay/%%05d.png\", i)); md.render_frame(); md.wait_ticks(1) end end\n");
+        fprintf(f, "md.log(\"bugcap replay: done\") md.quit(0)\n");
+        fclose(f);
+    }
+}
+
 } // namespace
 
 bool Start() {
@@ -140,13 +180,7 @@ bool Start() {
     if (mkdir(d, 0755) != 0) { fprintf(stderr, "[bugcap] cannot create %s\n", d); return false; }
     g.dir = d; g.started = false; g.submitted = g.written = g.dropped = 0; g.pose_count = 0;
     if (!g.poses) g.poses = (Row*)malloc(sizeof(Row) * kMaxPoses);
-    if (FILE* f = fopen((g.dir + "/settings.txt").c_str(), "w")) {
-        fprintf(f, "build=%s\n", md_build_title);
-        fprintf(f, "ground_reuse_period=%d\nground_reuse=%d\nground_reuse_cr=%d\nground_split=%d\nfxaa=%d\nforce_upscale=%d\n", g_opt_ground_reuse_period, (int)g_opt_ground_reuse, g_opt_ground_reuse_cr, g_opt_ground_split, (int)g_opt_fxaa, (int)g_opt_force_upscale);
-        fprintf(f, "dynres_on=%d\ndynres_scale=%.3f\ndynres_down_frames=%d\ndynres_up_frames=%d\nresolution_scale=%.3f\nlighting_mode=%d\ntime_override=%d\ntime_hours=%.3f\nwindow=%dx%d\n",
-                (int)g_dynres_on, g_dynres_scale, g_dynres_down, g_dynres_up, md_settings_get_resolution_scale(), g_kenshi_lighting_mode, (int)LightSystem::Get().time_override_enabled, LightSystem::Get().time_override_hours, window_get_width(), window_get_height());
-        fclose(f);
-    }
+    WriteSettings(g.dir);
     g.t0 = NowS();
     g.active = true;
     fprintf(stdout, "[bugcap] recording -> %s (stops at %.0f s)\n", d, kMaxSeconds);
@@ -172,25 +206,7 @@ void Stop() {
         if (g.drop) { fclose(g.drop); g.drop = nullptr; }
         for (uint8_t*& p : g.pool) { free(p); p = nullptr; }
     }
-    // replay.lua: the camera path of the frames that reached the video (row N = video frame N), the settings of settings.txt
-    if (FILE* f = fopen((g.dir + "/replay.lua").c_str(), "w")) {
-        fprintf(f, "-- bug video %s: replays the camera path of its %u frames with the settings of settings.txt; run: tools/md_ctl run %s/replay.lua  (KENSHI_DIR set)\n", g.dir.c_str(), g.written, g.dir.c_str());
-        fprintf(f, "-- frame N of the video = pose N below; the poses are the ones the game rendered (world coordinates)\n");
-        fprintf(f, "md.wait_ticks(100); md.set_time_of_day(%.3f); md.set_resolution_scale(%.3f)\n", LightSystem::Get().time_override_enabled ? LightSystem::Get().time_override_hours : 12.0f, md_settings_get_resolution_scale());
-        fprintf(f, "for a = 1, 4 do md.place_window_on_largest_display(true); md.wait_ticks(100); md.render_frame(); md.wait_ticks(10) end\n");
-        fprintf(f, "md.set_terrain_lod(true)\n");
-        fprintf(f, "md.set_opt_ground_split(%d); md.set_opt_ground_reuse(%s); md.set_ground_reuse_period(%d); md.set_dyn_res(%s, %.3f)\n", g_opt_ground_split, g_opt_ground_reuse ? "true" : "false", g_opt_ground_reuse_period, g_dynres_on ? "true" : "false", g_dynres_scale);
-        fprintf(f, "for i = 1, 1500 do md.wait_ticks(50); md.render_frame(); md.wait_ticks(5); if (md.granite_terrain_stats().tris_per_node or 0) ~= 512 then break end end\n");
-        if (g.pose_count) fprintf(f, "md.teleport_player(%.3f, %.3f); md.wait_ticks(300)\n", g.poses[0].wx, g.poses[0].wz);
-        fprintf(f, "local P = {\n");
-        for (size_t i = 0; i < g.pose_count; ++i) fprintf(f, "  {%.4f, %.4f, %.4f, %.4f, %.4f},\n", g.poses[i].wx, g.poses[i].y, g.poses[i].wz, g.poses[i].yaw, -g.poses[i].pitch);   // md.set_camera_pose_world takes pitch positive = looking down, the csv has elevation (down = negative)
-        fprintf(f, "}\nif #P == 0 then md.log(\"replay: no frames\") md.quit(1) end\n");
-        fprintf(f, "md.set_camera_pose_world(P[1][1], P[1][2], P[1][3], P[1][4], P[1][5]); md.wait_ticks(120)\n");
-        fprintf(f, "for i = 1, 200 do md.render_frame(); md.wait_ticks(10); if md.granite_terrain_stats().lod_fine_covers_cam then break end end\n");
-        fprintf(f, "for i = 1, #P do md.set_camera_pose_world(P[i][1], P[i][2], P[i][3], P[i][4], P[i][5]); md.render_frame(); md.wait_ticks(1); if i %% 10 == 0 or i == #P then md.screenshot(string.format(\"temp_/bugcap_replay/%%05d.png\", i)); md.render_frame(); md.wait_ticks(1) end end\n");
-        fprintf(f, "md.log(\"bugcap replay: done\") md.quit(0)\n");
-        fclose(f);
-    }
+    WriteReplay(g.dir, g.poses, g.pose_count, g.written);
     fprintf(stdout, "[bugcap] stopped: %u frames in video.mkv, %u dropped, %.1f s -> %s\n", g.written, g.dropped, NowS() - g.t0, g.dir.c_str());
 }
 
@@ -230,6 +246,100 @@ bool SubmitFrame(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle sc, uint32
     r.frame = g.submitted;
     s.row = r; s.used = true; ++g.submitted;
     return s.fence != nullptr;
+}
+
+
+// ── one-key snapshot (F9) and the pose log ───────────────────────────────────
+namespace {
+struct Snap {
+    Row ring[kRing]; int head = 0, count = 0; unsigned frame = 0;
+    double last_log = -1e9;
+    int state = 0;                  // 0 idle, 1 running
+    int view = 0, wait = 0; bool want = false;
+    std::string dir;
+} sn;
+
+void LogPose(const Row& r) {
+    struct stat st{}; if (stat(kPoseLog, &st) == 0 && st.st_size > kPoseLogMax) rename(kPoseLog, "temp_/pose_log.tsv.1");
+    mkdir("temp_", 0755);
+    FILE* f = fopen(kPoseLog, "a"); if (!f) return;
+    if (ftell(f) == 0) fprintf(f, "wall_clock\tx_world\ty\tz_world\tyaw\tpitch\tdynres_scale\trender_size\tdynres_version\tbuild\n");
+    time_t now = time(nullptr); struct tm* lt = localtime(&now); char ts[32]; strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", lt);
+    fprintf(f, "%s\t%.3f\t%.3f\t%.3f\t%.2f\t%.2f\t%.3f\t%dx%d\tdynres 0.3\t%s\n", ts, r.wx, r.y, r.wz, r.yaw, r.pitch, r.dynres, r.rw, r.rh, md_build_title);
+    fclose(f);
+}
+
+void WriteLogTail(const std::string& dir) {   // md.sh tees the game output into temp_/game_last.log
+    FILE* in = fopen("temp_/game_last.log", "rb"); FILE* out = fopen((dir + "/log_tail.txt").c_str(), "w");
+    if (in && out) {
+        fseek(in, 0, SEEK_END); long sz = ftell(in); const long take = sz > 65536 ? 65536 : sz;
+        fseek(in, sz - take, SEEK_SET); std::string b((size_t)take, '\0'); const size_t n = fread(&b[0], 1, (size_t)take, in); b.resize(n);
+        fwrite(b.data(), 1, b.size(), out);
+    } else if (out) fprintf(out, "no temp_/game_last.log: start the game with ./md.sh\n");
+    if (in) fclose(in); if (out) fclose(out);
+}
+}  // namespace
+
+void Note(const MdCamera& cam, float dt, int rw, int rh) {
+    Row r{};
+    Vec3 d = vec3_sub(cam.target, cam.pos);
+    r.yaw = atan2f(d.x, d.z) * (180.f / 3.14159265f); r.pitch = atan2f(d.y, sqrtf(d.x * d.x + d.z * d.z)) * (180.f / 3.14159265f);
+    r.x = cam.pos.x; r.y = cam.pos.y; r.z = cam.pos.z; ToWorld(r.x, r.z, r.wx, r.wz);
+    r.t = NowS(); r.dt = dt; r.rw = rw; r.rh = rh; r.dynres = g_dynres_cur; r.period = g_opt_ground_reuse_period; r.frame = sn.frame++;
+    sn.ring[sn.head] = r; sn.head = (sn.head + 1) % kRing; if (sn.count < kRing) ++sn.count;
+    if (r.t - sn.last_log >= 1.0) { sn.last_log = r.t; LogPose(r); }
+    if (sn.state == 1) {   // the views: set the mode, wait for full frames, then one frame is read back
+        if (sn.wait > 0) --sn.wait; else sn.want = true;
+    }
+}
+
+const char* SnapKey() {
+    if (sn.state == 1) return nullptr;
+    mkdir("temp_", 0755); mkdir("temp_/bugcap", 0755);
+    time_t now = time(nullptr); struct tm* lt = localtime(&now); char d[256];
+    snprintf(d, sizeof d, "temp_/bugcap/snap_%04d%02d%02d_%02d%02d%02d", lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
+    if (mkdir(d, 0755) != 0) return nullptr;
+    sn.dir = d;
+    Row path[kRing]; int n = sn.count; for (int i = 0; i < n; ++i) path[i] = sn.ring[(sn.head - n + i + kRing) % kRing];
+    for (int i = 0; i < n; ++i) path[i].t -= path[0].t;
+    WriteSettings(sn.dir); WriteReplay(sn.dir, path, (size_t)n, (unsigned)n); WriteLogTail(sn.dir);
+    if (FILE* f = fopen((sn.dir + "/pose.txt").c_str(), "w")) {
+        if (n) { const Row& r = path[n - 1]; time_t t2 = time(nullptr); fprintf(f, "wall_clock=%ld\nx_world=%.3f y=%.3f z_world=%.3f yaw=%.2f pitch=%.2f\ndynres_scale=%.3f render=%dx%d dynres 0.3\nbuild=%s\npath_frames=%d (replay.lua)\n", (long)t2, r.wx, r.y, r.wz, r.yaw, r.pitch, r.dynres, r.rw, r.rh, md_build_title, n); }
+        fclose(f);
+    }
+    sn.state = 1; sn.view = 0; sn.wait = 2; sn.want = false; md::GroundLiveRtState().debug_view = 0;
+    fprintf(stdout, "[bugcap] snapshot -> %s (pose, settings, log tail, replay.lua of the last %d frames; view PNGs follow)\n", d, n);
+    return sn.dir.c_str();
+}
+
+bool SnapWants() { return sn.state == 1 && sn.want; }
+
+bool SnapSubmit(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle sc, uint32_t w, uint32_t h, SDL_GPUTextureFormat fmt) {
+    sn.want = false;
+    if (!sc || !w || !h) return false;
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
+    SDL_GPUTransferBufferCreateInfo tci{}; tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD; tci.size = w * h * 4;
+    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tci); if (!tb) return false;
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureRegion src{}; src.texture = sc; src.w = w; src.h = h; src.d = 1;
+    SDL_GPUTextureTransferInfo dst{}; dst.transfer_buffer = tb; dst.pixels_per_row = w; dst.rows_per_layer = h;
+    SDL_DownloadFromGPUTexture(cp, &src, &dst);
+    SDL_EndGPUCopyPass(cp);
+    SDL_GPUFence* fence = md::GpuDevice::Get().SubmitAndAcquireFence(cmd);
+    md::GpuDevice::Get().NotifyCommandBufferSubmitted();
+    if (fence) { SDL_WaitForGPUFences(dev, true, &fence, 1); SDL_ReleaseGPUFence(dev, fence); }
+    if (void* m = SDL_MapGPUTransferBuffer(dev, tb, false)) {
+        const bool bgra = fmt == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM || fmt == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB;
+        std::vector<uint8_t> rgb((size_t)w * h * 3); const uint8_t* p = (const uint8_t*)m;
+        for (size_t i = 0; i < (size_t)w * h; ++i) { rgb[i * 3] = p[i * 4 + (bgra ? 2 : 0)]; rgb[i * 3 + 1] = p[i * 4 + 1]; rgb[i * 3 + 2] = p[i * 4 + (bgra ? 0 : 2)]; }
+        char path[320]; snprintf(path, sizeof path, "%s/view%d.png", sn.dir.c_str(), sn.view);
+        stbi_write_png(path, (int)w, (int)h, 3, rgb.data(), (int)w * 3);
+        SDL_UnmapGPUTransferBuffer(dev, tb);
+    }
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    if (++sn.view >= kViews) { sn.state = 0; md::GroundLiveRtState().debug_view = 0; fprintf(stdout, "[bugcap] snapshot done: %s\n", sn.dir.c_str()); }
+    else { md::GroundLiveRtState().debug_view = sn.view; sn.wait = kViewSettle; }
+    return true;
 }
 
 }

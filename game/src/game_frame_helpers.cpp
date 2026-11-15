@@ -1,6 +1,7 @@
 #include "game_common.h"
 #include <monkey_dust/render/ambient_probe.h>
 #include "render/ground_live_driver.h"
+#include "bugcap.h"
 
 // Shared by F9/F10 (below) — same `import`-based capture, factored out so F9
 // can pair a screenshot with its bug report under one matching timestamp
@@ -60,14 +61,16 @@ if (input_key_pressed(SDL_SCANCODE_F9)) {
         bc_lt->tm_year+1900, bc_lt->tm_mon+1, bc_lt->tm_mday,
         bc_lt->tm_hour, bc_lt->tm_min, bc_lt->tm_sec);
     snprintf(bc_path, sizeof(bc_path), "temp_/%s.txt", bc_stem);
-    snprintf(bc_png, sizeof(bc_png), "temp_/%s.png", bc_stem);
+    const char* bc_snap = bugcap::SnapKey();   // F9 = one key: the snapshot folder (pose, settings, log tail, replay.lua, view PNGs)
+    if (bc_snap) snprintf(bc_path, sizeof(bc_path), "%s/bug.txt", bc_snap);
+    snprintf(bc_png, sizeof(bc_png), "%s", bc_snap ? bc_snap : "temp_");
     FILE* bc_f = fopen(bc_path, "w");
     if (bc_f) {
         fprintf(bc_f, "# monkeydust BugCapture — game\n");
         fprintf(bc_f, "# %04d-%02d-%02d %02d:%02d:%02d\n",
             bc_lt->tm_year+1900, bc_lt->tm_mon+1, bc_lt->tm_mday,
             bc_lt->tm_hour, bc_lt->tm_min, bc_lt->tm_sec);
-        fprintf(bc_f, "# screenshot: %s\n\n", bc_png);
+        fprintf(bc_f, "# snapshot folder: %s\n\n", bc_png);
         Vec3 d = vec3_sub(camera.target, camera.pos);
         float horiz = sqrtf(d.x * d.x + d.z * d.z);
         float cam_pitch = atan2f(d.y, horiz) * (180.f / 3.14159265f);
@@ -97,8 +100,7 @@ if (input_key_pressed(SDL_SCANCODE_F9)) {
             });
         fprintf(bc_f, "  total=%d\n", _nc);
         fclose(bc_f);
-        CaptureScreenshotTo(bc_png);
-        snprintf(save_msg, save_msg_size, "[F9] bug+screenshot saved");
+        snprintf(save_msg, save_msg_size, "[F9] snapshot: %s", bc_png);
         save_msg_timer = 2.0f;
     }
 }
