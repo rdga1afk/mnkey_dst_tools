@@ -1,4 +1,6 @@
 #pragma once
+#include "flip_back_check.h"
+#include <cstdlib>
 #include <map>
 #include <vector>
 // Ground live pass in the game (MD_GROUND_LIVE=1, default off). The biome list is chosen per terrain patch, as the original does (ZoneMap::getBiomes on the patch box, common Morton
@@ -43,6 +45,7 @@ public:
     void SetHeightmap(SDL_GPUTexture* tex, float hmin, float hmax, float extent, int res) { hmap_ = tex; hmap_p_[0] = hmin; hmap_p_[1] = hmax; hmap_p_[2] = extent; hmap_p_[3] = (float)res; }
     GroundLiveCache& Cache() { return cache_; }
     const Stats& GetStats() const { return stats_; }
+    uint64_t InvFlipBack() const { return flip_.Violations(); }
     int PendingArrays() const { return arrays_.Pending(); }   // layer-array builds queued or in flight
     GroundLivePass& Pass() { return pass_; }
 private:
@@ -73,6 +76,7 @@ private:
     struct NodeSlot { float x0, z0, size; int slot; };
     NodeSlot node_slot_[8192]; int n_node_slot_ = 0;   // the nodes of the last AssignSlots (SlotAt)
     Stats stats_; uint64_t frame_counter_ = 0;
+    md::FlipBackCheck flip_; bool inv_ = std::getenv("MD_INVARIANTS") != nullptr, inv_self_ = std::getenv("MD_INVARIANTS") && std::getenv("MD_INVARIANTS")[0] == '2';   // MD_INVARIANTS=1: no A -> B -> A of the layer tier of a list while the view stands still (DE-273 invariant 3); =2 also feeds a tier that flips every frame, to prove the check reports
     int tier_k_[1024] = {};   // per list: the layer tier K of the last frame (hysteresis); constructed to -1 in InitGpu
     // live-ground cache (MD_GROUND_CACHE): bake strips of the rings after the frame's pass, within a texel budget per frame
     void BakeCache(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, uint64_t frame);

@@ -276,6 +276,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     const double dd = std::sqrt((p0[0] - cam[0]) * (p0[0] - cam[0]) + (p0[1] - cam[1]) * (p0[1] - cam[1]) + (p0[2] - cam[2]) * (p0[2] - cam[2]));
     const double sep = std::sqrt((p1[0] - p0[0]) * (p1[0] - p0[0]) + (p1[1] - p0[1]) * (p1[1] - p0[1]) + (p1[2] - p0[2]) * (p1[2] - p0[2]));
     const float pix_angle = dd > 1e-3 ? (float)(sep / dd) : 0.f;
+    if (inv_) { const double camd[3] = { cam[0], cam[1], cam[2] }, dir[3] = { p0[0] - cam[0], p0[1] - cam[1], p0[2] - cam[2] }; flip_.BeginFrame(camd, dir); }
     arrays_.Poll(frame);
     const int skipped0 = 0; (void)skipped0;
     stats_.skipped = stats_.waiting = stats_.groups = 0; stats_.min_margin = 1e9f; for (int& t : stats_.tiers) t = 0;
@@ -295,6 +296,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
         {   // hysteresis: a list changes its tier only when the footprint is 15 % past the boundary (a footprint that hovers at a boundary flipped the whole list between two layer resolutions from frame to frame)
             const int li = slot_list_[s]; int& kl = tier_k_[li & 1023]; const float x = footprint / 1.25f;
             if (kl >= 0 && K != kl) { if (K > kl ? x < std::ldexp(1.f, kl + 2) * 1.15f : x > std::ldexp(1.f, kl) / 1.15f) K = kl; }
+            if (inv_ && flip_.Push(li, inv_self_ ? K + (int)(frame & 1) * 8 : K)) { static int shown = 0; if (shown++ < 20) MD_LOG(MD_LOG_WARNING, "[INV flipback] frame=%llu list=%d tier K=%d returns to an earlier value with the view still (footprint %.3f)", (unsigned long long)frame, li, K, footprint); }
             kl = K;
         }
         const int tier_rec = K / 2; if (K > 0) stats_.min_margin = std::min(stats_.min_margin, footprint / 1.25f / std::ldexp(1.f, K));

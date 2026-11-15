@@ -587,6 +587,7 @@ int l_md_ground_live_stats(lua_State* L) {
     GLS(groups) GLS(lists_seen) GLS(lists_near) GLS(over_limit) GLS(no_slot_nodes) GLS(no_slot_near) GLS(skipped) GLS(waiting)
 #undef GLS
     lua_pushinteger(L, md::GroundLiveDriver::Get().PendingArrays()); lua_setfield(L, -2, "pending");
+    lua_pushinteger(L, (lua_Integer)md::GroundLiveDriver::Get().InvFlipBack()); lua_setfield(L, -2, "inv_flipback");
     return 1;
 }
 int l_md_adapt_lum_read(lua_State* L) {
