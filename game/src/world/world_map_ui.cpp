@@ -42,6 +42,7 @@ void WorldMapUI::Init(md::GpuDeviceHandle dev) {
     od.raster.cull_back    = false;
     od.layout.count        = 0;
     pipeline_.Create(od);
+    od.has_depth_target = true; pipeline_d_.Create(od);
 
     // Zone pin pipeline
     GpuPipeline::Desc pd;
@@ -55,6 +56,7 @@ void WorldMapUI::Init(md::GpuDeviceHandle dev) {
     pd.raster.cull_back    = false;
     pd.layout.count        = 0;
     pin_pipeline_.Create(pd);
+    pd.has_depth_target = true; pin_pipeline_d_.Create(pd);
     BuildPins();
     fprintf(stdout, "[WorldMap] init: map=%s pins=%d\n", map_tex_.SDLTexture() ? "ok" : "FAIL", pin_count_);
 }
@@ -99,8 +101,9 @@ bool WorldMapUI::Update(float mx, float my, int sw, int sh, bool lmb_click) {
 }
 
 void WorldMapUI::Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
-                      int sw, int sh, float mx, float my) {
+                      int sw, int sh, float mx, float my, bool depth_pass) {
     if (!open_ || !pipeline_.SDLPipeline()) return;
+    GpuPipeline& map_pipe = depth_pass ? pipeline_d_ : pipeline_; GpuPipeline& pin_pipe = depth_pass ? pin_pipeline_d_ : pin_pipeline_;
 
     // ── 1. Draw map texture — scissor clips viewport, zoomed quad does zoom ──
     if (map_tex_.SDLTexture() && map_tex_.SDLSampler()) {
@@ -125,7 +128,7 @@ void WorldMapUI::Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
             qx / sw, qy / sh, qw / sw, qh / sh
         };
         GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
-        pv.BindPipeline(&pipeline_);
+        pv.BindPipeline(&map_pipe);
         SDL_GPUTextureSamplerBinding tsb{ map_tex_.SDLTexture(), map_tex_.SDLSampler() };
         pv.BindFragmentSamplers(0, &tsb, 1);
         pv.PushVertexUniforms(0, &rect, sizeof(rect));
@@ -205,7 +208,7 @@ void WorldMapUI::Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
 
     {
         GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
-        pv.BindPipeline(&pin_pipeline_);
+        pv.BindPipeline(&pin_pipe);
         pv.PushVertexUniforms(0, &pu, sizeof(pu));
         pv.Draw(6, (uint32_t)pin_count_, 0, 0);
     }

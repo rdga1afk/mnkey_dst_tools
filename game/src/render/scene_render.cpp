@@ -499,6 +499,8 @@ void SceneRender::Init() {
             od.raster.cull_back       = false;
             od.layout.count           = 0;
             overlay_pipeline.Create(od);
+            od.has_depth_target = true;   // the same program drawn inside the scene pass, which carries a depth attachment (no test, no write)
+            overlay_pipeline_depth.Create(od);
 
             GpuSamplerDesc cam_sdesc;
             cam_sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR;

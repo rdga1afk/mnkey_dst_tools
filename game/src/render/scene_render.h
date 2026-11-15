@@ -221,6 +221,7 @@ struct SceneRender {
     GpuPipeline sky_kenshi_pipeline;   // #173: SkyX scattering (shaders/sky_kenshi.frag), md.set_kenshi_sky(1)
     GpuPipeline sky_kenshi_hdr_pipeline[2];   // release 1c: the same sky into the float ground target, RGB only (alpha 0); [0] scene depth D32, [1] the stencil-split depth D32_S8
     GpuPipeline overlay_pipeline;
+    GpuPipeline overlay_pipeline_depth;   // overlay_pipeline for a pass with a depth attachment
     GpuPipeline water_pipeline;
     GpuPipeline water_kenshi_pipeline;   // #173: water.hlsl of Kenshi (shaders/water_kenshi.frag), md.set_kenshi_water(1)
     struct alignas(16) WaterKenshiFragUBO { float sun_dir[4], cam_pos[4], sun_col[4], amb[4]; };   // sun_dir.xyz = toward the sun, sun_col.w = time, amb.w = invOpacity

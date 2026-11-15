@@ -217,7 +217,7 @@ private:
                          MdEntity player_entity, float& cam_x, float& cam_z,
                          float cam_az, SDL_GPURenderPass* rp);
     void DrawScreenOverlays(FrameCtx& fc, float now_s, MdEntity player_entity,
-                            float& cam_x, float& cam_z, float cam_az, SDL_GPURenderPass* rp);
+                            float& cam_x, float& cam_z, float cam_az, SDL_GPURenderPass* rp, bool depth_pass = false);   // depth_pass: rp carries a depth attachment (the scene pass), the pipelines must match it
     // resolution_scale (#253): 2D overlays + editor ImGui on the real swapchain at full resolution, after the upscale.
     void DrawFullResUi(FrameCtx& fc, float now_s, MdEntity player_entity, float& cam_x, float& cam_z, float cam_az);
     void DrawPlayerCloth(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp);

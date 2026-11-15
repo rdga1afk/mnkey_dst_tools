@@ -127,7 +127,7 @@ public:
 
     // Draw overlay into existing render pass
     void Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
-              int sw, int sh, float mx, float my);
+              int sw, int sh, float mx, float my, bool depth_pass = false);
 
     md::GpuTextureHandle MapTexture() const { return map_tex_.SDLTexture(); }
     SDL_GPUSampler* Sampler()    const { return map_tex_.SDLSampler(); }
@@ -138,6 +138,7 @@ private:
     GpuTexture      map_tex_;
     GpuPipeline     pipeline_;      // textured quad for areasmap
     GpuPipeline     pin_pipeline_;  // coloured quads for zone pins
+    GpuPipeline     pipeline_d_, pin_pipeline_d_;   // the same two for a pass with a depth attachment (the scene pass)
 
     float    player_rot_y_ = 0.f;
     float    player_map_u_ = 0.5f;  // precise world position on the map [0,1]

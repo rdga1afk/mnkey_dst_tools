@@ -51,7 +51,8 @@ compile_vulkan() {
     local dst="$2"
     if [ ! -f "$src" ]; then printf "  ${GRAY}[MISSING]${NC} %-42s (source not in this checkout: its feature is off or falls back)\n" "$src"; ((skip++)) || true; return; fi
     local extra="${3:-}"   # optional extra glslc flags (e.g. -DTS_KENSHI_FULL=1)
-    if glslc -DSPIRV_COMPILE=1 $extra --target-env=vulkan1.1 -O "$src" -o "$dst" 2>/tmp/_md_glslc_err; then
+    # Vulkan 1.0 (SPIR-V 1.0) first: SDL creates a Vulkan 1.0 instance and the validation layer rejects a newer module version (VUID-VkShaderModuleCreateInfo-pCode-08737); a shader that needs 1.1 (subgroups) falls back
+    if glslc -DSPIRV_COMPILE=1 $extra --target-env=vulkan1.0 -O "$src" -o "$dst" 2>/tmp/_md_glslc_err || glslc -DSPIRV_COMPILE=1 $extra --target-env=vulkan1.1 -O "$src" -o "$dst" 2>/tmp/_md_glslc_err; then
         printf "  ${GREEN}[VULKAN]${NC} %-42s → %s\n" "$src" "$(basename $dst)"
         ((ok++)) || true
     else

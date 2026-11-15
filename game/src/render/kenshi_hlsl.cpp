@@ -165,13 +165,13 @@ public:
 
 std::string MakeUniformParamsWritable(const std::string& src) { return MakeUniformParamsWritableImpl(GroupFlatVectorArrayInitialisers(src)); }
 
-const char* Version() { return "glslang-1.4.363"; }
+const char* Version() { return "glslang-1.4.363-spv10"; }
 
 // MD_SPV_OPT=1: after legalization and sampler combine, SPIRV-Tools' performance passes run on the result (glslang is called with its optimizer off; fxc-compiled originals reach DXVK optimized). Part of the cache key.
 bool SpvOptOn() { static const bool on = [] { const char* e = getenv("MD_SPV_OPT"); return e && e[0] == '1'; }(); return on; }
 
 static void ValidateModule(Compiled& out) {
-    spvtools::SpirvTools t(SPV_ENV_VULKAN_1_1); std::string m;
+    spvtools::SpirvTools t(SPV_ENV_VULKAN_1_0); std::string m;
     t.SetMessageConsumer([&m](spv_message_level_t, const char*, const spv_position_t&, const char* msg) { if (m.empty()) m = msg; });
     out.valid = t.Validate(out.spv.data(), out.spv.size());
     out.valid_log = out.valid ? std::string() : m;
@@ -201,8 +201,8 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
     glslang::TShader sh(lang);
     const char* src = glue.c_str(); sh.setStrings(&src, 1);
     sh.setEnvInput(glslang::EShSourceHlsl, lang, glslang::EShClientVulkan, 100);
-    sh.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_1);
-    sh.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_3);
+    sh.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
+    sh.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_0);
     sh.setEntryPoint("main"); sh.setSourceEntryPoint("main");
     Includer inc; for (const auto& d : dep_files) { size_t s = d.rfind('/'); if (s != std::string::npos) inc.dirs.push_back(d.substr(0, s)); }
     const EShMessages msgs = (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules | EShMsgReadHlsl | EShMsgHlslDX9Compatible);
@@ -212,7 +212,7 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
     glslang::SpvOptions so; so.disableOptimizer = true;
     glslang::GlslangToSpv(*prog.getIntermediate(lang), out.spv, &so);
     {   // glslang's HLSL output hands textures to functions through local copies, which Vulkan does not allow: the legalization passes inline and remove them
-        spvtools::Optimizer opt(SPV_ENV_VULKAN_1_1); std::string lg; opt.SetMessageConsumer([&lg](spv_message_level_t, const char*, const spv_position_t&, const char* m) { lg += m; lg += "\n"; });
+        spvtools::Optimizer opt(SPV_ENV_VULKAN_1_0); std::string lg; opt.SetMessageConsumer([&lg](spv_message_level_t, const char*, const spv_position_t&, const char* m) { lg += m; lg += "\n"; });
         opt.RegisterLegalizationPasses();
         std::vector<uint32_t> legal;
         spvtools::OptimizerOptions oo; oo.set_run_validator(false);   // the input has the very stores the passes remove
@@ -222,7 +222,7 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
     if (stage == 'f') CompactFragmentInputLocations(out.spv);
     if (stage != 'c') { std::string e; if (!CombineSamplers(out.spv, stage, e)) { out.log = "sampler combine: " + e; return false; } }   // SDL_GPU sets: combined samplers
     if (SpvOptOn()) {
-        spvtools::Optimizer po(SPV_ENV_VULKAN_1_1); std::string pl; po.SetMessageConsumer([&pl](spv_message_level_t, const char*, const spv_position_t&, const char* m) { pl += m; pl += "\n"; });
+        spvtools::Optimizer po(SPV_ENV_VULKAN_1_0); std::string pl; po.SetMessageConsumer([&pl](spv_message_level_t, const char*, const spv_position_t&, const char* m) { pl += m; pl += "\n"; });
         po.RegisterPerformancePasses();
         std::vector<uint32_t> fast; spvtools::OptimizerOptions poo; poo.set_run_validator(false);
         if (!po.Run(out.spv.data(), out.spv.size(), &fast, poo)) { out.log = "SPIR-V performance passes failed: " + pl; return false; }

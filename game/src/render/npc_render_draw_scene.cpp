@@ -887,7 +887,7 @@ void NpcRender::DrawHudOverlays(FrameCtx& fc, const MdCamera& cam, float now_s,
                                        cam.pos);
 
     if (!UpscaleActive())
-        DrawScreenOverlays(fc, now_s, player_entity, cam_x, cam_z, cam_az, rp);
+        DrawScreenOverlays(fc, now_s, player_entity, cam_x, cam_z, cam_az, rp, true);
 }
 
 // 2D screen-space overlays (world map, camera recording button). Split out of DrawHudOverlays for resolution_scale
@@ -895,7 +895,7 @@ void NpcRender::DrawHudOverlays(FrameCtx& fc, const MdCamera& cam, float now_s,
 // the upscale blit, otherwise here in the scene pass as before. (Particles / selection ring / click marker are 3D and
 // stay in DrawHudOverlays.)
 void NpcRender::DrawScreenOverlays(FrameCtx& fc, float now_s, MdEntity player_entity,
-                                   float& cam_x, float& cam_z, float cam_az, SDL_GPURenderPass* rp)
+                                   float& cam_x, float& cam_z, float cam_az, SDL_GPURenderPass* rp, bool depth_pass)
 {
     GpuPassView pv = GpuPassView::FromRaw(rp, fc.cmd);
 
@@ -916,7 +916,7 @@ void NpcRender::DrawScreenOverlays(FrameCtx& fc, float now_s, MdEntity player_en
             float uv_z = ((float)SceneRender::Get().zone_oz + (cam_z - SceneRender::Get().tnoff_z) / CHUNK_SIZE) / 63.f;
             WorldMapUI::Get().SetPlayerMapUV(uv_x, uv_z);
         }
-        WorldMapUI::Get().Draw(rp, fc.cmd, sw2, sh2, wmx, wmy);
+        WorldMapUI::Get().Draw(rp, fc.cmd, sw2, sh2, wmx, wmy, depth_pass);
         // Check pending travel
         if (const char* dest = WorldMapUI::Get().PendingTravel()) {
             // Copy slug before ClearPendingTravel invalidates the pointer
@@ -935,7 +935,7 @@ void NpcRender::DrawScreenOverlays(FrameCtx& fc, float now_s, MdEntity player_en
     }
 
     // -- Camera recording button (bottom-right overlay) --
-    if (SceneRender::Get().overlay_pipeline.SDLPipeline() && SceneRender::Get().cam_idle_tex.SDLTexture() && SceneRender::Get().cam_sampler.SDLSampler()) {
+    if ((depth_pass ? SceneRender::Get().overlay_pipeline_depth : SceneRender::Get().overlay_pipeline).SDLPipeline() && SceneRender::Get().cam_idle_tex.SDLTexture() && SceneRender::Get().cam_sampler.SDLSampler()) {
         md::GpuTextureHandle btn_tex = SceneRender::Get().cam_idle_tex.SDLTexture();
         if (SceneRender::Get().recording)
             btn_tex = (((uint32_t)(now_s * 1000.f) / 500u) & 1u)
@@ -946,7 +946,7 @@ void NpcRender::DrawScreenOverlays(FrameCtx& fc, float now_s, MdEntity player_en
         float bw = (float)SceneRender::CAM_BTN_SZ / (float)sw;
         float bh = (float)SceneRender::CAM_BTN_SZ / (float)sh;
         struct { float x, y, w, h; } orect = { bx, by, bw, bh };
-        pv.BindPipeline(&SceneRender::Get().overlay_pipeline);
+        pv.BindPipeline(depth_pass ? &SceneRender::Get().overlay_pipeline_depth : &SceneRender::Get().overlay_pipeline);
         SDL_GPUTextureSamplerBinding tsb{ btn_tex, SceneRender::Get().cam_sampler.SDLSampler() };
         pv.BindFragmentSamplers(0, &tsb, 1);
         pv.PushVertexUniforms(0, &orect, sizeof(orect));
