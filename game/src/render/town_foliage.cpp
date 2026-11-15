@@ -35,7 +35,7 @@ void TownFoliage::WorkerMain() {
                     std::vector<md::world::Blade> blades; std::string gerr;
                     const bool exe_pager = grass_exe_;   // the exe's page placement (grass_placement.h); off = the older circle scatter
                     const float ux = gx * 10.f - 147456.f, uz = gz * 10.f - 147456.f;
-                    if (exe_pager ? md::world::ScatterGrassPages(md::KenshiDir(), foliage, ux, uz, range / 50.f, dens, MAX_BLADES, blades, gerr)
+                    if (exe_pager ? md::world::ScatterGrassPages(md::KenshiDir(), foliage, ux, uz, range / 50.f, dens, MAX_BLADES_EXE, blades, gerr)
                                   : md::world::ScatterGrass(md::KenshiDir(), foliage, ux, uz, range * 10.f, dens, (uint32_t)(int)(gx * 0.5f) * 2654435761u ^ (uint32_t)(int)(gz * 0.5f), MAX_BLADES, blades, gerr)) {
                         if (exe_pager) { gr.exe = std::make_shared<md::grasspass::Mesh>(); md::grasspass::Build(blades, foliage, *gr.exe); blades.clear(); }   // the install program draws these; no HubSpike instances
                         gr.parts.reserve(blades.size());
