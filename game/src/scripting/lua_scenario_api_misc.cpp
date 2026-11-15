@@ -516,7 +516,8 @@ int l_md_get_gpu_ms(lua_State* L) {
 
 // md.gpu_poll() -> ms, first: GpuDevice::PolledGpuMs() / PolledAtFirstCheck() (dynres v2 step 3 probe, MD_GPU_POLL=1)
 int l_md_gpu_poll(lua_State* L) {
-    lua_pushnumber(L, (lua_Number)md::GpuDevice::Get().PolledGpuMs()); lua_pushboolean(L, md::GpuDevice::Get().PolledAtFirstCheck());
+    md::GpuDevice& gd = md::GpuDevice::Get();   // MD_GPU_WAITER=1: the fence waiter thread's GPU ms instead of the poll
+    lua_pushnumber(L, (lua_Number)(gd.WaiterEnabled() ? gd.WaiterGpuMs() : gd.PolledGpuMs())); lua_pushboolean(L, gd.PolledAtFirstCheck());
     return 2;
 }
 
