@@ -24,6 +24,7 @@ float NpcRender::EffectiveResolutionScale() {
     return a < 0.5f ? 0.5f : (a > 1.0f ? 1.0f : a);
 }
 
+bool  g_opt_fsr1 = false;    // md.set_fsr1: AMD FSR 1 upscale (EASU + RCAS, shaders/fsr1_*.frag), scene below native only, default off
 bool  g_opt_sgsr1 = false;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default off
 bool  g_opt_fxaa = false;   // #180 md.set_fxaa: FXAA 3.11 with Kenshi's parameters as the last pass (the scene goes through the intermediate target)
 float g_frame_dt_s = 1.f / 60.f;   // RenderFrame's dt, read by the L4 auto-exposure
@@ -274,6 +275,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                     if (UpscaleActive())
                         SceneRender::Get().upscale_pass_.Ensure(cur_w, cur_h,
                             SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
+                    if (g_opt_fsr1 && UpscaleActive()) SceneRender::Get().fsr1_.Ensure(window_get_width(), window_get_height(), SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
                     {
                         auto& sr_g = SceneRender::Get();
                         sr_g.gr_wanted_ = g_opt_ground_reuse && g_opt_ground_split == 1;
@@ -505,6 +507,9 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             bool upscaled = false;
                             if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }
                             if (!upscaled && g_opt_sgsr1 && sr_up.upscale_pass_.Sgsr1Ready() && EffectiveResolutionScale() < 0.999f) { GpuPushDebugGroup(fc.cmd, "SGSR1"); sr_up.upscale_pass_.ApplySgsr1(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }   // #198 S1
+                            if (!upscaled && g_opt_fsr1 && sr_up.fsr1_.Ready() && sr_up.fsr1_.Tex() && EffectiveResolutionScale() < 0.999f) {   // FSR 1: EASU to the window size, RCAS onto the swapchain
+                                GpuPushDebugGroup(fc.cmd, "FSR1"); sr_up.fsr1_.Easu(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, sr_up.fsr1_.W(), sr_up.fsr1_.H()); sr_up.fsr1_.Rcas(fc.cmd, real_sc, 0.9f); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                            }
                             if (!upscaled) sr_up.upscale_pass_.Apply(fc.cmd, real_sc, EffectiveResolutionScale() >= 0.999f ? 0.f : sr_up.upscale_sharpness, g_up_sharp); // scale 1.0 (the forced path): a plain copy
                             GpuPopDebugGroup(fc.cmd);
                             DrawFullResUi(fc, now_s, player_entity, cam_x, cam_z, cam_az);

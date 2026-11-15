@@ -1,6 +1,7 @@
 #pragma once
 #include <monkey_dust/render/gpu_pipeline.h>
 #include "upscale_pass.h"
+#include "fsr1_pass.h"
 #include "ground_split_pass.h"
 #include <monkey_dust/render/gpu_sampler_texture.h>
 #include <monkey_dust/render/gpu_static_buffer.h>
@@ -173,6 +174,7 @@ struct SceneRender {
     float resolution_scale  = 1.0f;
     float upscale_sharpness = 0.3f;
     UpscalePass upscale_pass_;
+    Fsr1Pass fsr1_;   // md.set_fsr1: AMD FSR 1 (EASU + RCAS) instead of the bilinear + sharpen upscale, measurement only
     // #163 5b-2: the ground resolve in its own pass (md.set_opt_ground_split); ground_split_active_ is decided once per frame in DrawScene and read by DrawTerrainAndProps.
     GroundSplitPass ground_split_pass_;
     bool ground_split_active_ = false;

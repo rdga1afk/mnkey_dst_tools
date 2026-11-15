@@ -178,6 +178,12 @@ for s in shaders/cas.vert shaders/cas.frag shaders/upscale.vert shaders/upscale.
     should_compile "$s" && compile_vulkan "$s" "$SPIRV_DIR/$(basename $s).spv"
 done
 
+echo ""
+echo "── FSR 1 (EASU + RCAS, AMD FidelityFX v1.0.2, MIT, tools/shaders/fsr1) ──"
+for s in shaders/fsr1_easu.frag shaders/fsr1_rcas.frag; do
+    should_compile "$s" && compile_vulkan "$s" "$SPIRV_DIR/$(basename $s).spv" "-Ishaders/fsr1"
+done
+
 
 echo ""
 echo "── Sky / Water ────────────────────────────────────────────────"
