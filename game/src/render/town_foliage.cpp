@@ -33,7 +33,7 @@ void TownFoliage::WorkerMain() {
                 if (ok) {
                     const auto g0 = std::chrono::steady_clock::now();
                     std::vector<md::world::Blade> blades; std::string gerr;
-                    static const bool exe_pager = std::getenv("MD_GRASS") && std::getenv("MD_GRASS")[0] == '1';   // the exe's page placement (grass_placement.h); off = the older circle scatter
+                    const bool exe_pager = grass_exe_;   // the exe's page placement (grass_placement.h); off = the older circle scatter
                     const float ux = gx * 10.f - 147456.f, uz = gz * 10.f - 147456.f;
                     if (exe_pager ? md::world::ScatterGrassPages(md::KenshiDir(), foliage, ux, uz, range / 50.f, dens, MAX_BLADES, blades, gerr)
                                   : md::world::ScatterGrass(md::KenshiDir(), foliage, ux, uz, range * 10.f, dens, (uint32_t)(int)(gx * 0.5f) * 2654435761u ^ (uint32_t)(int)(gz * 0.5f), MAX_BLADES, blades, gerr)) {

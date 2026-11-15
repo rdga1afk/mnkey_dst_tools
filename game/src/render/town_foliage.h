@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdlib>
+#include <atomic>
 #include "grass_pass.h"
 #include <memory>
 // #120 step 2: MEDIUM foliage (plants, rocks; Kenshi range 100 m x setting) of the Kenshi zones around the camera, streamed like TownBuildings (same structure; one HubSpike per zone).
@@ -21,6 +23,7 @@ public:
     bool Enabled() const { return enabled_; }
     // CLOSE grass blades (Kenshi range 50 m): a circle round the camera, regenerated on the worker when the camera has moved REGEN_M; the new set loads next to the shown one and swaps in.
     void SetGrass(bool on, float range_m, float density);
+    void SetGrassExe(bool on) { grass_exe_ = on; grass_shown_ = false; }   // the exe's pager + install program (MD_GRASS=1 sets it at start; md.set_grass)
     void Tick(float cam_x, float cam_z);   // main thread, before the render passes
     void Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, const float* vp16, const float* sun32, float cam_x, float cam_z, const float* frustum16);
     void DrawGbuf(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, const float* vp16, float cam_x, float cam_z, const float* frustum16);   // TERRAIN-mode rocks into the terrain G-buffer (#176 path)
@@ -40,6 +43,7 @@ private:
     std::vector<std::pair<int, int>> requests_;
     struct Result { int zx, zz; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; };
     std::vector<Result> results_;
+    std::atomic<bool> grass_exe_{ std::getenv("MD_GRASS") != nullptr && std::getenv("MD_GRASS")[0] == '1' };
     bool grass_on_ = false; float grass_range_ = 50.f, grass_density_ = 1.f;
     float grass_cx_ = 0, grass_cz_ = 0; bool grass_shown_ = false;     // centre (m) of the shown circle
     bool grass_req_pending_ = false; float grass_req_x_ = 0, grass_req_z_ = 0; bool grass_req_ = false;   // request for the worker (guarded by mu_)

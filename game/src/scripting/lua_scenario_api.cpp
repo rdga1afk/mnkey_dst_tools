@@ -263,6 +263,8 @@ extern int g_kenshi_water;
 static int l_md_set_kenshi_water(lua_State* L) { g_kenshi_water = (int)luaL_checkinteger(L, 1); return 0; }   // #173: 0 old water, 1 Kenshi water
 static int l_md_set_kenshi_sky(lua_State* L) { g_kenshi_sky = (int)luaL_checkinteger(L, 1); return 0; }   // #173: 0 old gradient, 1 SkyX
 static int l_md_set_town_foliage(lua_State* L) { TownFoliage::Get().SetEnabled(lua_toboolean(L, 1) != 0, (float)luaL_optnumber(L, 2, 100.0)); return 0; }   // #120 step 2: (on, range m)
+// 9b-5: grass as the exe does it: range 0..3 (Grass View Range, 0 = off, 1 = Kenshi default), density 0..2 (Grass Density, 1 = default); after set_town_foliage(true). Draws with the install grass program.
+static int l_md_set_grass(lua_State* L) { const float r = (float)luaL_optnumber(L, 1, 1.0), d = (float)luaL_optnumber(L, 2, 1.0); TownFoliage::Get().SetGrassExe(r > 0.f); TownFoliage::Get().SetGrass(r > 0.f, 50.f * r, d); return 0; }
 static int l_md_set_town_grass(lua_State* L) { TownFoliage::Get().SetGrass(lua_toboolean(L, 1) != 0, (float)luaL_optnumber(L, 2, 50.0), (float)luaL_optnumber(L, 3, 1.0)); return 0; }   // #120: (on, range m, density x), after set_town_foliage(true)
 static int l_md_town_foliage_stats(lua_State* L) { TownFoliage::Stats s = TownFoliage::Get().stats(); lua_newtable(L);
 #define TFF(k, v) lua_pushnumber(L, (lua_Number)(v)); lua_setfield(L, -2, k);
@@ -509,6 +511,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_kenshi_sky", l_md_set_kenshi_sky);
     sys.RegisterNamespaceFunction("set_kenshi_water", l_md_set_kenshi_water);
     sys.RegisterNamespaceFunction("set_town_grass", l_md_set_town_grass);
+    sys.RegisterNamespaceFunction("set_grass", l_md_set_grass);
     sys.RegisterNamespaceFunction("town_foliage_stats", l_md_town_foliage_stats);
     sys.RegisterNamespaceFunction("set_prop_cull", l_md_set_prop_cull);
     sys.RegisterNamespaceFunction("set_ground_preset", l_md_set_ground_preset);
