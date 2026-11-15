@@ -94,6 +94,8 @@ public:
     void SetCacheView(const GroundLiveCacheView* v) { cache_view_ = v; }   // the next Run() serves the rings (null: off)
     // After Run(): the ORIGINAL main_fs (deferred.hlsl, no shadow) over the three raw targets; Lit() = rgb light (HDR, before fog / exposure), alpha 1 where the pass wrote a pixel (0 = clipped / not written).
     bool Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, const GroundLiveLightParams& p);
+    // After Light(): paints Lit() from the colour code the terrain geometry stored above the slot bits (md.set_debug_view 1..4, see ground_live_debug.hlsl).
+    bool DebugView(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, SDL_GPUTexture* target);
     SDL_GPUTexture* Lit() const { return lit_; }
     bool LightReady() const { return light_.pipe != nullptr; }
     // After Light(), inside the open ground pass (colour target of format `cfmt`, depth attachment of format `dfmt`): the fog quad + exposure over the lit pixels; the others are not written.
@@ -114,7 +116,7 @@ private:
     };
     SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4]; Variant far_;
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr; SDL_GPUSampler* biased_[2] = {};
-    SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
+    SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_, dbg_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
     Variant bake_[4]; bool bake_ok_ = false; Variant fetch_; SDL_GPUSampler* repeat_ = nullptr; const GroundLiveCacheView* cache_view_ = nullptr;
     static void SetIn(Variant& v, const std::string& name, const float* val, int count, int idx = 0);
     void FillGroup(Variant& v, const GroundLiveFrame& f, const GroundLiveGroup& grp, int tw, int th, SDL_GPUTextureSamplerBinding* tb);

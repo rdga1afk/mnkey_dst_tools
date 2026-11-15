@@ -27,6 +27,7 @@ layout(location=2) out float vWorldY;
 layout(location=3) out float vDist;
 layout(location=4) out float vIsSkirt;
 #ifdef TS_SLOT
+layout(location=6) flat out uint vDbg;   // debug view (md.set_debug_view): the colour code the fragment stage stores above the slot bits
 layout(location=5) flat out uint vSlot;   // ground live pass: the biome-list slot of the node (nodeB.z = fine + 2 * slot)
 #endif
 
@@ -154,6 +155,17 @@ void main() {
     vWorldPos = xz;
     vWorldY   = y;
     vIsSkirt  = skirt ? 1.0 : 0.0;
+#ifdef TS_SLOT
+    {
+        const int dm = int(u.flags.y + 0.5);
+        uint c = 0u;
+        if (dm == 1)      c = uint(clamp(int(log2(gSpacing / 1.8 + 0.001) + 0.5), 0, 5)) + 1u;   // LOD level: spacing 1.8 m * 2^k
+        else if (dm == 2) c = (uint(gl_InstanceIndex) * 2654435761u >> 8) % 6u + 1u;              // node hash
+        else if (dm == 3) c = 8u;                                                                   // skirt: decided per pixel from vIsSkirt
+        else if (dm == 4) c = uint(gMode) + 1u;                                                     // vertex source: fine window / world lattice / bilinear
+        vDbg = c;
+    }
+#endif
     vDist     = length(u.cam_pos_pad.xyz - posWS);
     gl_Position = u.vp * vec4(posWS, 1.0);
 }

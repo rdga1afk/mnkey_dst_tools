@@ -211,6 +211,9 @@ void GroundLivePass::Shutdown() {
     if (dec_.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, dec_.pipe);
     if (dec_.fs) SDL_ReleaseGPUShader(dev_, dec_.fs);
     dec_ = Variant();
+    if (dbg_.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, dbg_.pipe);
+    if (dbg_.fs) SDL_ReleaseGPUShader(dev_, dbg_.fs);
+    dbg_ = Variant();
     if (light_.pipe) SDL_ReleaseGPUGraphicsPipeline(dev_, light_.pipe);
     if (light_.fs) SDL_ReleaseGPUShader(dev_, light_.fs);
     if (light_vs_) SDL_ReleaseGPUShader(dev_, light_vs_);
@@ -435,6 +438,28 @@ bool GroundLivePass::Light(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, 
     SDL_BindGPUFragmentSamplers(rp, 0, tb, 6);
     SDL_PushGPUVertexUniformData(cmd, 0, light_vsv_.ub.data(), light_vsv_.ub_size);
     SDL_PushGPUFragmentUniformData(cmd, 0, light_.ub.data(), light_.ub_size);
+    SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(rp);
+    return true;
+}
+
+bool GroundLivePass::DebugView(SDL_GPUCommandBuffer* cmd, const GroundLiveFrame& f, SDL_GPUTexture* target) {
+    if (!ready_ || !target || !f.slot_tex) return false;
+    if (!dbg_.pipe) {
+        hlsl::Compiled dc;
+        if (!hlsl::Compile(ReadAll(DataPath("game/src/render/ground_live_debug.hlsl")), {}, 'f', dc) || !dc.valid) { MD_LOG(MD_LOG_WARNING, "ground live: debug view: %s", dc.log.c_str()); return false; }
+        SDL_GPUShaderCreateInfo sf = {}; sf.code = (const Uint8*)dc.spv.data(); sf.code_size = dc.spv.size() * 4; sf.entrypoint = "main"; sf.format = SDL_GPU_SHADERFORMAT_SPIRV; sf.stage = SDL_GPU_SHADERSTAGE_FRAGMENT; sf.num_samplers = 1; sf.num_uniform_buffers = 0;
+        dbg_.fs = SDL_CreateGPUShader(dev_, &sf); if (!dbg_.fs) { MD_LOG(MD_LOG_WARNING, "ground live: debug view: shader create failed: %s", SDL_GetError()); return false; }
+        SDL_GPUColorTargetDescription ct = {}; ct.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+        SDL_GPUGraphicsPipelineCreateInfo gi = {}; gi.vertex_shader = vs_; gi.fragment_shader = dbg_.fs; gi.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        gi.target_info.color_target_descriptions = &ct; gi.target_info.num_color_targets = 1;
+        dbg_.pipe = SDL_CreateGPUGraphicsPipeline(dev_, &gi); if (!dbg_.pipe) { MD_LOG(MD_LOG_WARNING, "ground live: debug view: pipeline create failed: %s", SDL_GetError()); return false; }
+    }
+    SDL_GPUColorTargetInfo cti = {}; cti.texture = target; cti.load_op = SDL_GPU_LOADOP_LOAD; cti.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, &cti, 1, nullptr);
+    if (!rp) return false;
+    SDL_BindGPUGraphicsPipeline(rp, dbg_.pipe);
+    SDL_GPUTextureSamplerBinding tb = { f.slot_tex, nearest_ }; SDL_BindGPUFragmentSamplers(rp, 0, &tb, 1);
     SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
     SDL_EndGPURenderPass(rp);
     return true;

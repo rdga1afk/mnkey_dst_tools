@@ -84,6 +84,9 @@ layout(location=3) in float vDist;
 layout(location=4) in float vIsSkirt;
 
 #ifdef TS_SLOT
+#ifdef TS_DBG
+layout(location=6) flat in uint vDbg;   // only the batched LOD vertex stage writes it (feature geometry shares the slot fragment stage without it)
+#endif
 layout(location=5) flat in uint vSlot;
 layout(location=1) out uint outSlot;    // R8_UINT: the biome-list slot of the patch (ground live pass)
 #elif defined(TS_SLOT0)
@@ -107,7 +110,12 @@ void main() {
     // bit-exact through RGBA32F.
     outGbuffer = TS_GbufEncode(vec3(vWorldPos.x, vWorldY, vWorldPos.y), N, vIsSkirt > 0.5);
 #ifdef TS_SLOT
-    outSlot = vSlot;
+#ifdef TS_DBG
+    const uint slotOut = vDbg == 0u ? vSlot : (vDbg == 8u ? (vIsSkirt > 0.5 ? 7u : 4u) : vDbg);   // debug view: the slot is replaced by the colour code (the biome groups are then not shaded; the debug pass paints the pixels)
+#else
+    const uint slotOut = vSlot;
+#endif
+    outSlot = slotOut;
 #elif defined(TS_SLOT0)
     outSlot = 0u;
 #endif

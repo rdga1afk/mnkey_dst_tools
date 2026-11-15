@@ -349,9 +349,11 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     if (ran && npc_hook_) { SDL_GPUTexture* t3[3] = { pass_.Target(0), pass_.Target(1), pass_.Target(2) }; npc_hook_(cmd, t3, pass_.DepthStencil(), pass_.Width(), pass_.Height(), npc_user_); }
     if (ran && !no_decode) pass_.Decode(cmd);
     if (pass_.BakeReady()) BakeCache(dev, cmd, f, frame);
+    if (ran && md::GroundLiveRtState().debug_view > 0) pass_.DebugView(cmd, f, pass_.AlbedoRgb());   // the albedo the resolve lights
     if (ran && light_) {   // the original main_fs; the camera in centred Kenshi units (0.1 m, world centre 14745.6 m) is the origin of the ambient map mapping
         GroundLiveLightParams lp = *light_; lp.world_origin_xz[0] = (cam[0] - 14745.6f) * 10.f; lp.world_origin_xz[1] = (cam[2] - 14745.6f) * 10.f;
         lit_frame_ = pass_.Light(cmd, f, lp); last_frame_ = f;
+        if (lit_frame_ && md::GroundLiveRtState().debug_view > 0) pass_.DebugView(cmd, f, pass_.Lit());
     }
     static const bool zcount = getenv("MD_GROUND_LIVE_ZCOUNT") != nullptr;   // measurement: pixels of the distance target that still hold the clear value (0) after the pass
     if (ran && zcount) {   // the copy is recorded now, read three frames later (the buffer ring), so no stall

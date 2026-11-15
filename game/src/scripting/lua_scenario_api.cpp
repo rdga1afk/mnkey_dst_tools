@@ -328,6 +328,7 @@ static int l_md_set_ground_live_switch(lua_State* L) {   // md.set_ground_live_s
     const std::string n = luaL_checkstring(L, 1); const int v = (int)luaL_checkinteger(L, 2); auto& r = md::GroundLiveRtState();
     if (n == "origlight") r.orig_light = v ? 1 : 0; else if (n == "tiny") r.tiny = v ? 1 : 0; else if (n == "groups") r.groups = std::max(1, std::min(31, v)); else return luaL_error(L, "unknown ground live switch '%s'", n.c_str());
     return 0; }
+static int l_md_set_debug_view(lua_State* L) { md::GroundLiveRtState().debug_view = (int)luaL_checkinteger(L, 1); return 0; }   // ground colour by 1 LOD level, 2 node hash, 3 skirt, 4 vertex source; 0 off
 static int l_md_set_ground_reuse_period(lua_State* L) { md_settings_set_ground_reuse_period((int)luaL_checkinteger(L, 1)); return 0; }   // #191 stage 6: 4 (default) / 8 / 16
 static int l_md_set_ground_reuse_chain(lua_State* L) { md_settings_set_ground_reuse_chain((int)luaL_checkinteger(L, 1)); return 0; }   // #207: 0 standard, 3, 5
 static int l_md_set_opt_ground_reuse(lua_State* L) { g_opt_ground_reuse = lua_toboolean(L, 1) != 0; return 0; }   // #163 5b-2b: needs md.set_opt_ground_split(true)
@@ -496,6 +497,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_opt_ground_split", l_md_set_opt_ground_split);
     sys.RegisterNamespaceFunction("set_opt_ground_reuse_cr", l_md_set_opt_ground_reuse_cr);
     sys.RegisterNamespaceFunction("set_ground_reuse_period", l_md_set_ground_reuse_period);
+    sys.RegisterNamespaceFunction("set_debug_view", l_md_set_debug_view);
     sys.RegisterNamespaceFunction("set_ground_live_switch", l_md_set_ground_live_switch);
     sys.RegisterNamespaceFunction("set_ground_variant", l_md_set_ground_variant);
     sys.RegisterNamespaceFunction("set_ground_history_fast", l_md_set_ground_hist_fast);
