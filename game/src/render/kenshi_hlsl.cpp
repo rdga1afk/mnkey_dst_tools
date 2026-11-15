@@ -165,7 +165,7 @@ public:
 
 std::string MakeUniformParamsWritable(const std::string& src) { return MakeUniformParamsWritableImpl(GroupFlatVectorArrayInitialisers(src)); }
 
-const char* Version() { return "glslang-1.4.363-spv10"; }
+const char* Version() { return "glslang-1.4.363-spv10b"; }
 
 // MD_SPV_OPT=1: after legalization and sampler combine, SPIRV-Tools' performance passes run on the result (glslang is called with its optimizer off; fxc-compiled originals reach DXVK optimized). Part of the cache key.
 bool SpvOptOn() { static const bool on = [] { const char* e = getenv("MD_SPV_OPT"); return e && e[0] == '1'; }(); return on; }

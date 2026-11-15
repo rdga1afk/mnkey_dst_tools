@@ -32,9 +32,12 @@ bool CombineSamplers(std::vector<uint32_t>& spv, char stage, std::string& err) {
         default: break;
         }
     }
+    std::set<uint32_t> bufferBlocks;   // SPIR-V 1.0 spells a storage buffer as a Uniform variable of a BufferBlock struct: it lives in the resource set, not the uniform-buffer set
+    for (const Inst& i : in) if (OpOf(i) == OpDecorate && i.size() >= 3 && i[2] == 3) bufferBlocks.insert(i[1]);
+    auto isStorageVar = [&](const Inst& i) { auto it = ptrPointee.find(i[1]); return it != ptrPointee.end() && bufferBlocks.count(it->second) != 0; };
     if (samplerTypes.empty()) {   // DX9 `sampler2D` / `samplerCUBE` are combined images already: only the sets move
         std::set<uint32_t> images, ubos;
-        for (const Inst& i : in) if (OpOf(i) == OpVariable) { if (i[3] == kScUniformConstant) images.insert(i[2]); else if (i[3] == kScUniform) ubos.insert(i[2]); }
+        for (const Inst& i : in) if (OpOf(i) == OpVariable) { if (i[3] == kScUniformConstant || (i[3] == kScUniform && isStorageVar(i))) images.insert(i[2]); else if (i[3] == kScUniform) ubos.insert(i[2]); }
         const uint32_t setImg0 = stage == 'f' ? 2 : 0, setUbo0 = stage == 'f' ? 3 : 1;
         std::vector<uint32_t> res(spv.begin(), spv.begin() + 5);
         for (Inst i : in) {
@@ -66,6 +69,7 @@ bool CombineSamplers(std::vector<uint32_t>& spv, char stage, std::string& err) {
         if (op == OpVariable) {
             if (samplerPtrs.count(i[1])) { dead.insert(i[2]); samplerVals.insert(i[2]); continue; }
             if (imagePtrs.count(i[1]) || i[3] == kScUniformConstant) imageVars.insert(i[2]);   // a DX9 `sampler2D` is already a combined image: no split to undo, only the set to move
+            else if (i[3] == kScUniform && isStorageVar(i)) imageVars.insert(i[2]);
             else if (i[3] == kScUniform) uboVars.insert(i[2]);
             else if (i[3] == kScStorageBuffer) { err = "storage buffer in a stage with shifted sets"; return false; }
         }
