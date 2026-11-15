@@ -49,6 +49,9 @@ public:
     uint64_t InvRelInverse() const { return inv_rel_bad_; }
     int PendingArrays() const { return arrays_.Pending(); }   // layer-array builds queued or in flight
     GroundLivePass& Pass() { return pass_; }
+    const GroundLiveFrame& LastFrame() const { return last_frame_; }   // the every-frame grass overlay lights and fogs over the inputs of the last full frame
+    bool LitFrame() const { return lit_frame_; }
+    const GroundLiveLightParams* LightParams() const { return light_; }
 private:
     bool InitData();
     bool InitGpu(SDL_GPUDevice* dev);

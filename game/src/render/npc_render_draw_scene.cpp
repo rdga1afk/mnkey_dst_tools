@@ -1,4 +1,5 @@
 #include "grass_pass.h"
+#include "grass_still.h"
 #include "town_buildings.h"
 #include "sky_panorama.h"
 #include "sky_moons.h"
@@ -178,6 +179,18 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
         SceneRender::Get().ground_split_active_ = true;
         SceneRender::Get().lum_adapt_active_ = g_kenshi_lighting_mode >= 4 && gsp.AdaptReady() && gsp.IsFloat();
         --SceneRender::Get().gr_frame_;   // the reuse live-block rotation advances on full frames only
+        if (md::grasspass::Ready() && md::grassstill::Enabled() && md::GroundLiveDriver::Get().LitFrame() && md::GroundLiveDriver::Get().LightParams()) {   // MD_GRASS_EVERY_FRAME: the blades again, this frame's wind, over the cached ground
+            md::GroundLiveFogParams fp;
+            if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = (!SceneRender::Get().lum_adapt_active_ && gsp.IsFloat() && md::GroundLiveHdr::Active()) ? 1.f : k->params[2]; }
+            const float asp = (float)window_get_width() / (float)window_get_height();
+            const MdCamera abs_cam = SceneRender::Get().GraniteAbsCam(cam);
+            const Mat4 gvp = abs_cam.ViewProjMatrix(asp);
+            md::grasspass::Frame gf;
+            gf.cmd = fc.cmd; gf.terrain_depth = SceneRender::Get().terrain_shading_projected_.GBufferDepth().SDLTexture(); gf.view_proj = mat4_ptr(gvp);
+            abs_cam.CamPosToArr(gf.cam); gf.far_clip = md::GroundLiveDriver::Get().FarClip();
+            md::GroundLiveLightParams lp = *md::GroundLiveDriver::Get().LightParams(); lp.world_origin_xz[0] = (gf.cam[0] - 14745.6f) * 10.f; lp.world_origin_xz[1] = (gf.cam[2] - 14745.6f) * 10.f;   // as GroundLiveDriver::Frame does
+            md::grassstill::Run(md::GpuDevice::Get().SDLDevice(), md::KenshiDir(), gsp.Tex(), gsp.Fmt(), gw, gh, md::GroundLiveDriver::Get().LastFrame(), lp, fp, gf);
+        }
     } else
     if (gsp.Ready() && gsp.HasTarget(gw, gh)) {
         GpuPushDebugGroup(fc.cmd, "GroundResolve");
@@ -185,6 +198,7 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
         GpuCommandBuffer::ColorPassDesc gcpd;
         gcpd.cmd            = fc.cmd;
         auto& sr_gr = SceneRender::Get();
+        md::grassstill::Restore(fc.cmd, gsp.Tex());   // the cached ground target is the history of this full frame: without the every-frame blades
         if (sr_gr.gr_wanted_) {   // #163 5b-2b: this frame writes the other target; the previous frame's is the history
             gsp.Flip();
             sr_gr.gr_params_.hist_colour = gsp.ReuseHistTex(); sr_gr.gr_params_.hist_sampler = gsp.LinearSampler();

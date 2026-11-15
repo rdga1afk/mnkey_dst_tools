@@ -26,9 +26,11 @@ inline std::string FragmentGlue(const std::string& foliage_path) {
 sampler2D md_s0 : register(s0); sampler2D md_s1 : register(s1); sampler2D md_s2 : register(s2);
 Texture2D<float4> md_gdepth : register(s3);
 uniform float md_threshold; uniform float md_farClip; uniform float3 md_cameraPos; uniform float4 md_viewport; uniform float md_waterHeightRel; uniform float md_wetness; uniform float md_depthTol;
-void main(float4 fragCoord : SV_Position, [[vk::location(0)]] float4 color : COLOR, [[vk::location(1)]] float2 texCoord : TEXCOORD0, [[vk::location(2)]] float4 worldPos : TEXCOORD1, out GBuffer buffer) {
+void main(float4 fragCoord : SV_Position, [[vk::location(0)]] float4 color : COLOR, [[vk::location(1)]] float2 texCoord : TEXCOORD0, [[vk::location(2)]] float4 worldPos : TEXCOORD1, out float4 o0 : SV_Target0, out float4 o1 : SV_Target1, out float4 o2 : SV_Target2) {
+    GBuffer buffer;
     if (fragCoord.z > md_gdepth.Load(int3(int2(fragCoord.xy), 0)).r + md_depthTol) discard;
     gr_orig_fs(fragCoord, color, texCoord, worldPos, md_threshold, md_farClip, md_cameraPos, md_viewport, md_s0, md_s1, md_s2, md_waterHeightRel, md_wetness, buffer);
+    o0 = buffer.buf0; o1 = buffer.buf1; o2 = buffer.buf2;
 }
 )";
 }

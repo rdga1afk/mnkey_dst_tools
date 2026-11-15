@@ -33,6 +33,7 @@ struct Frame {
     const float* view_proj = nullptr;           // 16 floats, column-major
     float cam[3] = {};
     float far_clip = 0.f;
+    bool clear = false;                         // scratch targets (the every-frame overlay): cleared here instead of loaded
 };
 
 bool Init(SDL_GPUDevice* dev, const std::string& kenshi_dir);
