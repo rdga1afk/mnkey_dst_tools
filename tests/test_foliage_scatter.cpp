@@ -152,6 +152,9 @@ TEST(FoliageScatter, GrassPagesOfTheHubCircle) {
     EXPECT_NEAR((double)near50, exp_near, 4.0 * std::sqrt(exp_near));
     EXPECT_GT(b.size(), 300u);
     for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; ASSERT_LE(dx * dx + dz * dz, 8000.f * 8000.f * 1.0001f); ASSERT_GT(x.size, 0.f); }
+    size_t tinted = 0; for (const Blade& x : b) tinted += x.colour != 0xFFFFFFFFu;   // every layer has a colour map: the blades carry its colour
+    printf("[GrassPages] %zu of %zu blades with a colour-map colour\n", tinted, b.size());
+    EXPECT_GT(tinted, b.size() * 9 / 10);
 }
 
 // Finds the grassiest 50 m circles near the hub for the A4 grass measurement (the expected count of the exe pager at zone centres); prints only. Skipped unless MD_GRASS_SCAN is set.

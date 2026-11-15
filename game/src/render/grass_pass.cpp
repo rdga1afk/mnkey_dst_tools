@@ -95,10 +95,11 @@ void Build(const std::vector<md::world::Blade>& blades, const md::world::Foliage
         const float hw = ((g.min_width * 9.f + (g.max_width * 17.f - g.min_width * 9.f) * b.u) * 0.5f) / 10.f;   // builder 140a3e8e0: half of the width, in metres
         const float hh = (g.min_height * 9.f + (g.max_height * 17.f - g.min_height * 9.f) * b.u) / 10.f;
         const float a = b.yaw * 0.01745329252f, ca = std::cos(a) * hw, sa = std::sin(a) * hw;
+        const uint8_t col[4] = { (uint8_t)(b.colour & 255), (uint8_t)(b.colour >> 8 & 255), (uint8_t)(b.colour >> 16 & 255), (uint8_t)(b.colour >> 24) };   // layer colour map at the blade centre (140a3cfe0)
         auto quad = [&](float dx, float dz) {
             const uint32_t v0 = (uint32_t)out.verts.size();
-            const Vertex v[4] = { { cx - dx, cy, cz - dz, { 255, 255, 255, 255 }, 0.f, 1.f }, { cx + dx, cy, cz + dz, { 255, 255, 255, 255 }, 1.f, 1.f },
-                                  { cx - dx, cy + hh, cz - dz, { 255, 255, 255, 255 }, 0.f, 0.f }, { cx + dx, cy + hh, cz + dz, { 255, 255, 255, 255 }, 1.f, 0.f } };
+            const Vertex v[4] = { { cx - dx, cy, cz - dz, { col[0], col[1], col[2], col[3] }, 0.f, 1.f }, { cx + dx, cy, cz + dz, { col[0], col[1], col[2], col[3] }, 1.f, 1.f },
+                                  { cx - dx, cy + hh, cz - dz, { col[0], col[1], col[2], col[3] }, 0.f, 0.f }, { cx + dx, cy + hh, cz + dz, { col[0], col[1], col[2], col[3] }, 1.f, 0.f } };
             out.verts.insert(out.verts.end(), v, v + 4);
             const uint32_t i6[6] = { v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2 };
             out.idx.insert(out.idx.end(), i6, i6 + 6);
