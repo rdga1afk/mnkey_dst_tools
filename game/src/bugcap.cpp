@@ -283,10 +283,24 @@ void WriteLogTail(const std::string& dir) {   // md.sh tees the game output into
 }  // namespace
 
 static std::atomic<bool> g_snap_signal{false};
-static void OnUsr1(int) { g_snap_signal.store(true); }   // only sets the flag: the dump runs on the next frame (Note)
+static std::atomic<bool> g_video_signal{false};
+static void OnUsr1(int) { g_snap_signal.store(true); }
+static void OnUsr2(int) { g_video_signal.store(true); }   // SIGUSR2: the camera-button video, start / stop   // only sets the flag: the dump runs on the next frame (Note)
 
 void Note(const MdCamera& cam, float dt, int rw, int rh) {
-    static bool hooked = false; if (!hooked) { hooked = true; struct sigaction sa{}; sa.sa_handler = OnUsr1; sigemptyset(&sa.sa_mask); sa.sa_flags = SA_RESTART; sigaction(SIGUSR1, &sa, nullptr); }
+    static bool hooked = false; if (!hooked) { hooked = true; struct sigaction sa{}; sa.sa_handler = OnUsr1; sigemptyset(&sa.sa_mask); sa.sa_flags = SA_RESTART; sigaction(SIGUSR1, &sa, nullptr); sa.sa_handler = OnUsr2; sigaction(SIGUSR2, &sa, nullptr); }
+    if (g_no_dialogs) {   // scenario runs bypass the interactive loop (main.cpp): the camera button and F9 are polled here; they only start / stop a capture, never touch the camera or the scenario
+        static bool prev_lmb = false, prev_f9 = false;
+        float mx = 0.f, my = 0.f; const bool lmb = (SDL_GetMouseState(&mx, &my) & SDL_BUTTON_LMASK) != 0;
+        const int sw = window_get_width(), sh = window_get_height();
+        const int bx = sw - SceneRender::CAM_BTN_SZ - SceneRender::CAM_BTN_MARGIN, by = sh - SceneRender::CAM_BTN_SZ - SceneRender::CAM_BTN_MARGIN;
+        if (lmb && !prev_lmb && (int)mx >= bx && (int)mx < bx + SceneRender::CAM_BTN_SZ && (int)my >= by && (int)my < by + SceneRender::CAM_BTN_SZ) g_video_signal.store(true);
+        prev_lmb = lmb;
+        const bool f9 = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_F9];
+        if (f9 && !prev_f9) g_snap_signal.store(true);
+        prev_f9 = f9;
+    }
+    if (g_video_signal.exchange(false)) { if (Active()) Stop(); else Start(); }
     if (g_snap_signal.exchange(false)) { if (const char* d = SnapKey()) fprintf(stdout, "[bugcap] SIGUSR1 -> %s\n", d); }
     Row r{};
     Vec3 d = vec3_sub(cam.target, cam.pos);
