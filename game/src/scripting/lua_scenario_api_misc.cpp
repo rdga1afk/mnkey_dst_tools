@@ -588,6 +588,7 @@ int l_md_ground_live_stats(lua_State* L) {
 #undef GLS
     lua_pushinteger(L, md::GroundLiveDriver::Get().PendingArrays()); lua_setfield(L, -2, "pending");
     lua_pushinteger(L, (lua_Integer)md::GroundLiveDriver::Get().InvFlipBack()); lua_setfield(L, -2, "inv_flipback");
+    lua_pushinteger(L, (lua_Integer)md::GroundLiveDriver::Get().InvRelInverse()); lua_setfield(L, -2, "inv_rel_inverse");
     return 1;
 }
 int l_md_adapt_lum_read(lua_State* L) {
