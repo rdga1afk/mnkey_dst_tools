@@ -482,7 +482,7 @@ void EditorCore::Update(float dt) {
                         if (ImGui::Combo("Ground quality##gq", &gp, kGpNm, 4) && gp < 3) { ground_preset_apply(gp); s_set_gp = gp; }
                     }
                     // #182: while the camera moves the scene renders at a lower scale, native when it stands
-                    ImGui::TextUnformatted("Resolution while moving");
+                    ImGui::TextUnformatted("Resolution while moving"); ImGui::SameLine(); ImGui::TextDisabled("(dynres 0.4)");
                     if (ImGui::RadioButton("Off##dyn0", s_set_dyn == 0)) { s_set_dyn = 0; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     ImGui::SameLine();
                     if (ImGui::RadioButton("0.67##dyn1", s_set_dyn == 1)) { s_set_dyn = 1; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }

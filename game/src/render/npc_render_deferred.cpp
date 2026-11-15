@@ -184,7 +184,9 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         // before the speed EMA rises; the return is today's stop path
         static const bool input_on = !(getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '0');
         if (g_dynres3) {   // v3: the GPU ms of the frames that finished (fence waiter) with the scale each was rendered at
-            md::GpuDevice& gd = md::GpuDevice::Get(); s_d3.target_ms = 16.7f;
+            md::GpuDevice& gd = md::GpuDevice::Get();
+            { static bool said = false; if (!said) { said = true; fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms); } }
+            { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
             const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs()); }
         }
         if (input_on && g_dynres_input_event && (g_dynres3 ? !s_d3_mov : g_dynres_cur >= 0.999f)) { if (g_dynres3) s_d3_mov = true; else g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }

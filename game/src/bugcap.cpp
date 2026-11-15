@@ -1,6 +1,7 @@
 #include "bugcap.h"
 #include "game_common.h"
 #include "stb_image_write.h"
+#include "render/dynres3.h"
 #include <monkey_dust/render/ground_slot.h>
 #include "render/scene_render.h"
 #include <atomic>
@@ -265,7 +266,7 @@ void LogPose(const Row& r) {
     FILE* f = fopen(kPoseLog, "a"); if (!f) return;
     if (ftell(f) == 0) fprintf(f, "wall_clock\tx_world\ty\tz_world\tyaw\tpitch\tdynres_scale\trender_size\tdynres_version\tbuild\n");
     time_t now = time(nullptr); struct tm* lt = localtime(&now); char ts[32]; strftime(ts, sizeof ts, "%Y-%m-%d %H:%M:%S", lt);
-    fprintf(f, "%s\t%.3f\t%.3f\t%.3f\t%.2f\t%.2f\t%.3f\t%dx%d\tdynres 0.3\t%s\n", ts, r.wx, r.y, r.wz, r.yaw, r.pitch, r.dynres, r.rw, r.rh, md_build_title);
+    fprintf(f, "%s\t%.3f\t%.3f\t%.3f\t%.2f\t%.2f\t%.3f\t%dx%d\t%s\t%s\n", ts, r.wx, r.y, r.wz, r.yaw, r.pitch, r.dynres, r.rw, r.rh, kDynresVersion, md_build_title);
     fclose(f);
 }
 
@@ -304,7 +305,7 @@ const char* SnapKey() {
     for (int i = 0; i < n; ++i) path[i].t -= path[0].t;
     WriteSettings(sn.dir); WriteReplay(sn.dir, path, (size_t)n, (unsigned)n); WriteLogTail(sn.dir);
     if (FILE* f = fopen((sn.dir + "/pose.txt").c_str(), "w")) {
-        if (n) { const Row& r = path[n - 1]; time_t t2 = time(nullptr); fprintf(f, "wall_clock=%ld\nx_world=%.3f y=%.3f z_world=%.3f yaw=%.2f pitch=%.2f\ndynres_scale=%.3f render=%dx%d dynres 0.3\nbuild=%s\npath_frames=%d (replay.lua)\n", (long)t2, r.wx, r.y, r.wz, r.yaw, r.pitch, r.dynres, r.rw, r.rh, md_build_title, n); }
+        if (n) { const Row& r = path[n - 1]; time_t t2 = time(nullptr); fprintf(f, "wall_clock=%ld\nx_world=%.3f y=%.3f z_world=%.3f yaw=%.2f pitch=%.2f\ndynres_scale=%.3f render=%dx%d %s\nbuild=%s\npath_frames=%d (replay.lua)\n", (long)t2, r.wx, r.y, r.wz, r.yaw, r.pitch, r.dynres, r.rw, r.rh, kDynresVersion, md_build_title, n); }
         fclose(f);
     }
     sn.state = 1; sn.view = 0; sn.wait = 2; sn.want = false; md::GroundLiveRtState().debug_view = 0;

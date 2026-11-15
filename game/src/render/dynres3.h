@@ -5,13 +5,18 @@
 #include <algorithm>
 #include <cmath>
 
+inline constexpr const char* kDynresVersion = "dynres 0.4";
+
 struct Dynres3 {
     static constexpr int kN = 240;                         // samples kept (4 s at 60 fps)
-    float target_ms = 16.7f;                               // the frame budget
+    float target_ms = 16.7f;                               // the frame budget now in force: light_ms, or heavy_ms while a heavy scene is on (Scene)
+    float light_ms = 16.7f, heavy_ms = 33.3f;              // dynres 0.4 (DE-296 / DE-307): 60 fps normally, 30 fps while grass (later particles / weather) is drawn
+    float switch_s = 1.0f;                                 // the heavy flag follows the scene signal only after it held for this long (no flapping at a zone border)
+    bool  heavy = false; float held_s = 0.f;
     float lambda = 0.985f;                                 // forgetting per sample: weight 0.985^age, effective window ~ 67 samples (1.1 s at 60 fps)
     float floor_scale = 0.67f, step = 0.03f;               // DE-258 floor; Dagor's step 0.01 * clamp(round(200 / 60), 1, 5)
     int   hold = 4;                                        // Dagor: frames outside the band must exceed the ring (waiter ring 4 + 2)
-    float fit_min_frac = 0.8f;                             // bias-aware: the waiter reads high below the target, fit only on T > 0.8 * target
+    float fit_min_frac = 0.8f;                             // bias-aware: the waiter reads high below the 60 fps budget, fit only on T > 0.8 * light_ms
     // state
     float F = 6.5f, K = 20.f;                              // prior from docs/research/DYNRES_V2_2026-11-12.md (street / top40 / high150: F 5.2-7.4, K 19-23)
     float sigma = 1.0f;                                    // residual scale (ms), Huber
@@ -19,9 +24,15 @@ struct Dynres3 {
     int   above = 0, below = 0, n = 0, head = 0;
     float xs[kN] = {}, ys[kN] = {};
 
+    void Scene(bool heavy_now, float dt) {                 // once per frame: the scene signal (data: grass blades in range) and the frame time
+        if (heavy_now == heavy) { held_s = 0.f; return; }
+        held_s += dt;
+        if (held_s >= switch_s) { heavy = heavy_now; held_s = 0.f; target_ms = heavy ? heavy_ms : light_ms; above = below = 0; }
+    }
+
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
-        if (gpu_ms > fit_min_frac * target_ms) { xs[head] = s * s; ys[head] = gpu_ms; head = (head + 1) % kN; if (n < kN) ++n; Fit(); }
+        if (gpu_ms > fit_min_frac * light_ms) { xs[head] = s * s; ys[head] = gpu_ms; head = (head + 1) % kN; if (n < kN) ++n; Fit(); }
         if (std::fabs(s - scale) > 0.005f) return;            // a frame at another scale (standing = native) feeds the model only; the band is about the controlled scale
         const float hi = 0.95f * target_ms, lo = 0.85f * target_ms;
         above = gpu_ms > hi ? above + 1 : 0; below = gpu_ms < lo ? below + 1 : 0;

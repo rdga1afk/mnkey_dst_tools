@@ -48,6 +48,21 @@ int main() {
         CHECK(eh < eo, "Huber error %.2f not below least squares %.2f", eh, eo);
         printf("outliers: Huber |dF|+|dK| %.2f, OLS %.2f\n", eh, eo);
     }
+    { // 6. dynres 0.4 scene budget: the target follows the scene signal only after it held 1 s; a signal that flaps faster never switches
+        Dynres3 d;
+        for (int i = 0; i < 59; ++i) d.Scene(true, 1.f / 60.f);
+        CHECK(d.target_ms == d.light_ms && !d.heavy, "heavy before 1 s: target %.1f", d.target_ms);
+        for (int i = 0; i < 3; ++i) d.Scene(true, 1.f / 60.f);
+        CHECK(d.heavy && d.target_ms == d.heavy_ms, "heavy after 1 s: target %.1f", d.target_ms);
+        Dynres3 f; for (int i = 0; i < 600; ++i) f.Scene((i / 40) % 2 == 0, 1.f / 60.f);   // flips every 0.67 s
+        CHECK(!f.heavy, "a signal that flips every 0.67 s switched the target");
+        for (int i = 0; i < 70; ++i) d.Scene(false, 1.f / 60.f);
+        CHECK(!d.heavy && d.target_ms == d.light_ms, "back to light after 1 s: target %.1f", d.target_ms);
+        // under the heavy target a 24 ms scene (T(1) = 24) stays native; under the light one it is pushed down
+        Dynres3 h; h.target_ms = h.heavy_ms; h.heavy = true; Sim sh{ 6.f, 18.f, 0.3f, 0.05f, 0.f }; int ch; float tt; Run(h, sh, 7200, &ch, &tt);
+        Dynres3 l; Sim sl{ 6.f, 18.f, 0.3f, 0.05f, 0.f }; Run(l, sl, 7200, &ch, &tt);
+        CHECK(h.Scale() == 1.f && l.Scale() < 1.f, "T(1)=24: heavy target scale %.2f, light target scale %.2f", h.Scale(), l.Scale());
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }
