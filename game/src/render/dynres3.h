@@ -1,0 +1,59 @@
+#pragma once
+// Dynres v3 controller (DE-275 / DE-278 / DE-279): the cost model T = F + K * s^2 (s = linear scale, 1 = native) fitted online by IRLS-Huber with exponential forgetting on (scale, GPU ms) pairs,
+// and Dagor's hysteresis (render/dynamicResolution.cpp: band 0.85 - 0.95 x target, a step only after the value stayed outside the band for more frames than the ring is long; design only, no code copied).
+// Plain data, no allocation, no GPU calls: the caller feeds GpuDevice::WaiterGpuMs() and applies Scale().
+#include <algorithm>
+#include <cmath>
+
+struct Dynres3 {
+    static constexpr int kN = 240;                         // samples kept (4 s at 60 fps)
+    float target_ms = 16.7f;                               // the frame budget
+    float lambda = 0.985f;                                 // forgetting per sample: weight 0.985^age, effective window ~ 67 samples (1.1 s at 60 fps)
+    float floor_scale = 0.67f, step = 0.03f;               // DE-258 floor; Dagor's step 0.01 * clamp(round(200 / 60), 1, 5)
+    int   hold = 4;                                        // Dagor: frames outside the band must exceed the ring (waiter ring 4 + 2)
+    float fit_min_frac = 0.8f;                             // bias-aware: the waiter reads high below the target, fit only on T > 0.8 * target
+    // state
+    float F = 6.5f, K = 20.f;                              // prior from docs/research/DYNRES_V2_2026-11-12.md (street / top40 / high150: F 5.2-7.4, K 19-23)
+    float sigma = 1.0f;                                    // residual scale (ms), Huber
+    float scale = 1.0f;
+    int   above = 0, below = 0, n = 0, head = 0;
+    float xs[kN] = {}, ys[kN] = {};
+
+    void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
+        if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
+        if (gpu_ms > fit_min_frac * target_ms) { xs[head] = s * s; ys[head] = gpu_ms; head = (head + 1) % kN; if (n < kN) ++n; Fit(); }
+        if (std::fabs(s - scale) > 0.005f) return;            // a frame at another scale (standing = native) feeds the model only; the band is about the controlled scale
+        const float hi = 0.95f * target_ms, lo = 0.85f * target_ms;
+        above = gpu_ms > hi ? above + 1 : 0; below = gpu_ms < lo ? below + 1 : 0;
+        if (above > hold) { above = 0; scale = std::max(floor_scale, scale - step); }
+        else if (below > hold) {
+            below = 0;
+            const float next = std::min(1.f, scale + step), margin = 0.3f + 1.5f * sigma;
+            if (F + K * next * next <= target_ms - margin) scale = next;   // raise only when the model predicts room, minus a margin that grows with the residual spread
+        }
+    }
+    float Predict(float s) const { return F + K * s * s; }
+    float Scale() const { return scale; }
+
+private:
+    void Fit() {   // IRLS with Huber weights over the ring, weights lambda^age, ridge towards the prior (two pseudo-samples on the prior line)
+        if (n < 8) return;
+        double f = F, k = K;
+        for (int it = 0; it < 3; ++it) {
+            double Sw = 0.3, Sx = 0.3 * (0.5 + 1.0), Sy = 0.3 * ((6.5 + 20 * 0.5) + (6.5 + 20.0)), Sxx = 0.3 * (0.25 + 1.0), Sxy = 0.3 * (0.5 * (6.5 + 20 * 0.5) + 1.0 * (6.5 + 20.0));   // prior: x = 0.5, 1.0 (s = 0.71, 1.0), weight 0.15 each
+            double wa = 1.0;
+            for (int i = 1; i <= n; ++i) {
+                const int j = (head - i + kN) % kN; const double x = xs[j], y = ys[j];
+                const double r = std::fabs(y - (f + k * x)), c = 1.345 * sigma, hw = r <= c ? 1.0 : c / r;
+                const double w = wa * hw; wa *= lambda;
+                Sw += w; Sx += w * x; Sy += w * y; Sxx += w * x * x; Sxy += w * x * y;
+            }
+            const double det = Sw * Sxx - Sx * Sx;
+            if (det < 1e-3 * Sw * Sw) return;                // the samples do not span two scales yet: keep the previous (F, K)
+            k = (Sw * Sxy - Sx * Sy) / det; f = (Sy - k * Sx) / Sw;
+        }
+        if (k > 0.5 && k < 200.0 && f > -5.0 && f < 40.0) { K = (float)k; F = (float)f; }
+        double a = 0, m = 0; for (int i = 1; i <= std::min(n, 60); ++i) { const int j = (head - i + kN) % kN; a += std::fabs(ys[j] - (F + K * xs[j])); ++m; }
+        if (m > 0) sigma = std::max(0.15f, std::min(2.0f, 0.9f * sigma + 0.1f * (float)(1.4826 * a / m)));
+    }
+};

@@ -2,6 +2,7 @@
 #include "town_buildings.h"
 #include "town_foliage.h"
 #include "npc_render_internal.h"
+#include "dynres3.h"
 #include "../bugcap.h"
 #include <cmath>
 #include "../world/char_def.h"
@@ -13,6 +14,9 @@ float g_dynres_scale = 0.67f, g_dynres_cur = 1.f, g_dynres_v_move = 2.f, g_dynre
 int   g_dynres_down = 5, g_dynres_up = 2, g_dynres_cnt = 0;
 extern bool g_dynres_input_event;
 float g_dynres_ema = 0.9f; int g_dynres_hold = 0, g_dynres_hold_left = 0; long g_dynres_changes = 0;   // damping (dynres v2 step 3; md.set_dyn_res_damping, defaults = off = the old behaviour): EMA factor of the speed / turn signals (0 = off), frames a change holds the level, count of level changes
+bool  g_dynres3 = getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '1';   // dynres v3 (DE-279, md.set_dynres3): the scale while moving comes from the cost model T = F + K s^2 fitted on the GPU time of the fence waiter; default off
+static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
+float g_dynres3_scale() { return s_d3.Scale(); } float g_dynres3_F() { return s_d3.F; } float g_dynres3_K() { return s_d3.K; }
 static bool DynResActive() { return g_dynres_on && SceneRender::Get().resolution_scale >= 0.999f; }
 float NpcRender::EffectiveResolutionScale() {
     if (DynResActive()) return g_dynres_cur;
@@ -179,15 +183,21 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         // dynres v2 step 4 (default on, MD_DYNRES_INPUT=0 off): a camera input (main.cpp DynresCameraInput) drops to the motion level on the input frame,
         // before the speed EMA rises; the return is today's stop path
         static const bool input_on = !(getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '0');
-        if (input_on && g_dynres_input_event && g_dynres_cur >= 0.999f) { g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
-        const bool low = g_dynres_cur < 0.999f;
+        if (g_dynres3) {   // v3: the GPU ms of the frames that finished (fence waiter) with the scale each was rendered at
+            md::GpuDevice& gd = md::GpuDevice::Get(); s_d3.target_ms = 16.7f;
+            const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs()); }
+        }
+        if (input_on && g_dynres_input_event && (g_dynres3 ? !s_d3_mov : g_dynres_cur >= 0.999f)) { if (g_dynres3) s_d3_mov = true; else g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
+        const bool low = g_dynres3 ? s_d3_mov : g_dynres_cur < 0.999f;
         const bool want_low = (input_on && g_dynres_input_event) || (low ? (v > g_dynres_v_stop || w > g_dynres_w_stop) : (v > g_dynres_v_move || w > g_dynres_w_move));
         g_dynres_input_event = false;
         if (g_dynres_hold_left > 0) { --g_dynres_hold_left; g_dynres_cnt = 0; }   // settling: no switch for g_dynres_hold frames after a change
         else if (want_low == low) g_dynres_cnt = 0;
-        else if (++g_dynres_cnt >= (want_low ? g_dynres_down : g_dynres_up)) { g_dynres_cur = want_low ? g_dynres_scale : 1.f; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
-        if (low && want_low && g_dynres_cur != g_dynres_scale) g_dynres_cur = g_dynres_scale;   // a new low level (md.set_dyn_res) while already low took effect only after a stop: apply it at once
+        else if (++g_dynres_cnt >= (want_low ? g_dynres_down : g_dynres_up)) { if (g_dynres3) s_d3_mov = want_low; else g_dynres_cur = want_low ? g_dynres_scale : 1.f; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
+        if (g_dynres3) g_dynres_cur = s_d3_mov ? s_d3.Scale() : 1.f;
+        else if (low && want_low && g_dynres_cur != g_dynres_scale) g_dynres_cur = g_dynres_scale;   // a new low level (md.set_dyn_res) while already low took effect only after a stop: apply it at once
     } else g_dynres_cur = 1.f;
+    if (g_dynres3) s_d3_scale_for[md::GpuDevice::Get().FrameSerial() % 8] = g_dynres_cur;   // the scale this frame renders at, for its GPU ms later
             {
                 FS_BEGIN("FenceWait");
                 md::GpuDevice::Get().BeginFrame();
