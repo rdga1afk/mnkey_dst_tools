@@ -14,7 +14,7 @@ float g_dynres_scale = 0.67f, g_dynres_cur = 1.f, g_dynres_v_move = 2.f, g_dynre
 int   g_dynres_down = 5, g_dynres_up = 2, g_dynres_cnt = 0;
 extern bool g_dynres_input_event;
 float g_dynres_ema = 0.9f; int g_dynres_hold = 0, g_dynres_hold_left = 0; long g_dynres_changes = 0;   // damping (dynres v2 step 3; md.set_dyn_res_damping, defaults = off = the old behaviour): EMA factor of the speed / turn signals (0 = off), frames a change holds the level, count of level changes
-bool  g_dynres3 = getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '1';   // dynres v3 (DE-279, md.set_dynres3): the scale while moving comes from the cost model T = F + K s^2 fitted on the GPU time of the fence waiter; default off
+bool  g_dynres3 = !(getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '0');   // dynres v3 (DE-279, md.set_dynres3): the scale while moving comes from the cost model T = F + K s^2 fitted on the GPU time of the fence waiter; default on (DE-283), MD_DYNRES3=0 / md.set_dynres3(false) = v2
 static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
 float g_dynres3_scale() { return s_d3.Scale(); } float g_dynres3_F() { return s_d3.F; } float g_dynres3_K() { return s_d3.K; }
 static bool DynResActive() { return g_dynres_on && SceneRender::Get().resolution_scale >= 0.999f; }
@@ -29,7 +29,7 @@ float NpcRender::EffectiveResolutionScale() {
 }
 
 bool  g_opt_fsr1 = false;    // md.set_fsr1: AMD FSR 1 upscale (EASU + RCAS, shaders/fsr1_*.frag), scene below native only, default off
-bool  g_opt_sgsr1 = false;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default off
+bool  g_opt_sgsr1 = true;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default on (DE-283)
 bool  g_opt_fxaa = false;   // #180 md.set_fxaa: FXAA 3.11 with Kenshi's parameters as the last pass (the scene goes through the intermediate target)
 float g_frame_dt_s = 1.f / 60.f;   // RenderFrame's dt, read by the L4 auto-exposure
 float g_adapt_override_mean = -1.f, g_adapt_override_dt = -1.f; // md.adapt_lum_debug: >= 0 replaces the measured mean luminance (oracle)

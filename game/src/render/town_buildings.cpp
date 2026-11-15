@@ -119,6 +119,7 @@ void TownBuildings::Tick(float cam_x, float cam_z) {
     stats_.zones = (int)zones_.size();
     stats_.loading = 0; stats_.requested = 0;
     for (auto& z : zones_) { if (z->state == Zone::Loading || z->state == Zone::Ready) ++stats_.loading; if (z->state == Zone::Requested) ++stats_.requested; }
+    stats_.loading += HubSpike::PendingTextureChunks();   // town_sweep / the town gate wait for loading == 0: the shot must not be taken while the mip levels of the textures are still arriving
     stats_.max_step_ms = std::max(stats_.max_step_ms, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
 }
 

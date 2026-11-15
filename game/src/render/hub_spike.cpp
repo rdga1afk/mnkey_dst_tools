@@ -232,6 +232,7 @@ static bool HubTextureChunked(const std::string& path, GpuTexture* t) {
     std::lock_guard<std::mutex> lk(s_chunk_mu); s_chunk_q.push_back(j);
     return true;
 }
+int HubSpike::PendingTextureChunks() { std::lock_guard<std::mutex> lk(s_chunk_mu); return (int)s_chunk_q.size(); }
 static void HubChunkTick() {
     HubChunkJob* j = nullptr;
     { std::lock_guard<std::mutex> lk(s_chunk_mu); if (s_chunk_q.empty()) return; j = s_chunk_q.front(); }

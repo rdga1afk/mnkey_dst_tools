@@ -23,6 +23,7 @@ public:
     static constexpr int MAX_INSTANCES = 20480;  // part instances in one slot
     static HubSpike& Slot(int i);
     bool Load(const char* txt_path);
+    static int PendingTextureChunks();   // textures whose larger mip levels are still being uploaded (MD_HUB_TEX_CHUNKED): a frame drawn now samples a coarser level
     static void FrameTick();   // render thread, once per frame: MD_HUB_TEX_PER_FRAME=n (default off) lets the zone worker start at most n new texture uploads per rendered frame
     static void Prepare(std::vector<HubPlacement>& pl, std::vector<HubPrepared>& out);   // thread-safe: reads the meshes and loads their textures (SDL_GPU resource creation and upload are thread-safe); fills HubPlacement::key so Step() does not build the string again
     void Begin(std::vector<HubPlacement> pl, std::vector<HubPrepared> prepared = {});   // incremental load: Begin, then Step() once per frame until it returns false
