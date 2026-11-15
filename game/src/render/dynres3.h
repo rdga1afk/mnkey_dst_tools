@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-inline constexpr const char* kDynresVersion = "dynres 0.4";
+inline constexpr const char* kDynresVersion = "dynres 0.5";
 
 struct Dynres3 {
     static constexpr int kN = 240;                         // samples kept (4 s at 60 fps)
@@ -17,6 +17,12 @@ struct Dynres3 {
     float floor_scale = 0.67f, step = 0.03f;               // DE-258 floor; Dagor's step 0.01 * clamp(round(200 / 60), 1, 5)
     int   hold = 4;                                        // Dagor: frames outside the band must exceed the ring (waiter ring 4 + 2)
     float fit_min_frac = 0.8f;                             // bias-aware: the waiter reads high below the 60 fps budget, fit only on T > 0.8 * light_ms
+    // dynres 0.5 (DE-307, off by default): prediction. Two moving averages of the GPU ms at the controlled scale give a trend (ms per frame); the band test uses
+    // max(measured, trend-projected ms over a horizon that grows with the camera speed), so the scale drops before the frame goes over the budget. Raising still waits
+    // for the measured value and the projection both to be under the band; the floor (DE-258) is unchanged. Speed only: altitude is not used.
+    bool  predict = false;
+    float speed_mps = 0.f;
+    float ema_fast = 0.f, ema_slow = 0.f, projected = 0.f;
     // state
     float F = 6.5f, K = 20.f;                              // prior from docs/research/DYNRES_V2_2026-11-12.md (street / top40 / high150: F 5.2-7.4, K 19-23)
     float sigma = 1.0f;                                    // residual scale (ms), Huber
@@ -30,12 +36,22 @@ struct Dynres3 {
         if (held_s >= switch_s) { heavy = heavy_now; held_s = 0.f; target_ms = heavy ? heavy_ms : light_ms; above = below = 0; }
     }
 
+    void Motion(float speed) { speed_mps = speed; }        // once per frame: the smoothed camera speed in m/s (0..)
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
         if (gpu_ms > fit_min_frac * light_ms) { xs[head] = s * s; ys[head] = gpu_ms; head = (head + 1) % kN; if (n < kN) ++n; Fit(); }
         if (std::fabs(s - scale) > 0.005f) return;            // a frame at another scale (standing = native) feeds the model only; the band is about the controlled scale
         const float hi = 0.95f * target_ms, lo = 0.85f * target_ms;
-        above = gpu_ms > hi ? above + 1 : 0; below = gpu_ms < lo ? below + 1 : 0;
+        float seen = gpu_ms;
+        if (predict) {
+            if (ema_fast == 0.f) ema_fast = ema_slow = gpu_ms;
+            const float g = std::min(std::max(gpu_ms, ema_slow - 2.f), ema_slow + 2.f);   // an outlier moves the trend by at most 2 ms
+            ema_fast += 0.2f * (g - ema_fast); ema_slow += 0.05f * (g - ema_slow);
+            const float slope = std::max(0.f, (ema_fast - ema_slow) / 15.f);       // ms per frame (the averages lag 4 and 19 frames apart)
+            const float horizon = 6.f + 0.5f * std::min(speed_mps, 24.f);          // frames ahead: 6 standing, up to 18 at 24 m/s
+            projected = ema_fast + slope * horizon; seen = std::max(gpu_ms, projected);
+        }
+        above = seen > hi ? above + 1 : 0; below = (gpu_ms < lo && (!predict || projected < lo)) ? below + 1 : 0;
         if (above > hold) { above = 0; scale = std::max(floor_scale, scale - step); }
         else if (below > hold) {
             below = 0;

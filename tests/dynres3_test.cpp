@@ -63,6 +63,24 @@ int main() {
         Dynres3 l; Sim sl{ 6.f, 18.f, 0.3f, 0.05f, 0.f }; Run(l, sl, 7200, &ch, &tt);
         CHECK(h.Scale() == 1.f && l.Scale() < 1.f, "T(1)=24: heavy target scale %.2f, light target scale %.2f", h.Scale(), l.Scale());
     }
+    { // 7. prediction (0.5): the GPU cost ramps up (F grows 3 -> 9 ms over 90 frames, as when a heavy view opens); with prediction the scale drops earlier and fewer frames go over the budget
+        auto run = [](bool predict, int* over, float* first_drop) {
+            Dynres3 d; d.predict = predict; d.F = 3.f; d.K = 10.f; d.Motion(20.f); *over = 0; *first_drop = -1.f;
+            for (int i = 0; i < 400; ++i) {
+                const float F = i < 100 ? 3.f : (i < 190 ? 3.f + 6.f * (float)(i - 100) / 90.f : 9.f);
+                const float s = d.Scale(), t = F + 10.f * s * s;
+                if (t > 0.95f * d.target_ms) ++*over;
+                if (*first_drop < 0.f && d.Scale() < 1.f) *first_drop = (float)i;
+                d.Sample(s, t);
+            }
+        };
+        int o0, o1; float f0, f1; run(false, &o0, &f0); run(true, &o1, &f1);
+        CHECK(o1 < o0, "frames over the band top: %d with prediction, %d without", o1, o0);
+        CHECK(f1 >= 0.f && f0 >= 0.f && f1 < f0, "first scale drop at frame %.0f with prediction, %.0f without", f1, f0);
+        printf("prediction: frames over the band top %d -> %d, first drop %.0f -> %.0f\n", o0, o1, f0, f1);
+        Dynres3 st; st.predict = true; Sim ss{ 4.f, 10.f, 0.3f, 0.05f, 0.f }; int ch; float tt; Run(st, ss, 7200, &ch, &tt);
+        CHECK(st.Scale() == 1.f && ch == 0, "prediction on a light steady scene: scale %.2f, %d changes", st.Scale(), ch);
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }
