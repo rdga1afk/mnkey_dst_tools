@@ -72,6 +72,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_reflect_camera.cpp
     ${MD_UTEST_DIR}/test_csm_splits.cpp
     ${MD_UTEST_DIR}/test_grass_placement.cpp
+    ${MD_UTEST_DIR}/test_pu_script.cpp
     ${MD_UTEST_DIR}/test_flip_back_check.cpp
     ${MD_UTEST_DIR}/test_inverse_check.cpp
     ${MD_UTEST_DIR}/test_kenshi_land.cpp
