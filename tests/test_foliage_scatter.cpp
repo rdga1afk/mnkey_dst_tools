@@ -153,3 +153,18 @@ TEST(FoliageScatter, GrassPagesOfTheHubCircle) {
     EXPECT_GT(b.size(), 300u);
     for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; ASSERT_LE(dx * dx + dz * dz, 8000.f * 8000.f * 1.0001f); ASSERT_GT(x.size, 0.f); }
 }
+
+// Finds the grassiest 50 m circles near the hub for the A4 grass measurement (the expected count of the exe pager at zone centres); prints only. Skipped unless MD_GRASS_SCAN is set.
+TEST(FoliageScatter, ScanGrassyCircles) {
+    const char* kd = std::getenv("KENSHI_DIR");
+    if (!kd || !*kd || !std::getenv("MD_GRASS_SCAN")) GTEST_SKIP() << "KENSHI_DIR / MD_GRASS_SCAN not set";
+    md::fcs::Install inst(kd); md::fcs::LoadOrder order; md::fcs::Error e; md::fcs::GameDataContainer data;
+    ASSERT_TRUE(inst.LoadOrderFor(order, e) && data.Load(order, e)) << e.Message();
+    Foliage f = LoadFoliage(data); std::string err;
+    for (int zz = 28; zz <= 34; ++zz) for (int zx = 17; zx <= 24; ++zx) {
+        const float cx = (float)((zx - 32) * 4608 + 2304), cz = (float)((zz - 32) * 4608 + 2304);
+        double t = 0, w = 0;
+        if (!ExpectedGrassPages(kd, f, cx, cz, 0.2f, 1.f, 500.f, &t, &w, err)) continue;   // range 0.2: only layers within 100 / 200 / 1600 units of the zone centre
+        printf("[GrassScan] zone %d %d centre m %.1f %.1f within50m %.0f\n", zx, zz, (cx + 147456.0) / 10.0, (cz + 147456.0) / 10.0, w);
+    }
+}
