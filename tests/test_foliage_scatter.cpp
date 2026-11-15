@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/world/foliage_scatter.h>
+#include <monkey_dust/io/dds_decode.h>
+#include <set>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -189,4 +191,71 @@ TEST(FoliageScatter, ScanGrassColourMaps) {
         printf("[GrassColour] %s sprite=%s colormap=%s\n", r->string_id.c_str(), sp == r->files.end() ? "-" : sp->second.c_str(), has ? cm->second.c_str() : "-");
     }
     printf("[GrassColour] used by biomes: %zu records, with colour map: %d\n", f.grass.size(), with);
+}
+
+// Particle trimming of the grass sprite cards (QUEUE 9b-5, DE-293): per sprite the share of the card that stays opaque at the alpha test (0.6) and the share a convex polygon of <= 8 vertices that
+// contains every opaque texel of mips 0..3 covers. Prints only. Skipped unless MD_GRASS_SCAN.
+namespace {
+struct P2 { double x, y; };
+double Cross(P2 o, P2 a, P2 b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); }
+std::vector<P2> Hull(std::vector<P2> p) {
+    std::sort(p.begin(), p.end(), [](P2 a, P2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
+    p.erase(std::unique(p.begin(), p.end(), [](P2 a, P2 b) { return a.x == b.x && a.y == b.y; }), p.end());
+    if (p.size() < 3) return p;
+    std::vector<P2> h(2 * p.size()); size_t k = 0;
+    for (size_t i = 0; i < p.size(); ++i) { while (k >= 2 && Cross(h[k - 2], h[k - 1], p[i]) <= 0) --k; h[k++] = p[i]; }
+    for (size_t i = p.size() - 1, t = k + 1; i > 0; --i) { while (k >= t && Cross(h[k - 2], h[k - 1], p[i - 1]) <= 0) --k; h[k++] = p[i - 1]; }
+    h.resize(k - 1); return h;
+}
+double Area(const std::vector<P2>& h) { double a = 0; for (size_t i = 0; i < h.size(); ++i) { const P2 &p = h[i], &q = h[(i + 1) % h.size()]; a += p.x * q.y - q.x * p.y; } return std::fabs(a) / 2; }
+// Removes the vertex whose removal adds the least area, by extending the two neighbouring edges to their intersection (the result contains the input); stops at n vertices.
+std::vector<P2> Simplify(std::vector<P2> h, size_t n) {
+    while (h.size() > n) {
+        double best = 1e30; size_t bi = 0; P2 bp{};
+        for (size_t i = 0; i < h.size(); ++i) {
+            const P2 a = h[(i + h.size() - 1) % h.size()], b = h[i], c = h[(i + 1) % h.size()], d = h[(i + 2) % h.size()], e = h[(i + h.size() - 2) % h.size()];
+            // intersect line (e,a) with line (c,d): the new vertex replacing a, b, c is not needed; replace b by the intersection of the lines through (e,a) and (c,d)
+            const double r1x = a.x - e.x, r1y = a.y - e.y, r2x = d.x - c.x, r2y = d.y - c.y, den = r1x * r2y - r1y * r2x;
+            if (std::fabs(den) < 1e-12) continue;
+            const double t = ((c.x - a.x) * r2y - (c.y - a.y) * r2x) / den; const P2 x{ a.x + t * r1x, a.y + t * r1y };
+            std::vector<P2> g; for (size_t j = 0; j < h.size(); ++j) if (j != i && j != (i + h.size() - 1) % h.size() && j != (i + 1) % h.size()) g.push_back(h[j]);
+            g.push_back(x); const std::vector<P2> hh = Hull(g); const double add = Area(hh) - Area(h);
+            if (add < best) { best = add; bi = i; bp = x; }
+        }
+        if (best >= 1e30) break;
+        std::vector<P2> g; for (size_t j = 0; j < h.size(); ++j) if (j != bi && j != (bi + h.size() - 1) % h.size() && j != (bi + 1) % h.size()) g.push_back(h[j]);
+        g.push_back(bp); h = Hull(g);
+    }
+    return h;
+}
+}  // namespace
+
+TEST(FoliageScatter, ScanGrassSpriteTrim) {
+    const char* kd = std::getenv("KENSHI_DIR");
+    if (!kd || !*kd || !std::getenv("MD_GRASS_SCAN")) GTEST_SKIP() << "KENSHI_DIR / MD_GRASS_SCAN not set";
+    md::fcs::Install inst(kd); md::fcs::LoadOrder order; md::fcs::Error e; md::fcs::GameDataContainer data;
+    ASSERT_TRUE(inst.LoadOrderFor(order, e) && data.Load(order, e)) << e.Message();
+    Foliage f = LoadFoliage(data);
+    std::set<std::string> seen;
+    for (const Grass& g : f.grass) {
+        std::string s = g.sprite; for (char& c : s) if (c == '\\') c = '/';
+        if (s.rfind("./", 0) == 0) s = s.substr(2);
+        if (!seen.insert(s).second) continue;
+        int w = 0, h = 0; std::vector<uint8_t> rgba;
+        std::string path = std::string(kd) + "/" + s;
+        if (!std::filesystem::exists(path)) { std::string lo; for (char c : path) lo += (char)std::tolower((unsigned char)c); printf("[GrassTrim] %s: missing\n", s.c_str()); continue; }
+        if (!md::DecodeDdsRgba(path, w, h, rgba)) { printf("[GrassTrim] %s: undecodable\n", s.c_str()); continue; }
+        std::vector<P2> pts; double opaque0 = 0;
+        for (int m = 0; m < 4; ++m) {
+            std::vector<uint8_t> im = rgba; int mw = w, mh = h; md::BoxDownsample(im, mw, mh, m);
+            for (int y = 0; y < mh; ++y) for (int x = 0; x < mw; ++x) if (im[((size_t)y * mw + x) * 4 + 3] >= 153) {   // 0.6 * 255
+                if (m == 0) ++opaque0;
+                pts.push_back({ (double)x / mw, (double)y / mh }); pts.push_back({ (double)(x + 1) / mw, (double)y / mh }); pts.push_back({ (double)x / mw, (double)(y + 1) / mh }); pts.push_back({ (double)(x + 1) / mw, (double)(y + 1) / mh });
+            }
+        }
+        if (pts.empty()) { printf("[GrassTrim] %s: no opaque texel\n", s.c_str()); continue; }
+        pts.push_back({ 0.0, 0.0 }); pts.push_back({ 1.0, 0.0 });   // grass_vs sways only vertices with v == 0: the polygon keeps the card's top corners, or the shear of the blade would change
+        const auto hull = Hull(pts); const auto poly = Simplify(hull, 8);
+        printf("[GrassTrim] %s %dx%d: opaque %.1f%% of the card at 0.6, hull %zu verts %.1f%%, <=8 verts %.1f%% (%zu)\n", s.c_str(), w, h, 100.0 * opaque0 / ((double)w * h), hull.size(), 100.0 * Area(hull), 100.0 * Area(poly), poly.size());
+    }
 }
