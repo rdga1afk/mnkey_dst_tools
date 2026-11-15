@@ -402,30 +402,21 @@ bool HubSpike::Step() {
     return false;
 }
 
-// sphere (absolute centre, radius) hidden behind the farthest depth of the older frame's HZB: test with that frame's view-projection
-static bool HzbOccluded(const HzbPass::View& v, float x, float y, float z, float r) {
-    const float* m = v.vp;   // column-major
-    const double cw = m[3] * x + m[7] * y + m[11] * z + m[15];
-    if (cw <= r + 0.5) return false;   // behind / too close to the near plane: keep
-    const double cx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / cw, cy = (m[1] * x + m[5] * y + m[9] * z + m[13]) / cw;
-    const double fx = std::sqrt((double)m[0] * m[0] + (double)m[4] * m[4] + (double)m[8] * m[8]), fy = std::sqrt((double)m[1] * m[1] + (double)m[5] * m[5] + (double)m[9] * m[9]);
-    const double rx = r * fx / (cw - r), ry = r * fy / (cw - r);
-    int u0 = (int)std::floor((cx - rx) * 0.5 * HzbPass::W + 0.5 * HzbPass::W) - 1, u1 = (int)std::ceil((cx + rx) * 0.5 * HzbPass::W + 0.5 * HzbPass::W) + 1;
-    int v0 = (int)std::floor((0.5 - (cy + ry) * 0.5) * HzbPass::H) - 1, v1 = (int)std::ceil((0.5 - (cy - ry) * 0.5) * HzbPass::H) + 1;
-    if (u1 < 0 || v1 < 0 || u0 >= HzbPass::W || v0 >= HzbPass::H) return false;   // off screen in that frame: no information
-    if (u0 < 0 || v0 < 0 || u1 >= HzbPass::W || v1 >= HzbPass::H) return false;   // partly off screen then: keep
-    if ((u1 - u0) * (v1 - v0) > 3000) return false;
-    float far_max = 0.f;
-    for (int j = v0; j <= v1; ++j) for (int i = u0; i <= u1; ++i) far_max = std::max(far_max, v.far_m[j * HzbPass::W + i]);
-    return far_max < (float)(cw - r) - 1.0f;
-}
-
 void HubSpike::Draw(
     SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
     const float* vp16, const float* sun32, float cam_x, float cam_z, const float* fr, float cam_y) {
     static float vp_[PropRenderer::MAX_PROPS * 3], vq_[PropRenderer::MAX_PROPS * 4], vs_[PropRenderer::MAX_PROPS]; static uint8_t vl_[PropRenderer::MAX_PROPS];
     Stats s; s.batches = batch_count_;
-    HzbPass::View hz; if (occlusion_) { hz = HzbPass::Get().Latest(); if (hz.valid && (std::fabs(hz.cam[0] - cam_x) > 3.f || std::fabs(hz.cam[2] - cam_z) > 3.f || (cam_y < 1.0e29f && std::fabs(hz.cam[1] - cam_y) > 3.f))) hz.valid = false; }   // the camera moved on: no culling from that map
+    HzbPass::View hz; float infl = 0.f;
+    if (occlusion_) {
+        hz = HzbPass::Get().Latest();
+        if (hz.valid) {
+            const float cy = cam_y < 1.0e29f ? cam_y : cam_y_;
+            const float dx = hz.cam[0] - cam_x, dy = cy < 1.0e29f ? hz.cam[1] - cy : 0.f, dz = hz.cam[2] - cam_z;
+            if (hzb_all_) infl = std::sqrt(dx * dx + dy * dy + dz * dz) * hzb_infl_;   // the map is tested in its own view; the camera's move since then widens every sphere
+            else if (std::fabs(dx) > 3.f || std::fabs(dz) > 3.f || (cam_y < 1.0e29f && std::fabs(dy) > 3.f)) hz.valid = false;   // the camera moved on: no culling from that map
+        }
+    }
     float pn[4][4];
     if (fr) for (int p = 0; p < 4; ++p) {
         float l = std::sqrt(fr[p*4] * fr[p*4] + fr[p*4+1] * fr[p*4+1] + fr[p*4+2] * fr[p*4+2]); if (l < 1e-6f) l = 1.f;
@@ -465,7 +456,7 @@ void HubSpike::Draw(
                 bool vis = true;
                 if (range_ > 0.f) { float dx = tl.cx - cam_x, dz = tl.cz - cam_z, lim = range_ + tl.rad; if (dx * dx + dz * dz > lim * lim) vis = false; }
                 if (vis && fr) for (int p = 0; p < 4; ++p) if (pn[p][0] * tl.cx + pn[p][1] * tl.cy + pn[p][2] * tl.cz + pn[p][3] < -tl.rad) { vis = false; break; }
-                if (vis && hz.valid && HzbOccluded(hz, tl.cx, tl.cy, tl.cz, tl.rad)) { vis = false; s.occluded += tl.count; }
+                if (vis && hz.valid && HzbPass::Occluded(hz, tl.cx, tl.cy, tl.cz, tl.rad + infl)) { vis = false; s.occluded += tl.count; }
                 if (!vis) { emit(); continue; }
                 if (!begun) { b.r.BeginInstanced(rp, cmd, variant_ == 1 ? pipe_flat : variant_ == 2 ? pipe_depth : variant_ == 3 ? pipe_depth_alpha : pipe, b.inst, vp16, sun32, variant_ == 0 || variant_ == 3, variant_ == 0); begun = true; }
                 if (run_count > 0 && run_first + run_count == tl.first) run_count += tl.count; else { emit(); run_first = tl.first; run_count = tl.count; }
@@ -493,7 +484,7 @@ void HubSpike::Draw(
             bool out = false;
             if (fr) for (int p = 0; p < 4; ++p) if (pn[p][0] * x + pn[p][1] * y + pn[p][2] * z + pn[p][3] < -r) { out = true; break; }
             if (out) continue;
-            if (hz.valid && HzbOccluded(hz, x, y, z, r)) { ++s.occluded; continue; }
+            if (hz.valid && HzbPass::Occluded(hz, x, y, z, r + infl)) { ++s.occluded; continue; }
             memcpy(vp_ + n * 3, pos_ + o * 3, 12); memcpy(vq_ + n * 4, quat_ + o * 4, 16); vs_[n] = scale_[o];
             int lv = 0;
             if (b.nlod > 1) {   // Ogre distance_sphere: distance from the camera to the sphere's surface against the level's distance

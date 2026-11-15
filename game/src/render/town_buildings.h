@@ -20,8 +20,9 @@ public:
     void Tick(float cam_x, float cam_z);   // main thread, before the render passes
     void Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, const float* vp16, const float* sun32, float cam_x, float cam_z, const float* frustum16);
     void Shutdown();
-    struct Stats { int zones = 0, loading = 0, requested = 0, instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int textured_batches = 0, no_texture_batches = 0; int loaded_total = 0, unloaded_total = 0; double max_step_ms = 0; };
+    struct Stats { int zones = 0, loading = 0, requested = 0, instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int textured_batches = 0, no_texture_batches = 0; int loaded_total = 0, unloaded_total = 0; int occluded = 0; double max_step_ms = 0; };
     Stats stats() const { return stats_; }
+    bool AnyLive() const { for (auto& z : zones_) if (z->hs && z->hs->Active()) return true; return false; }   // a zone with drawn batches: the depth map is worth recording
 private:
     struct Zone { int zx = 0, zz = 0; enum State { Requested, Ready, Loading, Live } state = Requested; double last_wanted_s = 0; uint64_t req_frame = 0; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; std::unique_ptr<HubSpike> hs; };
     void WorkerMain();

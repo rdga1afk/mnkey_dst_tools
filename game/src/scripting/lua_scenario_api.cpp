@@ -103,6 +103,7 @@ void md_hub_set_cull_back(bool on);
 void md_hub_set_mesh_lod(bool on);
 extern bool md_settings_set_ground_preset(int n);
 static int l_md_set_ground_preset(lua_State* L) { lua_pushboolean(L, md_settings_set_ground_preset((int)luaL_checkinteger(L, 1))); return 1; }   // #193: 0 dyn067_a1 (default), 1 dyn067, 2 reuse05
+static int l_md_set_hzb_all(lua_State* L) { HubSpike::SetHzbAll(lua_toboolean(L, 1) != 0, (float)luaL_optnumber(L, 2, 1.0)); return 0; }   // depth-map culling while the camera moves (sphere grown by factor x the camera move since the map), off by default
 static int l_md_set_mesh_lod(lua_State* L) { md_hub_set_mesh_lod(lua_toboolean(L, 1) != 0); return 0; }   // detail levels of building meshes (Ogre distance_sphere), off by default; applies to zones loaded after the call
 static int l_md_set_prop_cull(lua_State* L) { md_hub_set_cull_back(lua_toboolean(L, 1) != 0); return 0; }   // #119: back-face cull of building meshes by Kenshi material (before the buildings stream in)
 // md.set_nav(on): the Kenshi navtile navmesh around the camera (md::nav::NavWorld), md.nav_path(ax, az, bx, bz) -> {{x, y, z}, ...}, complete (nil when a position has no polygon, nil + "busy" while the worker adds a tile), md.nav_stats() -> {tiles_live, tiles_requested, loaded_total, cache_hits, last_add_ms, max_add_ms, last_worker_ms}
@@ -265,12 +266,12 @@ static int l_md_set_town_foliage(lua_State* L) { TownFoliage::Get().SetEnabled(l
 static int l_md_set_town_grass(lua_State* L) { TownFoliage::Get().SetGrass(lua_toboolean(L, 1) != 0, (float)luaL_optnumber(L, 2, 50.0), (float)luaL_optnumber(L, 3, 1.0)); return 0; }   // #120: (on, range m, density x), after set_town_foliage(true)
 static int l_md_town_foliage_stats(lua_State* L) { TownFoliage::Stats s = TownFoliage::Get().stats(); lua_newtable(L);
 #define TFF(k, v) lua_pushnumber(L, (lua_Number)(v)); lua_setfield(L, -2, k);
-    TFF("zones", s.zones) TFF("loading", s.loading) TFF("requested", s.requested) TFF("instances", s.instances) TFF("draws", s.draws) TFF("batches", s.batches) TFF("triangles", s.triangles) TFF("loaded_total", s.loaded_total) TFF("max_step_ms", s.max_step_ms) TFF("grass_blades", s.grass_blades) TFF("grass_gen_ms", s.grass_gen_ms)
+    TFF("zones", s.zones) TFF("loading", s.loading) TFF("requested", s.requested) TFF("instances", s.instances) TFF("draws", s.draws) TFF("batches", s.batches) TFF("triangles", s.triangles) TFF("loaded_total", s.loaded_total) TFF("occluded", s.occluded) TFF("max_step_ms", s.max_step_ms) TFF("grass_blades", s.grass_blades) TFF("grass_gen_ms", s.grass_gen_ms)
 #undef TFF
     return 1; }
 static int l_md_town_buildings_stats(lua_State* L) { TownBuildings::Stats s = TownBuildings::Get().stats(); lua_newtable(L);
 #define TBF(k, v) lua_pushnumber(L, (lua_Number)(v)); lua_setfield(L, -2, k);
-    TBF("zones", s.zones) TBF("loading", s.loading) TBF("requested", s.requested) TBF("instances", s.instances) TBF("draws", s.draws) TBF("batches", s.batches) TBF("textured_batches", s.textured_batches) TBF("no_texture_batches", s.no_texture_batches) TBF("triangles", s.triangles) TBF("loaded_total", s.loaded_total) TBF("unloaded_total", s.unloaded_total) TBF("max_step_ms", s.max_step_ms)
+    TBF("zones", s.zones) TBF("loading", s.loading) TBF("requested", s.requested) TBF("instances", s.instances) TBF("draws", s.draws) TBF("batches", s.batches) TBF("textured_batches", s.textured_batches) TBF("no_texture_batches", s.no_texture_batches) TBF("triangles", s.triangles) TBF("loaded_total", s.loaded_total) TBF("unloaded_total", s.unloaded_total) TBF("occluded", s.occluded) TBF("max_step_ms", s.max_step_ms)
 #undef TBF
     return 1; }
 extern void md_frame_counters(md::FrameCounters* out);   // game/src/render/frame_counters.cpp: the same rows F3 -> Debug shows
@@ -513,6 +514,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_ground_preset", l_md_set_ground_preset);
     sys.RegisterNamespaceFunction("town_parts", l_md_town_parts);
     sys.RegisterNamespaceFunction("set_mesh_lod", l_md_set_mesh_lod);
+    sys.RegisterNamespaceFunction("set_hzb_all", l_md_set_hzb_all);
     sys.RegisterNamespaceFunction("town_sweep", l_md_town_sweep);
     sys.RegisterNamespaceFunction("set_town_textures", l_md_set_town_textures);
     sys.RegisterNamespaceFunction("set_town_cutout", l_md_set_town_cutout);

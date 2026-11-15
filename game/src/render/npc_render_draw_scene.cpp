@@ -385,13 +385,14 @@ if (rp && !UpscaleActive()) {
 // End scene render pass (both branches now build rp directly — see the
 // AcquireSwapchainCached forward-path above, task #158f).
 if (rp) SDL_EndGPURenderPass(rp);
-if (HubSpike::Occlusion() && HubSpike::AnyActive() && scene_depth.SDLTexture()) {   // #119 occlusion: reduce this frame's scene depth for the culling of later frames
+if (HubSpike::Occlusion() && (HubSpike::AnyActive() || (HubSpike::HzbAll() && (TownBuildings::Get().AnyLive() || TownFoliage::Get().AnyLive()))) && scene_depth.SDLTexture()) {   // #119 occlusion: reduce this frame's scene depth for the culling of later frames
     HzbPass& hz = HzbPass::Get();
     if (!hz.Ready()) { static bool tried = false; if (!tried) { tried = true; hz.Init(); } }
     if (hz.Ready() && hz.Tick(HubSpike::occ_share_)) {
         HubSpike::occ_share_ = 0.f;
         MdCamera ac = SceneRender::Get().GraniteAbsCam(cam);
-        hz.Record(fc.cmd, scene_depth, mat4_ptr(ac.ViewProjMatrix((float)window_get_width() / (float)window_get_height())), &ac.pos.x, 0.5f, md::ViewFarClipM());
+        MdCamera c0 = ac; c0.target = { ac.target.x - ac.pos.x, ac.target.y - ac.pos.y, ac.target.z - ac.pos.z }; c0.pos = { 0.f, 0.f, 0.f };   // camera at the origin: the test takes the sphere relative to the camera
+        hz.Record(fc.cmd, scene_depth, mat4_ptr(c0.ViewProjMatrix((float)window_get_width() / (float)window_get_height())), &ac.pos.x, 0.5f, md::ViewFarClipM());
     }
 }
 md::GpuProfiler::Get().EndPass(); // Scene
@@ -750,6 +751,7 @@ void NpcRender::DrawTerrainAndProps(FrameCtx& fc, const MdCamera& cam, float now
         FeatureScatterSystem::Get().Draw(rp, fc.cmd, mat4_ptr(g_vp), (const float*)&sun,
                                           g_abs_cam.pos.x, g_abs_cam.pos.z, 300.0f);
         for (int hs = 0; hs < HubSpike::SLOTS; ++hs) if (HubSpike::Slot(hs).Active()) HubSpike::Slot(hs).Draw(rp, fc.cmd, mat4_ptr(g_vp), (const float*)&sun, g_abs_cam.pos.x, g_abs_cam.pos.z, sr.terrain_frustum_planes_, g_abs_cam.pos.y);
+        HubSpike::SetCamY(g_abs_cam.pos.y);
         TownBuildings::Get().Draw(rp, fc.cmd, mat4_ptr(g_vp), (const float*)&sun, g_abs_cam.pos.x, g_abs_cam.pos.z, sr.terrain_frustum_planes_);
         TownFoliage::Get().Draw(rp, fc.cmd, mat4_ptr(g_vp), (const float*)&sun, g_abs_cam.pos.x, g_abs_cam.pos.z, sr.terrain_frustum_planes_);
     }

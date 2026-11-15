@@ -124,10 +124,10 @@ void TownBuildings::Tick(float cam_x, float cam_z) {
 
 void TownBuildings::Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, const float* vp16, const float* sun32, float cam_x, float cam_z, const float* frustum16) {
     if (!enabled_) return;
-    stats_.instances = stats_.draws = stats_.batches = stats_.textured_batches = stats_.no_texture_batches = 0; stats_.triangles = 0;
+    stats_.instances = stats_.draws = stats_.batches = stats_.textured_batches = stats_.no_texture_batches = stats_.occluded = 0; stats_.triangles = 0;
     for (auto& z : zones_) if (z->hs && z->hs->Active()) {
         z->hs->Draw(rp, cmd, vp16, sun32, cam_x, cam_z, frustum16);
         const HubSpike::Stats s = z->hs->stats();
-        stats_.instances += s.instances; stats_.draws += s.draws; stats_.batches += s.batches; stats_.triangles += s.triangles; stats_.textured_batches += z->hs->textured_batches(); stats_.no_texture_batches += z->hs->no_texture_batches();
+        stats_.instances += s.instances; stats_.occluded += s.occluded; stats_.draws += s.draws; stats_.batches += s.batches; stats_.triangles += s.triangles; stats_.textured_batches += z->hs->textured_batches(); stats_.no_texture_batches += z->hs->no_texture_batches();
     }
 }

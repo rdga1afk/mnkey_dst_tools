@@ -5,6 +5,7 @@
 #include <monkey_dust/render/prop_renderer.h>
 #include <monkey_dust/render/gpu_static_buffer.h>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <SDL3/SDL_gpu.h>
@@ -43,6 +44,10 @@ public:
     void DrawGbuf(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, const float* vp16, float cam_x, float cam_z, const float* frustum16);
     static void SetOcclusion(bool on) { occlusion_ = on; }   // cull spheres hidden behind the depth of a frame kLatency frames ago (HzbPass), default on (owner 17.10, #119)
     static bool Occlusion() { return occlusion_; }
+    // MD_HZB_ALL / md.set_hzb_all: keep culling from the depth map while the camera moves (the sphere grows by `infl` x the move since the map), default off
+    static void SetHzbAll(bool on, float infl = 1.f) { hzb_all_ = on; hzb_infl_ = infl; }
+    static bool HzbAll() { return hzb_all_; }
+    static void SetCamY(float y) { cam_y_ = y; }   // absolute camera height of this frame, for the callers that pass only x and z
     static bool AnyActive() { for (int i = 0; i < SLOTS; ++i) if (Slot(i).Active()) return true; return false; }
     struct Stats { int instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int occluded = 0; int lod_draws[PropRenderer::MAX_LODS] = {}; int64_t lod_tris_saved = 0; };   // lod_draws[k]: instances drawn at level k, lod_tris_saved: triangles the levels removed
     Stats stats() const { return stats_; }
@@ -56,7 +61,8 @@ private:
     static constexpr int MAX_TILES = 64;
     struct Batch { PropRenderer r; bool terrain = false; uint32_t tris = 0; int nlod = 0; float lod_m[PropRenderer::MAX_LODS] = {}; uint32_t lod_tris[PropRenderer::MAX_LODS] = {}; int first = 0, count = 0; float radius = 0; GpuStaticBuffer inst; Tile tiles[MAX_TILES]; int ntiles = 0; };   // radius: bounding sphere at scale 1, metres
     float range_ = 0;
-    static inline bool instanced_ = false, occlusion_ = true, terrain_in_gbuf_ = false;
+    static inline bool instanced_ = false, occlusion_ = true, terrain_in_gbuf_ = false, hzb_all_ = std::getenv("MD_HZB_ALL") != nullptr;
+    static inline float hzb_infl_ = 1.f, cam_y_ = 1.0e30f;
 public:
     static inline float occ_share_ = 0.f;   // largest culled share of a slot this frame (reset by the HZB tick), decides whether the HZB is recorded every frame
 private:

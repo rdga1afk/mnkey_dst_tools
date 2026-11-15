@@ -1,3 +1,5 @@
+#include <cmath>
+#include <algorithm>
 #include "hzb_pass.h"
 #include <monkey_dust/render/gpu_hal_free_functions.h>
 #include <cstdio>
@@ -56,6 +58,24 @@ void HzbPass::Record(md::GpuCommandBufferHandle cmd, const GpuDepthTexture& dept
     memcpy(vp_[slot], vp16, 64); memcpy(cam_[slot], cam3, 12);
     rec_[slot] = abs_ + 1; rec_idx_[slot] = frame_;
     ++frame_;
+}
+
+bool HzbPass::Occluded(const View& v, float x, float y, float z, float r) {
+    const double px = (double)x - v.cam[0], py = (double)y - v.cam[1], pz = (double)z - v.cam[2];
+    const float* m = v.vp;   // column-major
+    const double cw = m[3] * px + m[7] * py + m[11] * pz + m[15];
+    if (cw <= r + 0.5) return false;   // behind / too close to the near plane: keep
+    const double cx = (m[0] * px + m[4] * py + m[8] * pz + m[12]) / cw, cy = (m[1] * px + m[5] * py + m[9] * pz + m[13]) / cw;
+    const double fx = std::sqrt((double)m[0] * m[0] + (double)m[4] * m[4] + (double)m[8] * m[8]), fy = std::sqrt((double)m[1] * m[1] + (double)m[5] * m[5] + (double)m[9] * m[9]);
+    const double rx = r * fx / (cw - r), ry = r * fy / (cw - r);
+    int u0 = (int)std::floor((cx - rx) * 0.5 * W + 0.5 * W) - 1, u1 = (int)std::ceil((cx + rx) * 0.5 * W + 0.5 * W) + 1;
+    int v0 = (int)std::floor((0.5 - (cy + ry) * 0.5) * H) - 1, v1 = (int)std::ceil((0.5 - (cy - ry) * 0.5) * H) + 1;
+    if (u1 < 0 || v1 < 0 || u0 >= W || v0 >= H) return false;   // off screen in that frame: no information
+    if (u0 < 0 || v0 < 0 || u1 >= W || v1 >= H) return false;   // partly off screen then: keep
+    if ((u1 - u0) * (v1 - v0) > 3000) return false;
+    float far_max = 0.f;
+    for (int j = v0; j <= v1; ++j) for (int i = u0; i <= u1; ++i) far_max = std::max(far_max, v.far_m[j * W + i]);
+    return far_max < (float)(cw - r) - 1.0f;
 }
 
 HzbPass::View HzbPass::Latest() {

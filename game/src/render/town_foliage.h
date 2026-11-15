@@ -25,8 +25,9 @@ public:
     void Shutdown();
     static constexpr float REGEN_M = 12.f;
     static constexpr size_t MAX_BLADES = 20000;
-    struct Stats { int zones = 0, loading = 0, requested = 0, instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int loaded_total = 0, unloaded_total = 0; int grass_blades = 0; double grass_gen_ms = 0; double max_step_ms = 0; };
+    struct Stats { int zones = 0, loading = 0, requested = 0, instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int loaded_total = 0, unloaded_total = 0; int occluded = 0; int grass_blades = 0; double grass_gen_ms = 0; double max_step_ms = 0; };
     Stats stats() const { return stats_; }
+    bool AnyLive() const { for (auto& z : zones_) if (z->hs && z->hs->Active()) return true; return false; }   // a zone with drawn batches: the depth map is worth recording
 private:
     struct Zone { int zx = 0, zz = 0; enum State { Requested, Ready, Loading, Live } state = Requested; double last_wanted_s = 0; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; std::unique_ptr<HubSpike> hs; };
     void WorkerMain();

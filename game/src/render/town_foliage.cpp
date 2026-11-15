@@ -188,16 +188,16 @@ void TownFoliage::Tick(float cam_x, float cam_z) {
 
 void TownFoliage::Draw(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, const float* vp16, const float* sun32, float cam_x, float cam_z, const float* frustum16) {
     if (!enabled_) return;
-    stats_.instances = stats_.draws = stats_.batches = 0; stats_.triangles = 0;
+    stats_.instances = stats_.draws = stats_.batches = stats_.occluded = 0; stats_.triangles = 0;
     if (grass_shown_hs_ && grass_shown_hs_->Active()) {
         grass_shown_hs_->Draw(rp, cmd, vp16, sun32, cam_x, cam_z, frustum16);
         const HubSpike::Stats s = grass_shown_hs_->stats();
-        stats_.instances += s.instances; stats_.draws += s.draws; stats_.triangles += s.triangles; stats_.grass_blades = s.instances;
+        stats_.instances += s.instances; stats_.occluded += s.occluded; stats_.draws += s.draws; stats_.triangles += s.triangles; stats_.grass_blades = s.instances;
     }
     for (auto& z : zones_) if (z->hs && z->hs->Active()) {
         z->hs->Draw(rp, cmd, vp16, sun32, cam_x, cam_z, frustum16);
         const HubSpike::Stats s = z->hs->stats();
-        stats_.instances += s.instances; stats_.draws += s.draws; stats_.batches += s.batches; stats_.triangles += s.triangles;
+        stats_.instances += s.instances; stats_.occluded += s.occluded; stats_.draws += s.draws; stats_.batches += s.batches; stats_.triangles += s.triangles;
     }
 }
 

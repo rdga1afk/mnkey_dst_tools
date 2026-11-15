@@ -13,13 +13,16 @@ public:
     static HzbPass& Get();
     bool Init();
     void Shutdown();
-    // after the scene pass ended: reduce `depth` and queue the copy into the ring slot of this frame; vp16 = the view-projection the depth was rendered with (absolute camera)
+    // after the scene pass ended: reduce `depth` and queue the copy into the ring slot of this frame; vp16 = rotation x projection of the camera the depth was rendered with, no translation (camera at the origin); cam3 = its absolute position
     void Record(md::GpuCommandBufferHandle cmd, const GpuDepthTexture& depth, const float* vp16, const float* cam3, float near_m, float far_m);
     // once per rendered frame (also when nothing is recorded): the frame counter the age of a map is measured in; returns true when this frame should record (every frame while the culling pays, else a probe every 8th)
     bool Tick(float culled_share);
     struct View { const float* far_m = nullptr; float vp[16] = {}; float cam[3] = {}; bool valid = false; };
     // the newest map recorded at least kLatency frames ago (complete by then for up to 3 frames in flight) and at most kMaxAge frames ago; valid = false otherwise
     View Latest();
+    // sphere (absolute centre, radius in metres) hidden behind the farthest depth of the map `v`; the centre is taken relative to the map's camera, so no large translation
+    // enters the projection (Dagor render/viewVecs.cpp:33-41). Keeps what was off screen, partly off screen, near the near plane or large on screen.
+    static bool Occluded(const View& v, float x, float y, float z, float r);
     bool Ready() const { return ready_; }
 private:
     GpuPipeline pipe_;
