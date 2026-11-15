@@ -168,3 +168,22 @@ TEST(FoliageScatter, ScanGrassyCircles) {
         printf("[GrassScan] zone %d %d centre m %.1f %.1f within50m %.0f\n", zx, zz, (cx + 147456.0) / 10.0, (cz + 147456.0) / 10.0, w);
     }
 }
+
+TEST(FoliageScatter, ScanGrassColourMaps) {
+    const char* kd = std::getenv("KENSHI_DIR");
+    if (!kd || !*kd || !std::getenv("MD_GRASS_SCAN")) GTEST_SKIP() << "KENSHI_DIR / MD_GRASS_SCAN not set";
+    md::fcs::Install inst(kd); md::fcs::LoadOrder order; md::fcs::Error e; md::fcs::GameDataContainer data;
+    ASSERT_TRUE(inst.LoadOrderFor(order, e) && data.Load(order, e)) << e.Message();
+    Foliage f = LoadFoliage(data);
+    int with = 0;
+    for (const Grass& g : f.grass) {
+        const md::fcs::GameData* r = data.Get(g.record);
+        if (!r) continue;
+        auto cm = r->files.find("color map");
+        auto sp = r->files.find("grass sprite");
+        const bool has = cm != r->files.end() && !cm->second.empty();
+        with += has;
+        printf("[GrassColour] %s sprite=%s colormap=%s\n", r->string_id.c_str(), sp == r->files.end() ? "-" : sp->second.c_str(), has ? cm->second.c_str() : "-");
+    }
+    printf("[GrassColour] used by biomes: %zu records, with colour map: %d\n", f.grass.size(), with);
+}
