@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include "town_foliage.h"
+#include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/world/foliage_scatter.h>
 #include <monkey_dust/render/prop_renderer.h>
@@ -28,7 +29,7 @@ void TownFoliage::WorkerMain() {
             if (requests_.empty()) {   // the grass circle: not before the zones
                 const float gx = grass_req_x_, gz = grass_req_z_, range = grass_range_, dens = grass_density_; grass_req_ = false;
                 lk.unlock();
-                GrassResult gr{ gx, gz, {}, {}, 0 };
+                GrassResult gr{ gx, gz, {}, {}, 0, nullptr };
                 if (ok) {
                     const auto g0 = std::chrono::steady_clock::now();
                     std::vector<md::world::Blade> blades; std::string gerr;
@@ -36,6 +37,7 @@ void TownFoliage::WorkerMain() {
                     const float ux = gx * 10.f - 147456.f, uz = gz * 10.f - 147456.f;
                     if (exe_pager ? md::world::ScatterGrassPages(md::KenshiDir(), foliage, ux, uz, range / 50.f, dens, MAX_BLADES, blades, gerr)
                                   : md::world::ScatterGrass(md::KenshiDir(), foliage, ux, uz, range * 10.f, dens, (uint32_t)(int)(gx * 0.5f) * 2654435761u ^ (uint32_t)(int)(gz * 0.5f), MAX_BLADES, blades, gerr)) {
+                        if (exe_pager) { gr.exe = std::make_shared<md::grasspass::Mesh>(); md::grasspass::Build(blades, foliage, *gr.exe); blades.clear(); }   // the install program draws these; no HubSpike instances
                         gr.parts.reserve(blades.size());
                         for (const md::world::Blade& b : blades) {
                             const md::world::Grass& g = foliage.grass[b.grass];
@@ -154,7 +156,13 @@ void TownFoliage::Tick(float cam_x, float cam_z) {
     if (grass_on_) {   // the grass circle: request a new one when the camera has left the shown one, load the result next to it, swap when it is done
         {
             std::lock_guard<std::mutex> lk(mu_);
-            if (!grass_loading_ && !grass_results_.empty()) {
+            if (!grass_loading_ && !grass_results_.empty() && grass_results_.back().exe) {   // MD_GRASS: the mesh goes to the install-program pass, nothing to load here
+                GrassResult& r = grass_results_.back();
+                grass_cx_ = r.cx; grass_cz_ = r.cz; grass_shown_ = true; stats_.grass_gen_ms = r.ms;
+                if (!md::grasspass::Ready()) md::grasspass::Init(md::GpuDevice::Get().SDLDevice(), md::KenshiDir());
+                md::grasspass::SetMesh(std::move(*r.exe)); stats_.grass_blades = (int)md::grasspass::Blades();
+                grass_results_.clear(); grass_req_pending_ = false;
+            } else if (!grass_loading_ && !grass_results_.empty()) {
                 GrassResult& r = grass_results_.back();
                 grass_next_hs_ = std::make_unique<HubSpike>(); grass_next_hs_->SetRange(grass_range_);
                 grass_next_cx_ = r.cx; grass_next_cz_ = r.cz; stats_.grass_gen_ms = r.ms;

@@ -92,6 +92,7 @@ TEST(FoliageScatter, GrassBladesOfTheHubCircle) {
     std::vector<Blade> b; std::string err;
     const float cx = (float)(9647.7 * 10 - 147456), cz = (float)(15038.8 * 10 - 147456);
     ASSERT_TRUE(ScatterGrass(kd, f, cx, cz, 500.f, 1.f, 1u, 100000, b, err)) << err;
+    printf("[Grass] older scatter, hub 50 m circle: %zu blades\n", b.size());
     // the python stand-in (private/md_hub_grass.py, tests/data/hub_spike/hub_grass.txt) keeps 1418 blades in the same 50 m circle
     EXPECT_GT(b.size(), 700u); EXPECT_LT(b.size(), 2800u);
     for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; ASSERT_LE(dx * dx + dz * dz, 500.f * 500.f * 1.0001f); ASSERT_GT(x.size, 0.f); }
@@ -145,7 +146,10 @@ TEST(FoliageScatter, GrassPagesOfTheHubCircle) {
     const float cx = (float)(9647.7 * 10 - 147456), cz = (float)(15038.8 * 10 - 147456);
     ASSERT_TRUE(ScatterGrassPages(kd, f, cx, cz, 1.f, 1.f, 1000000, b, err)) << err;
     size_t near50 = 0; for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; if (dx * dx + dz * dz <= 500.f * 500.f) ++near50; }
-    printf("[GrassPages] hub, grass range 1: %zu blades, %zu within 50 m (older scatter: ~1418)\n", b.size(), near50);
+    double exp_total = 0, exp_near = 0; ASSERT_TRUE(ExpectedGrassPages(kd, f, cx, cz, 1.f, 1.f, 500.f, &exp_total, &exp_near, err)) << err;
+    printf("[GrassPages] hub, grass range 1: %zu blades (expected %.0f), %zu within 50 m (expected %.0f; older scatter: ~1418)\n", b.size(), exp_total, near50, exp_near);
+    EXPECT_NEAR((double)b.size(), exp_total, 4.0 * std::sqrt(exp_total));
+    EXPECT_NEAR((double)near50, exp_near, 4.0 * std::sqrt(exp_near));
     EXPECT_GT(b.size(), 300u);
     for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; ASSERT_LE(dx * dx + dz * dz, 8000.f * 8000.f * 1.0001f); ASSERT_GT(x.size, 0.f); }
 }

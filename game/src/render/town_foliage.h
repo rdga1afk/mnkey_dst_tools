@@ -1,4 +1,6 @@
 #pragma once
+#include "grass_pass.h"
+#include <memory>
 // #120 step 2: MEDIUM foliage (plants, rocks; Kenshi range 100 m x setting) of the Kenshi zones around the camera, streamed like TownBuildings (same structure; one HubSpike per zone).
 // The scatter of a zone (engine/world/foliage_scatter) and the merged game data are made on a worker thread (CPU only), meshes and GPU buffers are made on the main thread one mesh per frame (Tick, before any render pass). A zone is wanted while it
 // touches the square of half-width range + 100 m around the camera; an unwanted zone is dropped after UNLOAD_S seconds (Okran KEEP_CAMERA, 4 s).
@@ -41,7 +43,7 @@ private:
     bool grass_on_ = false; float grass_range_ = 50.f, grass_density_ = 1.f;
     float grass_cx_ = 0, grass_cz_ = 0; bool grass_shown_ = false;     // centre (m) of the shown circle
     bool grass_req_pending_ = false; float grass_req_x_ = 0, grass_req_z_ = 0; bool grass_req_ = false;   // request for the worker (guarded by mu_)
-    struct GrassResult { float cx, cz; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; double ms; };
+    struct GrassResult { float cx, cz; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; double ms; std::shared_ptr<md::grasspass::Mesh> exe; };   // exe: MD_GRASS, the blades of the exe's pager for the install grass program
     std::vector<GrassResult> grass_results_;
     std::unique_ptr<HubSpike> grass_shown_hs_, grass_next_hs_; float grass_next_cx_ = 0, grass_next_cz_ = 0; bool grass_loading_ = false;
     Stats stats_;

@@ -1,3 +1,4 @@
+#include "grass_pass.h"
 #include "town_buildings.h"
 #include "sky_panorama.h"
 #include "sky_moons.h"
@@ -222,9 +223,10 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
                 llp.spec_cube = sr_gr.terrain.KenshiSpecularityCube(); llp.spec_smp = sr_gr.terrain.KenshiSpecularitySampler();
             }
             md::GroundLiveDriver::Get().SetLight(orig_light ? &llp : nullptr);
-            struct SkinCtx { NpcRender* self; const MdCamera* cam; SDL_GPUTexture* terrain_depth; } skin_ctx{ this, &cam, gtsp.GBufferDepth().SDLTexture() };
-            md::GroundLiveDriver::Get().SetNpcHook(skin_live_ ? +[](SDL_GPUCommandBuffer* c, SDL_GPUTexture* const t[3], SDL_GPUTexture* d, int w, int h, void* u) {
-                auto* x = static_cast<SkinCtx*>(u); x->self->RecordSkinPass(c, t, d, w, h, *x->cam, x->terrain_depth); } : nullptr, &skin_ctx);
+            const MdCamera skin_abs_cam = sr_gr.GraniteAbsCam(cam);   // the town objects and the grass blades are placed in the absolute space
+            struct SkinCtx { NpcRender* self; const MdCamera* cam; SDL_GPUTexture* terrain_depth; const MdCamera* abs_cam; } skin_ctx{ this, &cam, gtsp.GBufferDepth().SDLTexture(), &skin_abs_cam };
+            md::GroundLiveDriver::Get().SetNpcHook((skin_live_ || md::grasspass::Ready()) ? +[](SDL_GPUCommandBuffer* c, SDL_GPUTexture* const t[3], SDL_GPUTexture* d, int w, int h, void* u) {
+                auto* x = static_cast<SkinCtx*>(u); x->self->RecordSkinPass(c, t, d, w, h, *x->cam, x->terrain_depth, *x->abs_cam); } : nullptr, &skin_ctx);
             md::GroundLiveDriver::Get().Frame(md::GpuDevice::Get().SDLDevice(), fc.cmd, gtsp.GBufferDepth().SDLTexture(), gtsp.GBufferColor().SDLTexture(), gtsp.GBufferSlot(), gtsp.GBufferDepth().Width(), gtsp.GBufferDepth().Height(),
                                               gtsp.S7InvVp(), sr_gr.granite_abs_cam_, (uint64_t)sr_gr.frame_counter_pvt_);
             gtsp.SetLiveTargets(orig_light && md::GroundLiveDriver::Get().Pass().Lit() ? md::GroundLiveDriver::Get().Pass().Lit() : md::GroundLiveDriver::Get().Pass().AlbedoRgb(), md::GroundLiveDriver::Get().Pass().AuxB());   // the ground resolve of this pass reads the live material
@@ -475,11 +477,19 @@ void NpcRender::DrawSkyHdr(const MdCamera& cam, SDL_GPURenderPass* rp, SDL_GPUCo
     pv.Draw(3, 1, 0, 0);
 }
 
-void NpcRender::RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, const MdCamera& cam, SDL_GPUTexture* terrain_depth)
+void NpcRender::RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, const MdCamera& cam, SDL_GPUTexture* terrain_depth, const MdCamera& abs_cam)
 {
-    if (!skin_live_ || !vbuf.SDLBuffer() || !ibuf.SDLBuffer()) return;
     const float asp = (float)window_get_width() / (float)window_get_height();
     const Mat4 vp = cam.ViewProjMatrix(asp);
+    if (md::grasspass::Ready()) {   // MD_GRASS: the blades of the exe's pager on the install grass program, into the same G-buffer
+        md::grasspass::Frame gf;
+        gf.cmd = cmd; for (int i = 0; i < 3; ++i) gf.target[i] = target[i];
+        const Mat4 gvp = abs_cam.ViewProjMatrix(asp);
+        gf.depth = depth; gf.terrain_depth = terrain_depth; gf.w = w; gf.h = h; gf.view_proj = mat4_ptr(gvp);
+        abs_cam.CamPosToArr(gf.cam); gf.far_clip = md::GroundLiveDriver::Get().FarClip();
+        md::grasspass::Record(gf);
+    }
+    if (!skin_live_ || !vbuf.SDLBuffer() || !ibuf.SDLBuffer()) return;
     md::npcskin::Frame f;
     f.cmd = cmd; for (int i = 0; i < 3; ++i) f.target[i] = target[i];
     f.depth = depth; f.terrain_depth = terrain_depth; f.w = w; f.h = h; f.view_proj = mat4_ptr(vp);
