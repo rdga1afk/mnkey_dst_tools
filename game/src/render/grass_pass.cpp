@@ -152,6 +152,7 @@ size_t Blades() { return S.mesh.blades; }
 
 void SetMesh(Mesh&& m) {
     if (!S.ready) return;
+    const uint64_t t0 = SDL_GetTicksNS();
     if (S.vbo) { SDL_ReleaseGPUBuffer(S.dev, S.vbo); S.vbo = nullptr; }
     if (S.ibo) { SDL_ReleaseGPUBuffer(S.dev, S.ibo); S.ibo = nullptr; }
     for (auto& t : S.tex) if (t) t->Shutdown();
@@ -165,7 +166,7 @@ void SetMesh(Mesh&& m) {
         if (!t->InitFromFile((S.kd + "/" + (sp.rfind("./", 0) == 0 ? sp.substr(2) : sp)).c_str())) fprintf(stderr, "[Grass] texture missing: %s\n", sp.c_str());
         S.tex.push_back(std::move(t));
     }
-    fprintf(stderr, "[Grass] mesh: %zu blades, %zu verts, %zu indices, %zu runs\n", S.mesh.blades, S.mesh.verts.size(), S.mesh.idx.size(), S.mesh.runs.size());
+    fprintf(stderr, "[Grass] mesh: %zu blades, %zu verts, %zu indices, %zu runs, SetMesh %.1f ms\n", S.mesh.blades, S.mesh.verts.size(), S.mesh.idx.size(), S.mesh.runs.size(), (double)(SDL_GetTicksNS() - t0) / 1e6);
 }
 
 void Record(const Frame& f) {
