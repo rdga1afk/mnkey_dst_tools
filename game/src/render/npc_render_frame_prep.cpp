@@ -21,6 +21,7 @@ bool g_terrain_cliff_normal_flip = true;
 bool  g_terrain_lod = true;
 bool  g_terrain_lod_error = false; // LOD is on but unavailable (no KENSHI_DIR / fullmap.tif): the scenario driver stops on it
 bool  g_opt_skip_flat_on_cliff = true; // #155 step 1: skip the flat layer chain where cliff_w >= 1 (pixel-identical), md.set_opt_skip_flat_on_cliff
+int   g_terrain_lod_mode = 0;      // 0 = selection + skirts, 1 = restricted quadtree + border snapping, no skirts (md.set_terrain_lod_mode)
 int   g_terrain_lod_patch = 16;    // patch size in quads (16 or 64), md.set_terrain_lod_patch
 extern int g_opt_ground_split, g_kenshi_lighting_mode;   // #207 H13.3
 int   g_terrain_lod_levels[11] = {}; // nodes per level of the last LOD selection (stats)
@@ -528,6 +529,7 @@ if (sr_prepass.terrain_granite_ready) {
             const auto sel_t0 = std::chrono::steady_clock::now();
             qt_count = sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp,
                                                                          lod_nodes, md::TerrainLodTree::kMaxNodes);
+            if (g_terrain_lod_mode == 1) qt_count = md::RestrictLodNodes(lod_nodes, qt_count, md::TerrainLodTree::kMaxNodes);
             const double sel_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sel_t0).count();
             static md::TerrainLodNode pre_cull_nodes[8192]; int n_pre_cull = 0;   // the selection before the horizon cull: it keeps deciding the array tier of the ground lists (AssignSlots)
             if (md::GroundLiveDriver::Wanted() && md::HorizonCullEnabled()) { n_pre_cull = std::min(qt_count, 8192); memcpy(pre_cull_nodes, lod_nodes, (size_t)n_pre_cull * sizeof(md::TerrainLodNode)); }
@@ -569,7 +571,7 @@ if (sr_prepass.terrain_granite_ready) {
                 uint64_t h = 1469598103934665603ull;
                 auto mix = [&](uint32_t v) { h ^= v; h *= 1099511628211ull; };
                 auto fb = [](float f) { uint32_t u; memcpy(&u, &f, 4); return u; };
-                for (int i = 0; i < qt_count; ++i) { mix(fb(lod_nodes[i].origin_x)); mix(fb(lod_nodes[i].origin_z)); mix(fb(lod_nodes[i].size)); mix(fb(lod_nodes[i].morph)); mix((uint32_t)lod_nodes[i].level); }
+                for (int i = 0; i < qt_count; ++i) { mix(fb(lod_nodes[i].origin_x)); mix(fb(lod_nodes[i].origin_z)); mix(fb(lod_nodes[i].size)); mix(fb(lod_nodes[i].morph)); mix((uint32_t)lod_nodes[i].level); mix((uint32_t)lod_nodes[i].edge_diff[0] | (uint32_t)lod_nodes[i].edge_diff[1] << 2 | (uint32_t)lod_nodes[i].edge_diff[2] << 4 | (uint32_t)lod_nodes[i].edge_diff[3] << 6 | (lod_nodes[i].stitched ? 256u : 0u)); }
                 mix((uint32_t)sr_prepass.terrain_quadtree_renderer_.LodFineOx()); mix((uint32_t)sr_prepass.terrain_quadtree_renderer_.LodFineOz());
                 sr_prepass.gr_geom_hash_ = h;
             }
@@ -600,6 +602,7 @@ if (sr_prepass.terrain_granite_ready) {
                         mixv(&g_terrain_light_clamp, sizeof g_terrain_light_clamp); mixv(&g_terrain_per_layer_mip, sizeof g_terrain_per_layer_mip);
                         mixv(&g_terrain_lod_near_px, sizeof g_terrain_lod_near_px); mixv(&g_terrain_lod_far_px, sizeof g_terrain_lod_far_px); mixv(&g_terrain_lod_near_dist, sizeof g_terrain_lod_near_dist); mixv(&g_terrain_lod_far_dist, sizeof g_terrain_lod_far_dist);
                         mixv(&g_terrain_lod_patch, sizeof g_terrain_lod_patch);
+                        mixv(&g_terrain_lod_mode, sizeof g_terrain_lod_mode);
                         { const float fcr = RenderQualityConfig::Get().terrain_cr_m, fnr = GraphicsSettings::Get().fog_near_ratio; mixv(&fcr, sizeof fcr); mixv(&fnr, sizeof fnr); mixv(&GraphicsSettings::Get().fog_color, sizeof GraphicsSettings::Get().fog_color); }
                         const auto& lsk = LightSystem::Get(); mixv(&lsk.sun_dir, sizeof lsk.sun_dir); mixv(&lsk.sun_color, sizeof lsk.sun_color); mixv(&lsk.ambient_color, sizeof lsk.ambient_color);
                     }

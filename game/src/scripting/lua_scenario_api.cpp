@@ -46,6 +46,7 @@ extern bool g_terrain_cliff_normal_flip;
 extern bool g_terrain_detail_n_atten;
 extern bool g_terrain_lod;
 extern int g_terrain_lod_patch;
+extern int g_terrain_lod_mode;
 extern bool g_opt_skip_flat_on_cliff;
 extern bool g_opt_force_upscale;
 extern int g_opt_ground_split;
@@ -376,6 +377,8 @@ static int l_md_gpu_live_resources(lua_State* L) {
     lua_pushinteger(L, rss_kb);                   lua_setfield(L, -2, "rss_kb");
     return 1;
 }
+// md.set_terrain_lod_mode(0|1): 0 = skirts (default), 1 = restricted quadtree (neighbours at most 1 level apart) + border vertices snapped to the coarser neighbour, no skirts (the plugin's way).
+static int l_md_set_terrain_lod_mode(lua_State* L) { g_terrain_lod_mode = (lua_tointeger(L, 1) == 1) ? 1 : 0; return 0; }
 static int l_md_set_terrain_lod_patch(lua_State* L) { g_terrain_lod_patch = (lua_tointeger(L, 1) == 64) ? 64 : 16; return 0; }
 static int l_md_set_terrain_lod_params(lua_State* L) {
     g_terrain_lod_near_px = (float)luaL_checknumber(L, 1); g_terrain_lod_far_px = (float)luaL_checknumber(L, 2);
@@ -494,6 +497,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_terrain_lod", l_md_set_terrain_lod);
     sys.RegisterNamespaceFunction("set_terrain_lod_params", l_md_set_terrain_lod_params);
     sys.RegisterNamespaceFunction("set_terrain_lod_patch", l_md_set_terrain_lod_patch);
+    sys.RegisterNamespaceFunction("set_terrain_lod_mode", l_md_set_terrain_lod_mode);
     sys.RegisterNamespaceFunction("set_opt_skip_flat_on_cliff", l_md_set_opt_skip_flat_on_cliff);
     sys.RegisterNamespaceFunction("set_opt_ground_split", l_md_set_opt_ground_split);
     sys.RegisterNamespaceFunction("set_opt_ground_reuse_cr", l_md_set_opt_ground_reuse_cr);

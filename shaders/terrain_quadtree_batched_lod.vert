@@ -93,7 +93,10 @@ void main() {
     vec2  origin = nodeA.xy;
     gSpacing = nodeA.z;
     float morph = nodeA.w;
-    float skirtDepth = nodeB.y;
+    // nodeB.y >= 0: skirt depth; < 0: restricted-quadtree mode (md.set_terrain_lod_mode 1), -(1 + packed) with 2 bits per edge = levels the neighbour is coarser (z min, z max, x min, x max): no skirt, the border vertices snap to the coarser lattice
+    const bool stitch = nodeB.y < 0.0;
+    const int  edgeDiff = stitch ? int(-nodeB.y + 0.5) - 1 : 0;
+    float skirtDepth = stitch ? 0.0 : nodeB.y;
     gUseFine = (int(nodeB.z + 0.5) & 1) != 0;
 #ifdef TS_SLOT
     vSlot = uint(int(nodeB.z + 0.5) >> 1);
@@ -116,6 +119,13 @@ void main() {
         row = (side == 0) ? 0 : (side == 1) ? cells : k;
     }
 
+    if (stitch) {   // the plugin's border rewrite: a border vertex goes to the nearest vertex of the coarser neighbour's lattice (step 2^diff, a half rounds down)
+        const int dz0 = edgeDiff & 3, dz1 = (edgeDiff >> 2) & 3, dx0 = (edgeDiff >> 4) & 3, dx1 = (edgeDiff >> 6) & 3;
+        const int dAlongX = (row == 0) ? dz0 : (row == cells) ? dz1 : 0;
+        const int dAlongZ = (col == 0) ? dx0 : (col == cells) ? dx1 : 0;
+        if (dAlongX > 0) { int st = 1 << dAlongX; col = (col / st + (((col % st) * 2 > st) ? 1 : 0)) * st; }
+        if (dAlongZ > 0) { int st = 1 << dAlongZ; row = (row / st + (((row % st) * 2 > st) ? 1 : 0)) * st; }
+    }
     vec2 xz = origin + vec2(float(col), float(row)) * gSpacing;
     Site site;
     site.xz = xz;
