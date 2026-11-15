@@ -18,7 +18,7 @@ struct GroundLiveBiome {
 struct GroundLiveGroup {                  // the pixels of one biome list
     int slot = 1;                         // value of this group in the slot target (1..31)
     int biome_count = 1;                  // 1..4, main biome first
-    bool no_tint = false;                 // the colour / overlay maps of the tile are not enabled: white.dds / nothing.dds (ZoneMapOverlay::enable, FUN_140a11d70)
+    bool no_tint = false;                 // the colour / overlay maps of the tile are not enabled: white.dds / nothing.dds (ZoneMapOverlay::enable)
     bool layer_bias = false;              // B2: the layers of this far class are sampled with a positive lod bias (the old path's layer LOD at distance)
     int cls = 0;                          // NOW-0 B variants: 1 / 2 = far classes (colour map two / three mips coarser, layer lod bias); 0 = as the install program runs
     bool far = false;                     // no layer set resident yet: drawn with the original far program (distant.png) instead of being skipped

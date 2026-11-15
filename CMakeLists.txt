@@ -107,6 +107,9 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/MonkeyDustToolsConfig.cmake" DESTINAT
 # All editor panel .cpp files (all wicked-style panels).
 file(GLOB EDITOR_PANEL_SOURCES "editor/*.cpp")
 list(REMOVE_ITEM EDITOR_PANEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/editor/main.cpp")
+if(NOT MD_HLSL_RUNTIME)   # the CI package root (ci/CMakeLists.txt) does not build glslang: its callers are #ifdef MD_HLSL_RUNTIME
+    list(REMOVE_ITEM EDITOR_PANEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/editor/editor_char_body_live.cpp")
+endif()
 
 set(EDITOR_IMGUI_SRC
     ${MD_TOOLS_DIR}/third_party/imgui/imgui.cpp

@@ -57,7 +57,7 @@ private:
     struct PatchList { PatchBiomes pb; float dmin = 1e30f, dmin_pre = 1e30f; int slot = 0; bool untinted = false; int cls = 0; int alt[6] = { -1, -1, -1, -1, -1, -1 }; };   // untinted: the same biome list drawn with white.dds / nothing.dds (an overlay tile that is not enabled); alt: its index
     int VariantOf(int lid, bool untinted, int cls);   // the list twin drawn untinted (white / nothing maps) and / or with the far colour map and layer bias of class cls
     void UpdateTiles(const float cam[3]);
-    bool tile_on_[64] = {};   // ZoneMapOverlay enabled state of the 8 x 8 colour tiles (FUN_140a12c70)
+    bool tile_on_[64] = {};   // ZoneMapOverlay enabled state of the 8 x 8 colour tiles
     int ListIdOf(const PatchBiomes& pb);
     bool data_tried_ = false, data_ok_ = false, gpu_tried_ = false, gpu_ok_ = false;
     std::string kenshi_dir_;

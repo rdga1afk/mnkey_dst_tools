@@ -124,8 +124,8 @@ int GroundLiveDriver::VariantOf(int lid, bool untinted, int cls) {   // the list
     lists_[(size_t)lid].alt[k] = (int)lists_.size() - 1; return lists_[(size_t)lid].alt[k];
 }
 
-// The original enables the colour / overlay maps of a tile (an 8 x 8 zone overlay, colour.X.Y.png) while the focus lies inside its rect +- 1474.56 m and keeps them to +- 2211.84 m (ZoneMap update FUN_140a12c70 ->
-// ZoneMapOverlay::enable FUN_140a11d70 / FUN_140a0ba70, constants 14745.6 and 7372.8 in 0.1 m units); a tile that is not enabled uses white.dds / nothing.dds (FUN_140a14c90). The focus is the camera
+// The original enables the colour / overlay maps of a tile (an 8 x 8 zone overlay, colour.X.Y.png) while the focus lies inside its rect +- 1474.56 m and keeps them to +- 2211.84 m (the ZoneMap update ->
+// ZoneMapOverlay::enable, constants 14745.6 and 7372.8 in 0.1 m units); a tile that is not enabled uses white.dds / nothing.dds. The focus is the camera
 // until the original's focus argument is traced (UNKNOWN). MD_GROUND_TINT_ALL=1: every tile always enabled (the behaviour before 14.11).
 void GroundLiveDriver::UpdateTiles(const float cam[3]) {
     static const bool all = getenv("MD_GROUND_TINT_ALL") && getenv("MD_GROUND_TINT_ALL")[0] == '1';
@@ -159,7 +159,7 @@ int GroundLiveDriver::SlotAt(float x, float z) {
     return best;
 }
 
-// The original defines BLEND<k> of a list's entry k as that entry's slot = its blend-map channel (FUN_140a14c90 builds the program name from the slots); our variants fix BLEND<k> = k, so a list whose entry k sits in another channel
+// The original defines BLEND<k> of a list's entry k as that entry's slot = its blend-map channel (the original builds the program name from the slots); our variants fix BLEND<k> = k, so a list whose entry k sits in another channel
 // gets the blend map with channel k = that slot (data only; the program text is untouched). Entry order = descending slot, entry 0 (main) has no channel of its own.
 SDL_GPUTexture* GroundLiveDriver::BlendFor(SDL_GPUDevice* dev, const PatchBiomes& pb) {
     bool same = true; for (int k = 1; k < pb.count; ++k) if (pb.channels[k] != k) same = false;

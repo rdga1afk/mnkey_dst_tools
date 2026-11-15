@@ -24,7 +24,7 @@
 // matches the existing pattern rather than introducing a new one.
 //
 // No-ops (return false / do nothing) when compiled with MD_USE_GRANITE
-// undefined (USE_GRANITE=OFF, the default) -- zero cost.
+// not defined (USE_GRANITE=OFF, the default) -- zero cost.
 struct SDL_Window;
 
 namespace md::editor {
