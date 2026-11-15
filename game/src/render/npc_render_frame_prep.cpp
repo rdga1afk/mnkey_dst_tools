@@ -529,7 +529,7 @@ if (sr_prepass.terrain_granite_ready) {
             const auto sel_t0 = std::chrono::steady_clock::now();
             qt_count = sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp,
                                                                          lod_nodes, md::TerrainLodTree::kMaxNodes);
-            if (g_terrain_lod_mode == 1) qt_count = md::RestrictLodNodes(lod_nodes, qt_count, md::TerrainLodTree::kMaxNodes);
+            if (g_terrain_lod_mode == 1) qt_count = md::RestrictLodNodes(lod_nodes, qt_count, md::TerrainLodTree::kMaxNodes, g_terrain_lod_patch == 64 ? 3 : 2);   // the plugin's limit log2(cells) - 2 (4 for 64 cells, capped at the 3 the node data holds)
             const double sel_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sel_t0).count();
             static md::TerrainLodNode pre_cull_nodes[8192]; int n_pre_cull = 0;   // the selection before the horizon cull: it keeps deciding the array tier of the ground lists (AssignSlots)
             if (md::GroundLiveDriver::Wanted() && md::HorizonCullEnabled()) { n_pre_cull = std::min(qt_count, 8192); memcpy(pre_cull_nodes, lod_nodes, (size_t)n_pre_cull * sizeof(md::TerrainLodNode)); }

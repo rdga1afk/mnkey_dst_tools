@@ -3,6 +3,7 @@
 // and edge_diff names the coarser side.
 #include <monkey_dust/world/terrain_lod_tree.h>
 #include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 using md::TerrainLodNode;
@@ -34,30 +35,65 @@ static int WorstJump(const std::vector<TerrainLodNode>& v) {
 }
 static double Area(const std::vector<TerrainLodNode>& v) { double s = 0; for (auto& n : v) s += (double)n.size * n.size; return s; }
 
+// oracle written straight from the decompiled rule (FUN_1800042c0 + FUN_180006370), brute force and independent of the hash grid: a leaf whose edge neighbour covering cell
+// is a leaf more than max_diff levels coarser splits that neighbour, until nothing splits; returns the sorted (level, i, j) set
+struct Cell { int L, i, j; bool operator<(const Cell& o) const { return L != o.L ? L < o.L : (i != o.i ? i < o.i : j < o.j); } bool operator==(const Cell& o) const { return L == o.L && i == o.i && j == o.j; } };
+static std::vector<Cell> Oracle(const std::vector<TerrainLodNode>& in, int max_diff) {
+    std::vector<Cell> v;
+    for (auto& n : in) v.push_back({ n.level, (int)std::lround(n.origin_x / n.size), (int)std::lround(n.origin_z / n.size) });
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (size_t a = 0; a < v.size() && !changed; ++a) {
+            const Cell A = v[a];
+            const int di[4] = { 0, 0, -1, 1 }, dj[4] = { -1, 1, 0, 0 };
+            for (int e = 0; e < 4 && !changed; ++e) {
+                const int ni = A.i + di[e], nj = A.j + dj[e];
+                for (size_t b = 0; b < v.size(); ++b) {   // the leaf that contains the neighbouring cell of A's level
+                    const Cell B = v[b]; if (B.L >= A.L || A.L - B.L <= max_diff) continue;
+                    const int sh = A.L - B.L;
+                    if ((ni >> sh) == B.i && (nj >> sh) == B.j && ni >= 0 && nj >= 0) {
+                        v.erase(v.begin() + (long)b);
+                        for (int q = 0; q < 4; ++q) v.push_back({ B.L + 1, B.i * 2 + (q & 1), B.j * 2 + (q >> 1) });
+                        changed = true; break;
+                    }
+                }
+            }
+        }
+    }
+    std::sort(v.begin(), v.end()); return v;
+}
+
 int main() {
     int fails = 0;
     auto check = [&](bool ok, const char* what) { std::printf("%s: %s\n", ok ? "PASS" : "FAIL", what); if (!ok) ++fails; };
-    std::vector<TerrainLodNode> v;
-    for (int j = 0; j < 16; ++j) for (int i = 0; i < 16; ++i) Refine(v, 4, i, j, 14000.f, 15000.f, 9);
-    const int jump_before = WorstJump(v); const double area_before = Area(v); const size_t n_before = v.size();
-    check(jump_before >= 2, "oracle sees a 2+ level jump before the restriction (the check can fail)");
-    v.resize(65536);
-    const int n = md::RestrictLodNodes(v.data(), (int)n_before, 65536);
-    v.resize((size_t)n);
-    check(WorstJump(v) <= 1, "after the restriction no edge-sharing pair differs by more than 1 level");
-    check(std::fabs(Area(v) - area_before) < 1.0, "covered area unchanged");
-    check(n > (int)n_before, "leaves were split");
-    bool diff_ok = true;
-    for (auto& a : v) for (auto& b : v) {
-        if (&a == &b) continue;
-        const float e = 0.01f;
-        const bool zo = a.origin_z < b.origin_z + b.size - e && b.origin_z < a.origin_z + a.size - e;
-        const bool xo = a.origin_x < b.origin_x + b.size - e && b.origin_x < a.origin_x + a.size - e;
-        if (std::fabs(a.origin_x - (b.origin_x + b.size)) < e && zo && b.level < a.level && a.edge_diff[2] != a.level - b.level) diff_ok = false;   // b is on a's x min side
-        if (std::fabs(a.origin_z + a.size - b.origin_z) < e && xo && b.level < a.level && a.edge_diff[1] != a.level - b.level) diff_ok = false;   // b is on a's z max side
+    const float camx[3] = { 14000.f, 5200.f, 22000.f }, camz[3] = { 15000.f, 9100.f, 3000.f };
+    for (int max_diff = 1; max_diff <= 3; ++max_diff) for (int c = 0; c < 3; ++c) {
+        std::vector<TerrainLodNode> v;
+        for (int j = 0; j < 16; ++j) for (int i = 0; i < 16; ++i) Refine(v, 4, i, j, camx[c], camz[c], 10);
+        const int jump_before = WorstJump(v); const double area_before = Area(v); const size_t n_before = v.size();
+        const std::vector<Cell> want = Oracle(v, max_diff);
+        v.resize(65536);
+        const int n = md::RestrictLodNodes(v.data(), (int)n_before, 65536, max_diff);
+        v.resize((size_t)n);
+        std::vector<Cell> got; for (auto& a : v) got.push_back({ a.level, (int)std::lround(a.origin_x / a.size), (int)std::lround(a.origin_z / a.size) });
+        std::sort(got.begin(), got.end());
+        char what[160];
+        std::snprintf(what, sizeof what, "max_diff %d cam %d: %zu -> %d leaves, node set equals the oracle (%zu)", max_diff, c, n_before, n, want.size()); check(got == want, what);
+        std::snprintf(what, sizeof what, "max_diff %d cam %d: worst jump %d -> %d (limit %d), area unchanged", max_diff, c, jump_before, WorstJump(v), max_diff);
+        check(WorstJump(v) <= max_diff && std::fabs(Area(v) - area_before) < 1.0 && (jump_before > max_diff) == (n > (int)n_before), what);
+        bool diff_ok = true, stitched = true;
+        for (auto& a : v) {
+            if (!a.stitched || a.skirt_depth != 0.f) stitched = false;
+            for (auto& b : v) {
+                if (&a == &b) continue;
+                const float e = 0.01f;
+                const bool zo = a.origin_z < b.origin_z + b.size - e && b.origin_z < a.origin_z + a.size - e;
+                const bool xo = a.origin_x < b.origin_x + b.size - e && b.origin_x < a.origin_x + a.size - e;
+                if (std::fabs(a.origin_x - (b.origin_x + b.size)) < e && zo && b.level < a.level && a.edge_diff[2] != a.level - b.level) diff_ok = false;   // b on a's x min side
+                if (std::fabs(a.origin_z + a.size - b.origin_z) < e && xo && b.level < a.level && a.edge_diff[1] != a.level - b.level) diff_ok = false;   // b on a's z max side
+            }
+        }
+        check(diff_ok && stitched, "edge_diff = levels the neighbour is coarser, every node stitched, no skirt");
     }
-    check(diff_ok, "edge_diff = levels the neighbour is coarser");
-    bool stitched = true; for (auto& a : v) if (!a.stitched || a.skirt_depth != 0.f) stitched = false;
-    check(stitched, "every node is stitched, no skirt");
     return fails ? 1 : 0;
 }
