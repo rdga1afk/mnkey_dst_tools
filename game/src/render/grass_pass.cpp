@@ -27,7 +27,7 @@ struct State {
     SDL_GPUBuffer *vbo = nullptr, *ibo = nullptr;
     Mesh mesh;
     std::vector<std::unique_ptr<GpuTexture>> tex;   // one per run
-    float phase = 0.f; uint64_t last_ms = 0;
+    float phase = 0.f;
     bool ready = false;
 };
 State S;
@@ -178,8 +178,7 @@ void Record(const Frame& f) {
     SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(f.cmd, cti, 3, &dti);
     if (!rp) return;
     // wind phase += dt (s) x speed 0.3 x pi, wrapped at 2 pi; time = phase, frequency = 2.0 (the distribution), direction = wind (1, 0, 0) x sway length (wind factor x 3).
-    const uint64_t now = SDL_GetTicks(); const float dt = S.last_ms ? (float)(now - S.last_ms) / 1000.f : 0.f; S.last_ms = now;
-    S.phase += dt * 0.3f * 3.14159265f; if (S.phase > 3.14159265f * 2.f) S.phase -= 3.14159265f * 2.f;
+    S.phase += f.dt * 0.3f * 3.14159265f; if (S.phase > 3.14159265f * 2.f) S.phase -= 3.14159265f * 2.f;
     Ub vu(S.vs), fu(S.fs);
     for (int c = 0; c < 4; ++c) vu.set("md_vp", f.view_proj + 4 * c, 4, c);
     const float time = S.phase, freq = 2.0f * 10.f, dir[3] = { 3.0f / 10.f, 0.f, 0.f }, fade = 1000.f / 10.f, gh = 1.0f / 10.f;   // units -> metres

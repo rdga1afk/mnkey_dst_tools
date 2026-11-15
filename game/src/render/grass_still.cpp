@@ -20,7 +20,7 @@ void Copy(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* src, SDL_GPUTexture* dst, i
 }
 }  // namespace
 
-bool Enabled() { static const bool on = getenv("MD_GRASS_EVERY_FRAME") && getenv("MD_GRASS_EVERY_FRAME")[0] == '1'; return on; }
+bool Enabled() { static const bool on = !(getenv("MD_GRASS_EVERY_FRAME") && getenv("MD_GRASS_EVERY_FRAME")[0] == '0'); return on; }
 
 bool Run(SDL_GPUDevice* dev, const std::string& kd, SDL_GPUTexture* ground, SDL_GPUTextureFormat fmt, int gw, int gh, const GroundLiveFrame& f,
          const GroundLiveLightParams& lp, const GroundLiveFogParams& fp, grasspass::Frame gf) {

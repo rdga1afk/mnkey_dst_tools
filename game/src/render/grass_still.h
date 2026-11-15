@@ -1,5 +1,5 @@
 #pragma once
-// Every-frame grass (MD_GRASS_EVERY_FRAME=1): on a frame that skips the ground (still view, H14) the blades are drawn again with the wind of this frame.
+// Grass overlay (default; MD_GRASS_EVERY_FRAME=0 puts the blades back into the cached G-buffer): every frame, full or still, the blades are drawn after the ground with the wind of this frame.
 // Same chain as a full frame, but over the blades only: the install grass program into a scratch G-buffer, decode, the original main_fs, the fog quad + exposure,
 // written over a copy of the cached ground target. The ground target is restored before the next full frame.
 #include "ground_live_pass.h"

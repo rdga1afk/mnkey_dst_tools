@@ -33,6 +33,7 @@ struct Frame {
     const float* view_proj = nullptr;           // 16 floats, column-major
     float cam[3] = {};
     float far_clip = 0.f;
+    float dt = 0.f;                             // frame time, s: advances the wind phase (RenderFrame's dt, fixed in scenarios)
     bool clear = false;                         // scratch targets (the every-frame overlay): cleared here instead of loaded
 };
 

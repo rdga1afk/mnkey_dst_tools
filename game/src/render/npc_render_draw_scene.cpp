@@ -175,22 +175,25 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
     int gw = 0, gh = 0;
     RenderSize(gw, gh);
     auto& gsp = SceneRender::Get().ground_split_pass_;
+    // Grass (MD_GRASS, every frame): the blades are drawn after the ground on every frame, full or still, never into the cached G-buffer; the still path must show what a full frame shows (coordinator 6899781586)
+    auto grass_overlay = [&]() {
+        if (!(md::grasspass::Ready() && md::grassstill::Enabled() && md::GroundLiveDriver::Get().LitFrame() && md::GroundLiveDriver::Get().LightParams())) return;
+        md::GroundLiveFogParams fp;
+        if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = (!SceneRender::Get().lum_adapt_active_ && gsp.IsFloat() && md::GroundLiveHdr::Active()) ? 1.f : k->params[2]; }
+        const float asp = (float)window_get_width() / (float)window_get_height();
+        const MdCamera abs_cam = SceneRender::Get().GraniteAbsCam(cam);
+        const Mat4 gvp = abs_cam.ViewProjMatrix(asp);
+        md::grasspass::Frame gf;
+        gf.cmd = fc.cmd; gf.terrain_depth = SceneRender::Get().terrain_shading_projected_.GBufferDepth().SDLTexture(); gf.view_proj = mat4_ptr(gvp);
+        abs_cam.CamPosToArr(gf.cam); gf.far_clip = md::GroundLiveDriver::Get().FarClip(); gf.dt = g_frame_dt_s;
+        md::GroundLiveLightParams lp = *md::GroundLiveDriver::Get().LightParams(); lp.world_origin_xz[0] = (gf.cam[0] - 14745.6f) * 10.f; lp.world_origin_xz[1] = (gf.cam[2] - 14745.6f) * 10.f;   // as GroundLiveDriver::Frame does
+        md::grassstill::Run(md::GpuDevice::Get().SDLDevice(), md::KenshiDir(), gsp.Tex(), gsp.Fmt(), gw, gh, md::GroundLiveDriver::Get().LastFrame(), lp, fp, gf);
+    };
     if (gsp.Ready() && gsp.HasTarget(gw, gh) && SceneRender::Get().still_skip_ && SceneRender::Get().gr_have_) {   // #207 H14: the ground target of the last full frame is still valid for this view
         SceneRender::Get().ground_split_active_ = true;
         SceneRender::Get().lum_adapt_active_ = g_kenshi_lighting_mode >= 4 && gsp.AdaptReady() && gsp.IsFloat();
         --SceneRender::Get().gr_frame_;   // the reuse live-block rotation advances on full frames only
-        if (md::grasspass::Ready() && md::grassstill::Enabled() && md::GroundLiveDriver::Get().LitFrame() && md::GroundLiveDriver::Get().LightParams()) {   // MD_GRASS_EVERY_FRAME: the blades again, this frame's wind, over the cached ground
-            md::GroundLiveFogParams fp;
-            if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = (!SceneRender::Get().lum_adapt_active_ && gsp.IsFloat() && md::GroundLiveHdr::Active()) ? 1.f : k->params[2]; }
-            const float asp = (float)window_get_width() / (float)window_get_height();
-            const MdCamera abs_cam = SceneRender::Get().GraniteAbsCam(cam);
-            const Mat4 gvp = abs_cam.ViewProjMatrix(asp);
-            md::grasspass::Frame gf;
-            gf.cmd = fc.cmd; gf.terrain_depth = SceneRender::Get().terrain_shading_projected_.GBufferDepth().SDLTexture(); gf.view_proj = mat4_ptr(gvp);
-            abs_cam.CamPosToArr(gf.cam); gf.far_clip = md::GroundLiveDriver::Get().FarClip();
-            md::GroundLiveLightParams lp = *md::GroundLiveDriver::Get().LightParams(); lp.world_origin_xz[0] = (gf.cam[0] - 14745.6f) * 10.f; lp.world_origin_xz[1] = (gf.cam[2] - 14745.6f) * 10.f;   // as GroundLiveDriver::Frame does
-            md::grassstill::Run(md::GpuDevice::Get().SDLDevice(), md::KenshiDir(), gsp.Tex(), gsp.Fmt(), gw, gh, md::GroundLiveDriver::Get().LastFrame(), lp, fp, gf);
-        }
+        grass_overlay();
     } else
     if (gsp.Ready() && gsp.HasTarget(gw, gh)) {
         GpuPushDebugGroup(fc.cmd, "GroundResolve");
@@ -263,6 +266,7 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
         sr_gr.terrain_shading_projected_.SetReuse(nullptr);
         sr_gr.terrain_shading_projected_.SetStencilSplitActive(false);
         gcb.EndPass();
+        grass_overlay();   // before the luminance chain: the exposure measures the grass too, as it did when the blades were in the G-buffer
         if (sr_gr.lum_adapt_active_) {   // after the ground pass, before the main pass: this frame's adapted luminance, Kenshi's [MIN_LUMINANCE, MAX_LUMINANCE] (sky.GetMainLight min_lum, GLOBAL CONSTANTS)
             const md::KenshiSkySettings sky_a;
             const auto ml_a = sky_a.GetMainLight(LightSystem::Get().current_hours);
@@ -495,12 +499,13 @@ void NpcRender::RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const 
 {
     const float asp = (float)window_get_width() / (float)window_get_height();
     const Mat4 vp = cam.ViewProjMatrix(asp);
-    if (md::grasspass::Ready()) {   // MD_GRASS: the blades of the exe's pager on the install grass program, into the same G-buffer
+    static const bool grass_gbuf = getenv("MD_GRASS_GBUF") && getenv("MD_GRASS_GBUF")[0] == '1';   // test knob (stability gate, bad arm): the blades also go into the cached G-buffer next to the overlay
+    if (md::grasspass::Ready() && (!md::grassstill::Enabled() || grass_gbuf)) {   // MD_GRASS_EVERY_FRAME=0: the blades of the exe's pager on the install grass program, into the same G-buffer
         md::grasspass::Frame gf;
         gf.cmd = cmd; for (int i = 0; i < 3; ++i) gf.target[i] = target[i];
         const Mat4 gvp = abs_cam.ViewProjMatrix(asp);
         gf.depth = depth; gf.terrain_depth = terrain_depth; gf.w = w; gf.h = h; gf.view_proj = mat4_ptr(gvp);
-        abs_cam.CamPosToArr(gf.cam); gf.far_clip = md::GroundLiveDriver::Get().FarClip();
+        abs_cam.CamPosToArr(gf.cam); gf.far_clip = md::GroundLiveDriver::Get().FarClip(); gf.dt = g_frame_dt_s;
         md::grasspass::Record(gf);
     }
     if (!skin_live_ || !vbuf.SDLBuffer() || !ibuf.SDLBuffer()) return;
