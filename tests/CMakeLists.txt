@@ -70,6 +70,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_ground_bake.cpp
     ${MD_UTEST_DIR}/test_ogre.cpp
     ${MD_UTEST_DIR}/test_reflect_camera.cpp
+    ${MD_UTEST_DIR}/test_csm_splits.cpp
     ${MD_UTEST_DIR}/test_kenshi_land.cpp
     ${MD_UTEST_DIR}/test_weather.cpp
     ${MD_UTEST_DIR}/test_biome_layer_cache.cpp
