@@ -100,8 +100,10 @@ static int l_md_set_hub_spike_instanced(lua_State* L) { HubSpike::SetInstanced(l
 static int l_md_set_hub_spike_occlusion(lua_State* L) { HubSpike::SetOcclusion(lua_toboolean(L, 1) != 0); return 0; }
 static int l_md_set_hub_zone(lua_State* L) { HubSpike& h = HubSpike::Slot((int)luaL_checkinteger(L, 1)); h.SetRange((float)luaL_optnumber(L, 5, 0.0)); lua_pushboolean(L, h.LoadZone((float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4))); return 1; }   // #119: (slot, cx m, cz m, radius m, range m) buildings straight from the zone files
 void md_hub_set_cull_back(bool on);
+void md_hub_set_mesh_lod(bool on);
 extern bool md_settings_set_ground_preset(int n);
 static int l_md_set_ground_preset(lua_State* L) { lua_pushboolean(L, md_settings_set_ground_preset((int)luaL_checkinteger(L, 1))); return 1; }   // #193: 0 dyn067_a1 (default), 1 dyn067, 2 reuse05
+static int l_md_set_mesh_lod(lua_State* L) { md_hub_set_mesh_lod(lua_toboolean(L, 1) != 0); return 0; }   // detail levels of building meshes (Ogre distance_sphere), off by default; applies to zones loaded after the call
 static int l_md_set_prop_cull(lua_State* L) { md_hub_set_cull_back(lua_toboolean(L, 1) != 0); return 0; }   // #119: back-face cull of building meshes by Kenshi material (before the buildings stream in)
 // md.set_nav(on): the Kenshi navtile navmesh around the camera (md::nav::NavWorld), md.nav_path(ax, az, bx, bz) -> {{x, y, z}, ...}, complete (nil when a position has no polygon, nil + "busy" while the worker adds a tile), md.nav_stats() -> {tiles_live, tiles_requested, loaded_total, cache_hits, last_add_ms, max_add_ms, last_worker_ms}
 // md.town_parts(cx, cz, r) -> { {mesh, x, y, z, y_off, scale, qw, qx, qy, qz}, ... }: the placed building parts of the zone files as the loader reads them (look-bug checks, #207)
@@ -510,6 +512,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_prop_cull", l_md_set_prop_cull);
     sys.RegisterNamespaceFunction("set_ground_preset", l_md_set_ground_preset);
     sys.RegisterNamespaceFunction("town_parts", l_md_town_parts);
+    sys.RegisterNamespaceFunction("set_mesh_lod", l_md_set_mesh_lod);
     sys.RegisterNamespaceFunction("town_sweep", l_md_town_sweep);
     sys.RegisterNamespaceFunction("set_town_textures", l_md_set_town_textures);
     sys.RegisterNamespaceFunction("set_town_cutout", l_md_set_town_cutout);

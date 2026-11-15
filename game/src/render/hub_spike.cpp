@@ -24,6 +24,8 @@
 
 static bool g_hub_cull_back = true;   // Kenshi parity: Ogre default cull for materials without cull_hardware none; applies to batches built after the call
 void md_hub_set_cull_back(bool on) { g_hub_cull_back = on; }
+static bool g_hub_mesh_lod = std::getenv("MD_MESH_LOD") != nullptr;   // detail levels of the install meshes (Ogre distance_sphere), default off; applies to meshes read after the call
+void md_hub_set_mesh_lod(bool on) { g_hub_mesh_lod = on; }
 
 HubSpike& HubSpike::Slot(int i) { static HubSpike s[SLOTS]; return s[i < 0 ? 0 : (i >= SLOTS ? SLOTS - 1 : i)]; }
 
@@ -34,8 +36,9 @@ void HubSpike::Shutdown() {
 
 
 // Mesh units are 0.1 m; the building scale is baked into the vertices so one batch = one (mesh, scale).
-static void BuildSubmeshes(const md::ogre::Mesh& m, float k, float layer, std::vector<std::vector<PropVertex>>& vs, std::vector<std::vector<uint32_t>>& is, std::vector<uint8_t>& two) {
-    for (const md::ogre::SubMesh& sm : m.submeshes) {
+static void BuildSubmeshes(const md::ogre::Mesh& m, float k, float layer, std::vector<std::vector<PropVertex>>& vs, std::vector<std::vector<uint32_t>>& is, std::vector<uint8_t>& two, std::vector<std::vector<std::vector<uint32_t>>>* lods = nullptr) {
+    for (size_t si = 0; si < m.submeshes.size(); ++si) {
+        const md::ogre::SubMesh& sm = m.submeshes[si];
         if (sm.operation != md::ogre::OP_TRIANGLE_LIST || sm.indices.empty()) continue;
         const md::ogre::Geometry& g = sm.use_shared ? m.shared : sm.geometry;
         std::vector<float> p, n, uv;
@@ -55,6 +58,10 @@ static void BuildSubmeshes(const md::ogre::Mesh& m, float k, float layer, std::v
                 remap[i] = it->second;
             }
             for (uint32_t& q : ix) q = remap[q];
+            if (lods) {
+                lods->emplace_back();
+                for (const md::ogre::LodLevel& L : m.lods) { if (L.manual || si >= L.indices.size() || L.indices[si].empty()) break; lods->back().push_back(L.indices[si]); for (uint32_t& q : lods->back().back()) q = remap[q]; }
+            }
             v = std::move(w);
         }
         vs.push_back(std::move(v)); is.push_back(std::move(ix)); two.push_back(KenshiMaterialTwoSided(sm.material) ? 1 : 0);
@@ -293,7 +300,8 @@ static bool PrepareOne(const HubPlacement& p, const std::vector<HubPlacement>& a
         md::ogre::Mesh m; md::ogre::Error err;
         std::string path = dir + "/" + (p.mesh.rfind("./", 0) == 0 ? p.mesh.substr(2) : p.mesh);
         if (!md::ogre::ReadMesh(path, m, err)) { fprintf(stderr, "[HubSpike] mesh read failed: %s\n", path.c_str()); return false; }
-        BuildSubmeshes(m, 0.1f, vlayer, vs, is, out.two_sided);
+        BuildSubmeshes(m, 0.1f, vlayer, vs, is, out.two_sided, g_hub_mesh_lod ? &out.lods : nullptr);
+        if (g_hub_mesh_lod) for (size_t q = 0; q < m.lods.size(); ++q) { if (m.lods[q].manual) break; out.lod_m.push_back(m.lods[q].distance * 0.1f); }   // userValue = plain distance in file units (0.1 m)
         if (p.tile_x != 1.f || p.tile_y != 1.f) for (auto& sub : vs) for (PropVertex& v : sub) { v.u *= p.tile_x; v.v *= p.tile_y; }   // spec `tile X/Y` (exe: uv * tiling in the vertex shader)
         if (p.dsided) for (size_t q = 0; q < out.two_sided.size(); ++q) out.two_sided[q] = 1;
         {   // oracle line: size in metres at scale 1 (positions x 0.1), counts, and the scale range of its placements
@@ -355,7 +363,19 @@ bool HubSpike::Step() {
                 const std::string& np = pl_[i].nrm; const std::string npath = dir + "/" + (np.rfind("./", 0) == 0 ? np.substr(2) : np);
                 if (GpuTexture* nt = HubTexture(npath)) b.r.SetNormalAlphaCut(nt); else fprintf(stderr, "[HubSpike] normal map load failed: %s\n", npath.c_str());
             }
-            if (!b.r.InitFromArrays(vs[s].data(), (uint32_t)vs[s].size(), is[s].data(), (uint32_t)is[s].size())) continue;
+            b.nlod = 0;
+            std::vector<uint32_t> all_ix;   // level 0 then each detail level, one index buffer
+            const std::vector<uint32_t>* ix = &is[s];
+            if (s < P->lods.size() && !P->lods[s].empty()) {
+                uint32_t first[PropRenderer::MAX_LODS] = {}, cnt[PropRenderer::MAX_LODS] = {};
+                all_ix = is[s]; first[0] = 0; cnt[0] = (uint32_t)is[s].size(); b.lod_tris[0] = cnt[0] / 3; int n = 1;
+                for (size_t q = 0; q < P->lods[s].size() && q < P->lod_m.size() && n < PropRenderer::MAX_LODS; ++q, ++n) {
+                    first[n] = (uint32_t)all_ix.size(); cnt[n] = (uint32_t)P->lods[s][q].size(); b.lod_m[n] = P->lod_m[q]; b.lod_tris[n] = cnt[n] / 3;
+                    all_ix.insert(all_ix.end(), P->lods[s][q].begin(), P->lods[s][q].end());
+                }
+                if (n > 1) { ix = &all_ix; b.nlod = n; b.r.SetLods(first, cnt, n); }
+            }
+            if (!b.r.InitFromArrays(vs[s].data(), (uint32_t)vs[s].size(), ix->data(), (uint32_t)ix->size())) continue;
             if (pl_[i].tex.empty()) ++no_tex_;
             if (!pl_[i].tex.empty()) { std::string tp = PlacementTexPath(pl_[i]); {   // one GPU texture per file for the whole process (a zone reload or another batch of the same mesh must not read the 2048^2 file again: 17 ms each)
                 GpuTexture* ht = HubTexture(tp); bool tex_ok = ht != nullptr;
@@ -403,7 +423,7 @@ static bool HzbOccluded(const HzbPass::View& v, float x, float y, float z, float
 void HubSpike::Draw(
     SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
     const float* vp16, const float* sun32, float cam_x, float cam_z, const float* fr, float cam_y) {
-    static float vp_[PropRenderer::MAX_PROPS * 3], vq_[PropRenderer::MAX_PROPS * 4], vs_[PropRenderer::MAX_PROPS];
+    static float vp_[PropRenderer::MAX_PROPS * 3], vq_[PropRenderer::MAX_PROPS * 4], vs_[PropRenderer::MAX_PROPS]; static uint8_t vl_[PropRenderer::MAX_PROPS];
     Stats s; s.batches = batch_count_;
     HzbPass::View hz; if (occlusion_) { hz = HzbPass::Get().Latest(); if (hz.valid && (std::fabs(hz.cam[0] - cam_x) > 3.f || std::fabs(hz.cam[2] - cam_z) > 3.f || (cam_y < 1.0e29f && std::fabs(hz.cam[1] - cam_y) > 3.f))) hz.valid = false; }   // the camera moved on: no culling from that map
     float pn[4][4];
@@ -463,7 +483,7 @@ void HubSpike::Draw(
             if (n == 0) return;
             b.r.DrawRaw(
                 rp, cmd,
-                vp_, n, vp16, sun32, 1.0f, 0.f, 0.f, nullptr, vq_, vs_);
+                vp_, n, vp16, sun32, 1.0f, 0.f, 0.f, nullptr, vq_, vs_, vl_);
             s.instances += n; s.draws += n; s.triangles += (int64_t)b.tris * n; n = 0;
         };
         for (int k = 0; k < b.count; ++k) {
@@ -475,10 +495,18 @@ void HubSpike::Draw(
             if (out) continue;
             if (hz.valid && HzbOccluded(hz, x, y, z, r)) { ++s.occluded; continue; }
             memcpy(vp_ + n * 3, pos_ + o * 3, 12); memcpy(vq_ + n * 4, quat_ + o * 4, 16); vs_[n] = scale_[o];
+            int lv = 0;
+            if (b.nlod > 1) {   // Ogre distance_sphere: distance from the camera to the sphere's surface against the level's distance
+                const float dx = x - cam_x, dz = z - cam_z, dy = cam_y < 1.0e29f ? y - cam_y : 0.f;
+                const float d2 = dx * dx + dy * dy + dz * dz - r * r;
+                while (lv + 1 < b.nlod && d2 >= b.lod_m[lv + 1] * b.lod_m[lv + 1]) ++lv;
+            }
+            vl_[n] = (uint8_t)lv; s.lod_draws[lv]++; s.lod_tris_saved += (int64_t)b.tris - (b.nlod > 1 ? b.lod_tris[lv] : b.tris);
             if (++n == PropRenderer::MAX_PROPS) flush();
         }
         flush();
     }
+    s.triangles -= s.lod_tris_saved;
     stats_ = s;
     if (occlusion_) { const float sh = (s.instances + s.occluded) > 0 ? (float)s.occluded / (float)(s.instances + s.occluded) : 0.f; if (sh > occ_share_) occ_share_ = sh; }
 }

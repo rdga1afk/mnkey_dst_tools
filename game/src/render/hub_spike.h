@@ -12,7 +12,8 @@
 struct HubPlacement { std::string mesh, tex, nrm; int alpha = 0; bool cut = false, dsided = false; float thr = 0.5f, tile_x = 1.f, tile_y = 1.f;   /* cut: TRANSPARENCY material (normal-map alpha cut-out at thr), dsided: DOUBLESIDED, tile: UV scale of the spec */ float x, y, z, scale, q[4]; bool terrain = false; std::string key; };   // terrain: a TERRAIN-mode mesh (Kenshi material type 2), drawn into the terrain G-buffer by DrawGbuf and shaded as ground by the resolve (#176)
 
 // CPU-side result of reading one mesh (vertices / indices per submesh, bounding radius in metres): can be made on any thread.
-struct HubPrepared { std::string key; std::vector<std::vector<PropVertex>> vs; std::vector<std::vector<uint32_t>> is; std::vector<uint8_t> two_sided; float bound_m = 10.f; };   // two_sided: per submesh, cull_hardware none in its Kenshi material
+struct HubPrepared { std::string key; std::vector<std::vector<PropVertex>> vs; std::vector<std::vector<uint32_t>> is; std::vector<uint8_t> two_sided; float bound_m = 10.f;
+    std::vector<std::vector<std::vector<uint32_t>>> lods; std::vector<float> lod_m; };   // lods[submesh][level - 1] index lists (MD_MESH_LOD only), lod_m[level - 1] = metres from which the level is drawn   // two_sided: per submesh, cull_hardware none in its Kenshi material
 
 class HubSpike {
 public:
@@ -43,7 +44,7 @@ public:
     static void SetOcclusion(bool on) { occlusion_ = on; }   // cull spheres hidden behind the depth of a frame kLatency frames ago (HzbPass), default on (owner 17.10, #119)
     static bool Occlusion() { return occlusion_; }
     static bool AnyActive() { for (int i = 0; i < SLOTS; ++i) if (Slot(i).Active()) return true; return false; }
-    struct Stats { int instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int occluded = 0; };
+    struct Stats { int instances = 0, draws = 0, batches = 0; int64_t triangles = 0; int occluded = 0; int lod_draws[PropRenderer::MAX_LODS] = {}; int64_t lod_tris_saved = 0; };   // lod_draws[k]: instances drawn at level k, lod_tris_saved: triangles the levels removed
     Stats stats() const { return stats_; }
     int textured_batches() const { return textured_; }
     int no_texture_batches() const { return no_tex_; }   // batches whose placement names no texture (a part without a material spec): the rock fallback by design   // batches that got a texture bound (defect sweep: a placement without one is drawn flat)
@@ -53,7 +54,7 @@ private:
     std::vector<HubPlacement> pl_; std::vector<HubPrepared> prepared_; size_t next_ = 0; std::vector<std::string> done_; int inst_ = 0; bool loading_ = false;
     struct Tile { int first = 0, count = 0; float cx = 0, cy = 0, cz = 0, rad = 0; };   // run of instances of one batch in the instance buffer
     static constexpr int MAX_TILES = 64;
-    struct Batch { PropRenderer r; bool terrain = false; uint32_t tris = 0; int first = 0, count = 0; float radius = 0; GpuStaticBuffer inst; Tile tiles[MAX_TILES]; int ntiles = 0; };   // radius: bounding sphere at scale 1, metres
+    struct Batch { PropRenderer r; bool terrain = false; uint32_t tris = 0; int nlod = 0; float lod_m[PropRenderer::MAX_LODS] = {}; uint32_t lod_tris[PropRenderer::MAX_LODS] = {}; int first = 0, count = 0; float radius = 0; GpuStaticBuffer inst; Tile tiles[MAX_TILES]; int ntiles = 0; };   // radius: bounding sphere at scale 1, metres
     float range_ = 0;
     static inline bool instanced_ = false, occlusion_ = true, terrain_in_gbuf_ = false;
 public:
