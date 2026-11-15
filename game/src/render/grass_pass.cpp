@@ -92,10 +92,10 @@ void Build(const std::vector<md::world::Blade>& blades, const md::world::Foliage
             out.sprites.push_back(std::move(s)); cur = b.grass;
         }
         const float cx = (float)(((double)b.x + 147456.0) / 10.0), cz = (float)(((double)b.z + 147456.0) / 10.0), cy = b.y / 10.f;
-        const float hw = ((g.min_width * 9.f + (g.max_width * 17.f - g.min_width * 9.f) * b.u) * 0.5f) / 10.f;   // builder 140a3e8e0: half of the width, in metres
+        const float hw = ((g.min_width * 9.f + (g.max_width * 17.f - g.min_width * 9.f) * b.u) * 0.5f) / 10.f;   // half of the width, in metres (GRASS_EXE_2026-11-15.md)
         const float hh = (g.min_height * 9.f + (g.max_height * 17.f - g.min_height * 9.f) * b.u) / 10.f;
         const float a = b.yaw * 0.01745329252f, ca = std::cos(a) * hw, sa = std::sin(a) * hw;
-        const uint8_t col[4] = { (uint8_t)(b.colour & 255), (uint8_t)(b.colour >> 8 & 255), (uint8_t)(b.colour >> 16 & 255), (uint8_t)(b.colour >> 24) };   // layer colour map at the blade centre (140a3cfe0)
+        const uint8_t col[4] = { (uint8_t)(b.colour & 255), (uint8_t)(b.colour >> 8 & 255), (uint8_t)(b.colour >> 16 & 255), (uint8_t)(b.colour >> 24) };   // layer colour map at the blade centre (GRASS_EXE_2026-11-15.md)
         auto quad = [&](float dx, float dz) {
             const uint32_t v0 = (uint32_t)out.verts.size();
             const Vertex v[4] = { { cx - dx, cy, cz - dz, { col[0], col[1], col[2], col[3] }, 0.f, 1.f }, { cx + dx, cy, cz + dz, { col[0], col[1], col[2], col[3] }, 1.f, 1.f },
@@ -177,7 +177,7 @@ void Record(const Frame& f) {
     dti.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE; dti.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE; dti.cycle = false;
     SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(f.cmd, cti, 3, &dti);
     if (!rp) return;
-    // 140a3b1d0: phase += dt (s) x speed 0.3 x pi, wrapped at 2 pi; time = phase, frequency = 2.0 (the distribution), direction = wind (1, 0, 0) x sway length (wind factor x 3).
+    // wind phase += dt (s) x speed 0.3 x pi, wrapped at 2 pi; time = phase, frequency = 2.0 (the distribution), direction = wind (1, 0, 0) x sway length (wind factor x 3).
     const uint64_t now = SDL_GetTicks(); const float dt = S.last_ms ? (float)(now - S.last_ms) / 1000.f : 0.f; S.last_ms = now;
     S.phase += dt * 0.3f * 3.14159265f; if (S.phase > 3.14159265f * 2.f) S.phase -= 3.14159265f * 2.f;
     Ub vu(S.vs), fu(S.fs);

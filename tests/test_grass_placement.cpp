@@ -11,7 +11,7 @@ float FlatSlope(float, float, void*) { return 0.0f; }
 float SteepEast(float x, float, void*) { return x > 50.0f ? 2000.0f : 0.0f; }
 float Height(float x, float, void*) { return x; }
 
-// Straight transcription of the exe's stride walk (140a44b30), kept apart from the engine type on purpose.
+// Straight transcription of the exe's stride walk (GRASS_EXE_2026-11-15.md), kept apart from the engine type on purpose.
 struct RefTable {
     std::vector<float> t; uint32_t idx = 0, stride = 1, ctr = 0;
     float next() {
