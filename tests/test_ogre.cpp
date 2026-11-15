@@ -45,7 +45,9 @@ Bytes MeshFile(const std::string& version, bool wrong_parents, uint16_t colour_t
     Append(m, Submesh(idx32, {0, 1, 2}, wrong_parents));
     if (with_unknown) Append(m, Chunk(0xB000, Bytes{1, 2, 3, 4, 5}));        // edge lists: skipped whole
     if (with_unknown) {                                                       // LOD with a wrong length and one usage child
-        Bytes lod; PS(lod, "distance"); P16(lod, 2); P8(lod, 0); Append(lod, Chunk(0x8100, Bytes{9, 9, 9, 9}));
+        Bytes gen; P32(gen, 3); P8(gen, 0); P16(gen, 2); P16(gen, 1); P16(gen, 0);   // one submesh: 3 indices, 16-bit
+        Bytes usage; PF(usage, 40.f); Append(usage, Chunk(0x8120, gen));
+        Bytes lod; PS(lod, "distance"); P16(lod, 2); P8(lod, 0); Append(lod, Chunk(0x8100, usage, 3));
         Append(m, Chunk(0x8000, lod, 3));
     }
     Bytes bounds; for (float x : {0.f, 0.f, 0.f, 2.f, 4.f, 6.f, 7.f}) PF(bounds, x);
@@ -98,6 +100,62 @@ TEST(OgreMesh, SkipsUnknownChunksAndWrongLod) {
     auto m = Parse(MeshFile("[MeshSerializer_v1.8]", true, md::ogre::vtype::COLOUR_ARGB, false, true, false), &e);
     ASSERT_EQ(e.kind, md::ogre::ErrorKind::None) << e.Message();
     EXPECT_TRUE(m.has_bounds);
+    ASSERT_EQ(m.lods.size(), 1u);
+    EXPECT_FLOAT_EQ(m.lods[0].distance, 40.f);
+    EXPECT_EQ(m.lods[0].indices[0], (std::vector<uint32_t>{2, 1, 0}));
+}
+
+namespace {
+// v1.100 file: one submesh (3 vertices) and the given MESH_LOD body
+Bytes LodFile100(const Bytes& lod_body) {
+    Bytes f; P16(f, 0x1000); PS(f, "[MeshSerializer_v1.100]");
+    Bytes m; P8(m, 0);
+    Append(m, Geometry(3, md::ogre::vtype::COLOUR_ARGB, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false));
+    Append(m, Submesh(false, {0, 1, 2}, false));
+    Append(m, Chunk(0x8000, lod_body));
+    Append(f, Chunk(0x3000, m));
+    return f;
+}
+Bytes GenOwn(float dist, uint32_t offset, const std::vector<uint16_t>& buf, uint32_t count) {   // one submesh, own 16-bit buffer
+    Bytes g; PF(g, dist); P32(g, count); P32(g, offset); P32(g, 0xFFFFFFFFu); P8(g, 0); P32(g, uint32_t(buf.size()));
+    for (uint16_t i : buf) P16(g, i);
+    return Chunk(0x8120, g);
+}
+Bytes GenShared(float dist, uint32_t offset, uint32_t count, uint32_t level) {
+    Bytes g; PF(g, dist); P32(g, count); P32(g, offset); P32(g, level);
+    return Chunk(0x8120, g);
+}
+}
+
+TEST(OgreMesh, V100LodOwnAndMergedBuffers) {
+    Bytes lod; PS(lod, "distance_sphere"); P16(lod, 3);
+    Append(lod, GenOwn(400.f, 3, {2, 2, 2, 0, 1, 2}, 3));   // level 1 uses the second half of its own buffer
+    Append(lod, GenShared(800.f, 0, 3, 1));                 // level 2 shares level 1's buffer, first half
+    md::ogre::Error e;
+    auto m = Parse(LodFile100(lod), &e);
+    ASSERT_EQ(e.kind, md::ogre::ErrorKind::None) << e.Message();
+    EXPECT_EQ(m.lod_strategy, "distance_sphere");
+    ASSERT_EQ(m.lods.size(), 2u);
+    EXPECT_FLOAT_EQ(m.lods[0].distance, 400.f); EXPECT_FLOAT_EQ(m.lods[1].distance, 800.f);
+    EXPECT_EQ(m.lods[0].indices[0], (std::vector<uint32_t>{0, 1, 2}));
+    EXPECT_EQ(m.lods[1].indices[0], (std::vector<uint32_t>{2, 2, 2}));
+}
+
+TEST(OgreMesh, V100ManualLevelAndBadReferences) {
+    Bytes lod; PS(lod, "distance_sphere"); P16(lod, 2);
+    Bytes man; PF(man, 100.f); PS(man, "far.mesh"); Append(lod, Chunk(0x8110, man));
+    auto m = Parse(LodFile100(lod));
+    ASSERT_EQ(m.lods.size(), 1u);
+    EXPECT_TRUE(m.lods[0].manual); EXPECT_EQ(m.lods[0].manual_name, "far.mesh");
+    Bytes bad; PS(bad, "distance_sphere"); P16(bad, 2); Append(bad, GenShared(100.f, 0, 3, 1));   // level 1 cannot share itself
+    md::ogre::Error e; Parse(LodFile100(bad), &e);
+    EXPECT_NE(e.kind, md::ogre::ErrorKind::None);
+    Bytes oob; PS(oob, "distance_sphere"); P16(oob, 2); Append(oob, GenOwn(100.f, 2, {0, 1, 2}, 3));   // range past its buffer
+    Parse(LodFile100(oob), &e);
+    EXPECT_NE(e.kind, md::ogre::ErrorKind::None);
+    Bytes vtx; PS(vtx, "distance_sphere"); P16(vtx, 2); Append(vtx, GenOwn(100.f, 0, {0, 1, 7}, 3));   // index past the vertex count
+    Parse(LodFile100(vtx), &e);
+    EXPECT_NE(e.kind, md::ogre::ErrorKind::None);
 }
 
 TEST(OgreMesh, ColourOrderArgbVersusAbgr) {
