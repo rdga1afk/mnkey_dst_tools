@@ -133,3 +133,19 @@ TEST(FoliageScatter, DumpMeshMaterialTypes) {   // #205: which foliage records a
     for (const FoliageMesh& m : f.meshes) fprintf(o, "%d\t%s\t%s\t%s\t%s\n", m.material_type, m.record.c_str(), m.mesh.c_str(), m.leaves_mesh.c_str(), m.texture.c_str());
     fclose(o);
 }
+
+// The exe's page pager (ScatterGrassPages) on the hub circle: the same coverage band as the older scatter, nothing beyond the range.
+TEST(FoliageScatter, GrassPagesOfTheHubCircle) {
+    const char* kd = std::getenv("KENSHI_DIR");
+    if (!kd || !*kd || !std::filesystem::exists(std::string(kd) + "/data/gamedata.base")) GTEST_SKIP() << "needs a Kenshi install (KENSHI_DIR), run from the repo root";
+    md::fcs::Install inst(kd); md::fcs::LoadOrder order; md::fcs::Error e; md::fcs::GameDataContainer data;
+    ASSERT_TRUE(inst.LoadOrderFor(order, e) && data.Load(order, e)) << e.Message();
+    Foliage f = LoadFoliage(data);
+    std::vector<Blade> b; std::string err;
+    const float cx = (float)(9647.7 * 10 - 147456), cz = (float)(15038.8 * 10 - 147456);
+    ASSERT_TRUE(ScatterGrassPages(kd, f, cx, cz, 1.f, 1.f, 1000000, b, err)) << err;
+    size_t near50 = 0; for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; if (dx * dx + dz * dz <= 500.f * 500.f) ++near50; }
+    printf("[GrassPages] hub, grass range 1: %zu blades, %zu within 50 m (older scatter: ~1418)\n", b.size(), near50);
+    EXPECT_GT(b.size(), 300u);
+    for (const Blade& x : b) { const float dx = x.x - cx, dz = x.z - cz; ASSERT_LE(dx * dx + dz * dz, 8000.f * 8000.f * 1.0001f); ASSERT_GT(x.size, 0.f); }
+}
