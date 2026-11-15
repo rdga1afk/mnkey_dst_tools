@@ -5,6 +5,7 @@
 #include <monkey_dust/render/ground_slot.h>
 #include "render/scene_render.h"
 #include <atomic>
+#include <csignal>
 #include <chrono>
 #include <condition_variable>
 #include <cmath>
@@ -281,7 +282,12 @@ void WriteLogTail(const std::string& dir) {   // md.sh tees the game output into
 }
 }  // namespace
 
+static std::atomic<bool> g_snap_signal{false};
+static void OnUsr1(int) { g_snap_signal.store(true); }   // only sets the flag: the dump runs on the next frame (Note)
+
 void Note(const MdCamera& cam, float dt, int rw, int rh) {
+    static bool hooked = false; if (!hooked) { hooked = true; struct sigaction sa{}; sa.sa_handler = OnUsr1; sigemptyset(&sa.sa_mask); sa.sa_flags = SA_RESTART; sigaction(SIGUSR1, &sa, nullptr); }
+    if (g_snap_signal.exchange(false)) { if (const char* d = SnapKey()) fprintf(stdout, "[bugcap] SIGUSR1 -> %s\n", d); }
     Row r{};
     Vec3 d = vec3_sub(cam.target, cam.pos);
     r.yaw = atan2f(d.x, d.z) * (180.f / 3.14159265f); r.pitch = atan2f(d.y, sqrtf(d.x * d.x + d.z * d.z)) * (180.f / 3.14159265f);
