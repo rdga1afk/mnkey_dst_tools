@@ -97,6 +97,7 @@ void Init() {
         GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR; sd.gen_mipmap = false;
         if (!m.tex.InitFromFile((mats + "/" + tex[i]).c_str(), sd)) { fprintf(stderr, "[SkyMoons] %s failed\n", tex[i]); return; }
     }
+    md::hlsl::RegisterForPipeline(cv); md::hlsl::RegisterForPipeline(cf);
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/sky_install_moon.vert"; pd.frag_path = "shaders/sky_install_moon.frag";
     pd.vert_spv_path = cv.cache_path.c_str(); pd.frag_spv_path = cf.cache_path.c_str();

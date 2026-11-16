@@ -14,6 +14,8 @@
 #include <regex>
 #include <sstream>
 #include <sys/stat.h>
+#include <deque>
+#include <monkey_dust/render/gpu_spirv_embed.h>
 
 namespace md::hlsl {
 namespace {
@@ -234,6 +236,13 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
     if (!out.valid) { out.log = "SPIR-V validation: " + out.valid_log; return false; }   // not cached
     std::ofstream f(path, std::ios::binary); f.write(reinterpret_cast<const char*>(out.spv.data()), out.spv.size() * 4);
     return true;
+}
+
+void RegisterForPipeline(const Compiled& c) {
+    static std::deque<std::pair<std::string, std::vector<uint32_t>>> keep;   // the registry keeps the pointers: element addresses of a deque stay valid
+    if (c.cache_path.empty() || c.spv.empty()) return;
+    keep.emplace_back(c.cache_path, c.spv);
+    md::RegisterRuntimeSpirv(keep.back().first.c_str(), (const unsigned char*)keep.back().second.data(), keep.back().second.size() * 4);
 }
 
 } // namespace md::hlsl

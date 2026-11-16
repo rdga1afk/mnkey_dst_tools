@@ -26,6 +26,10 @@ bool Compile(const std::string& glue, const std::vector<std::string>& dep_files,
 // original name is declared at the top of the body. Applied to every included file; exposed for the unit test.
 std::string MakeUniformParamsWritable(const std::string& src);
 
+// A release (MD_SHADERS_EMBEDDED_ONLY) reads no SPIR-V file from disk, so a pipeline built from `c.cache_path` (frag_spv_path / vert_spv_path) must have its module registered as runtime SPIR-V
+// under that very path: the install's sky, clouds and moons were drawn as a flat clear colour without it. Call it after a successful Compile of such a program (the runtime table has 8 entries).
+void RegisterForPipeline(const Compiled& c);
+
 const char* Version();
 
 } // namespace md::hlsl

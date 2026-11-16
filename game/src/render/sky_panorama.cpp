@@ -92,7 +92,7 @@ bool SkyPanorama::Init() {
         const std::string orig = md::KenshiDir() + "/data/materials/SkyX/SkyX_Skydome.hlsl";
         std::string glue = kSkyGlue; glue.replace(glue.find("@ORIG@"), 6, orig);
         md::hlsl::Compiled c;
-        if (md::hlsl::Compile(glue, { orig }, 'f', c)) { install_spv = c.cache_path; pd.frag_path = "shaders/sky_install_pano.frag"; pd.frag_spv_path = install_spv.c_str(); use_install_ = true;
+        if (md::hlsl::Compile(glue, { orig }, 'f', c)) { install_spv = c.cache_path; md::hlsl::RegisterForPipeline(c); pd.frag_path = "shaders/sky_install_pano.frag"; pd.frag_spv_path = install_spv.c_str(); use_install_ = true;
             fprintf(stderr, "[SkyPanorama] SkyX_Skydome.hlsl from the install: %s %.1f ms\n", c.from_cache ? "cache" : "compiled", c.compile_ms); }
         else fprintf(stderr, "[SkyPanorama] SkyX_Skydome.hlsl does not compile, old sky stays:\n%s\n", c.log.c_str());
     }

@@ -88,6 +88,7 @@ void Init() {
     if (!md::hlsl::Compile(fs, { orig }, 'f', cf)) { fprintf(stderr, "[SkyClouds] SkyX_Clouds.hlsl does not compile:\n%s\n", cf.log.c_str()); return; }
     GpuSamplerDesc sd; sd.min_filter = GpuSamplerDesc::Filter::LINEAR; sd.gen_mipmap = false;
     if (!g.clouds.InitFromFile((mats + "/SkyX/Clouds.dds").c_str(), sd) || !g.normal.InitFromFile((mats + "/SkyX/CloudsNormal.dds").c_str(), sd) || !g.tile.InitFromFile((mats + "/SkyX/CloudsTile.dds").c_str(), sd)) { fprintf(stderr, "[SkyClouds] textures failed\n"); return; }
+    md::hlsl::RegisterForPipeline(cv); md::hlsl::RegisterForPipeline(cf);
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/sky_install_clouds.vert"; pd.frag_path = "shaders/sky_install_clouds.frag";
     pd.vert_spv_path = cv.cache_path.c_str(); pd.frag_spv_path = cf.cache_path.c_str();
