@@ -174,7 +174,7 @@ done
 echo ""
 echo ""
 echo "── CAS / World3D / NPC Cull (previously missing from this script) ─"
-for s in shaders/cas.vert shaders/cas.frag shaders/upscale.vert shaders/upscale.frag shaders/upscale_light.frag shaders/sgsr1.frag shaders/fxaa.frag shaders/ground_composite.frag shaders/ground_composite_exp.frag shaders/kenshi_lum_adapt.comp \
+for s in shaders/cas.vert shaders/cas.frag shaders/upscale.vert shaders/upscale.frag shaders/upscale_light.frag shaders/sgsr1.frag shaders/sgsr2_convert.frag shaders/sgsr2_upscale.frag shaders/fxaa.frag shaders/ground_composite.frag shaders/ground_composite_exp.frag shaders/kenshi_lum_adapt.comp \
          shaders/world3d.vert shaders/world3d.frag \
          shaders/npc_cull.comp; do
     should_compile "$s" && compile_vulkan "$s" "$SPIRV_DIR/$(basename $s).spv"
