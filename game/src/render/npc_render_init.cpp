@@ -345,6 +345,7 @@ void NpcRender::Init() {
     // resolution_scale (#253): upscale pipeline (the scene target itself is sized per frame, before the cmd buffer).
     SceneRender::Get().upscale_pass_.Init();
     SceneRender::Get().fsr1_.Init();
+    SceneRender::Get().sgsr2_.Init();
     SceneRender::Get().ground_split_pass_.Init();
 
     // Vis/ind buffers + shadow textures — only needed in pure SDL_GPU.

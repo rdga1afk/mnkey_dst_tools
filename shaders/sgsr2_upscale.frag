@@ -1,4 +1,5 @@
 #version 450 core
+#define REQUEST_NDC_Y_UP   // our NDC y points up while the texture v points down (same as terrain_skyvis_apply.frag)
 
 // Port of Qualcomm's Snapdragon GSR 2 (2-pass fragment variant, snapdragon-gsr commit d926f074, sgsr/v2/include/glsl_2_pass_fs/sgsr2_upscale.fs) to our SDL_GPU SPIR-V sets:
 // fragment samplers = set 2, fragment uniform buffers = set 3; the vertex stage is upscale.vert (v_uv at location 0). BSD-3-Clause, see engine/THIRD_PARTY.md.

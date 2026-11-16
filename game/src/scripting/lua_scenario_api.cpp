@@ -295,11 +295,13 @@ float g_feature_terrain_radius = 1500.f;
 static int l_md_set_feature_terrain(lua_State* L) { FeatureScatterSystem::Get().SetTerrainInGbuffer(lua_toboolean(L, 1) != 0); g_feature_terrain_radius = (float)luaL_optnumber(L, 2, 1500.0); return 0; }   // #176: TERRAIN-mode map features into the terrain G-buffer (default off), draw radius m
 extern bool g_opt_fxaa;
 extern bool g_opt_sgsr1;
+extern bool g_opt_sgsr2;
 extern bool g_dynres3; extern float g_dynres3_scale(); extern float g_dynres3_F(); extern float g_dynres3_K();
 static int l_md_set_dynres3(lua_State* L) { g_dynres3 = lua_toboolean(L, 1) != 0; return 0; }   // md.set_dynres3(on): dynres v3 (cost model on the fence waiter GPU ms)
 static int l_md_dynres3_state(lua_State* L) { lua_pushnumber(L, g_dynres3_scale()); lua_pushnumber(L, g_dynres3_F()); lua_pushnumber(L, g_dynres3_K()); return 3; }   // md.dynres3_state() -> controlled scale, F, K
 extern bool g_opt_fsr1;
 static int l_md_set_fsr1(lua_State* L) { g_opt_fsr1 = lua_toboolean(L, 1) != 0; return 0; }   // md.set_fsr1(on): AMD FSR 1 (EASU + RCAS) instead of the bilinear + sharpen upscale
+static int l_md_set_sgsr2(lua_State* L) { g_opt_sgsr2 = lua_toboolean(L, 1) != 0; return 0; }   // dynres 0.6: Snapdragon GSR 2 (temporal) upscale instead of SGSR 1 (scene below native only), default off
 static int l_md_set_sgsr1(lua_State* L) { g_opt_sgsr1 = lua_toboolean(L, 1) != 0; return 0; }   // #198 S1: Snapdragon GSR 1 upscale instead of bilinear + sharpen (scene below native only), default off
 static int l_md_set_fxaa(lua_State* L) { g_opt_fxaa = lua_toboolean(L, 1) != 0; return 0; }   // #180: FXAA 3.11 (Kenshi's parameters) as the last pass, default off
 extern bool g_dynres_on; extern float g_dynres_scale, g_dynres_cur, g_dynres_v_move, g_dynres_w_move, g_dynres_v_stop, g_dynres_w_stop; extern int g_dynres_down, g_dynres_up;
@@ -547,6 +549,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_speed", l_md_set_speed);
     sys.RegisterNamespaceFunction("set_fxaa", l_md_set_fxaa);
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
+    sys.RegisterNamespaceFunction("set_sgsr2", l_md_set_sgsr2);
     sys.RegisterNamespaceFunction("set_fsr1", l_md_set_fsr1);
     sys.RegisterNamespaceFunction("set_dynres3", l_md_set_dynres3);
     sys.RegisterNamespaceFunction("dynres3_state", l_md_dynres3_state);
