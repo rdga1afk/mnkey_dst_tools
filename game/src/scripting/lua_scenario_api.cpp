@@ -378,7 +378,7 @@ static int l_md_gpu_live_resources(lua_State* L) {
     lua_pushinteger(L, rss_kb);                   lua_setfield(L, -2, "rss_kb");
     return 1;
 }
-// md.set_terrain_lod_mode(0|1): 0 = skirts (default), 1 = restricted quadtree (neighbours at most 1 level apart) + border vertices snapped to the coarser neighbour, no skirts (the plugin's way).
+// md.set_terrain_lod_mode(0|1): 1 (default since DE-310) = restricted quadtree (limit log2(cells) - 2 levels) + border vertices snapped to the coarser neighbour, no skirts, no geomorph (the plugin's behaviour); 0 = skirts (old, until after 19.11).
 static int l_md_set_terrain_lod_mode(lua_State* L) { g_terrain_lod_mode = (lua_tointeger(L, 1) == 1) ? 1 : 0; return 0; }
 // md.gbuffer_check(path): A2, one G-buffer sanity check of the live ground on the next rendered frame (decoded albedo and aux targets read back, see render/gbuf_check.h); the verdict line goes to <path> and the log.
 static int l_md_gbuffer_check(lua_State* L) { gbuf_check::Request(luaL_checkstring(L, 1)); return 0; }
