@@ -12,6 +12,8 @@ public:
     void Shutdown();
     bool Ready() const { return ready_; }
     // (Re)create the motion target (render size) and both history targets (display size). Call outside a frame (like UpscalePass::Ensure).
+    // Once per frame BEFORE any camera matrix is built: the next Halton (2, 3) phase of 16, scaled to the render size, into g_proj_jitter_ndc. Zero when `on` is false.
+    void BeginFrame(bool on);
     void Ensure(int render_w, int render_h, int out_w, int out_h);
     // scene = internal-size colour, depth = internal-size sampleable depth (standard Z), inv_vp = inverse view-projection (column-major, y-up NDC)
     void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, SDL_GPUSampler* depth_sampler, const float inv_vp[16], md::GpuTextureHandle out);
@@ -19,6 +21,8 @@ private:
     GpuPipeline convert_, upscale_, blit_;
     SDL_GPUTexture* motion_ = nullptr; SDL_GPUTexture* zero_ = nullptr; bool zero_ready_ = false; SDL_GPUTexture* hist_[2] = {};
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
+    float jit_px_[2] = {};   // the jitter of this frame in render pixels (-0.5..0.5): the UBO jitterOffset, and the part removed from the view-projection
+    int jit_n_ = 0;
     int rw_ = 0, rh_ = 0, ow_ = 0, oh_ = 0, cur_ = 0;
     double prev_vp_[16] = {}; bool have_prev_ = false;
     bool ready_ = false;

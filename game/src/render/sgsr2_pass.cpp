@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <monkey_dust/render/md_camera.h>
 
 namespace {
 // column-major 4x4 inverse (cofactor form), double precision; false when singular
@@ -44,6 +45,15 @@ struct Params {   // std140, the UBO of both shaders (128 B)
     float fov_tan, min_lerp, reset; uint32_t same_camera;
 };
 static_assert(sizeof(Params) == 128, "std140 layout of the SGSR 2 UBO");
+}
+
+void Sgsr2Pass::BeginFrame(bool on) {
+    if (!on || !rw_) { g_proj_jitter_ndc[0] = g_proj_jitter_ndc[1] = 0.f; jit_px_[0] = jit_px_[1] = 0.f; return; }
+    auto halton = [](int i, int b) { float f = 1.f, r = 0.f; while (i > 0) { f /= (float)b; r += f * (float)(i % b); i /= b; } return r; };
+    const int i = (jit_n_++ & 15) + 1;
+    jit_px_[0] = halton(i, 2) - 0.5f; jit_px_[1] = halton(i, 3) - 0.5f;
+    g_proj_jitter_ndc[0] = jit_px_[0] * 2.f / (float)rw_;
+    g_proj_jitter_ndc[1] = -jit_px_[1] * 2.f / (float)rh_;   // texture v points down, NDC y up (sign checked: the other three combinations are further from the native frame)
 }
 
 bool Sgsr2Pass::Init() {
@@ -107,6 +117,11 @@ void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL
     double inv[16], vp[16];
     for (int i = 0; i < 16; ++i) inv[i] = (double)inv_vp_f[i];
     if (!Inv4(inv, vp)) return;
+    {   // the matrices of this frame carry the jitter (clip.xy += jitter * w): take it out, the history lives in the unjittered output space
+        const double jx = (double)g_proj_jitter_ndc[0], jy = (double)g_proj_jitter_ndc[1];
+        for (int c = 0; c < 4; ++c) { vp[c*4 + 0] -= jx * vp[c*4 + 3]; vp[c*4 + 1] -= jy * vp[c*4 + 3]; }
+        if (!Inv4(vp, inv)) return;
+    }
     double ctp[16];
     const bool reset = !have_prev_;
     if (have_prev_) Mul4(prev_vp_, inv, ctp); else { for (int i = 0; i < 16; ++i) ctp[i] = (i % 5 == 0) ? 1.0 : 0.0; }
@@ -124,6 +139,7 @@ void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL
     p.render_rcp[0] = 1.f / rw_; p.render_rcp[1] = 1.f / rh_; p.output_rcp[0] = 1.f / ow_; p.output_rcp[1] = 1.f / oh_;
     const float ratio = (float)ow_ / (float)rw_;
     p.scale_ratio[0] = std::fmin(20.f, std::pow((float)(ow_ * oh_) / (float)(rw_ * rh_), 3.f)); p.scale_ratio[1] = ratio;
+    p.jitter[0] = jit_px_[0]; p.jitter[1] = jit_px_[1];
     p.fov_tan = (float)std::tan(fov * 0.5); p.min_lerp = 0.25f; p.reset = reset ? 1.f : 0.f; p.same_camera = (have_prev_ && diff < 1e-5) ? 1u : 0u;
     std::memcpy(prev_vp_, vp, sizeof(vp)); have_prev_ = true;
 

@@ -291,6 +291,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         SceneRender::Get().upscale_pass_.Ensure(cur_w, cur_h,
                             SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
                     if (g_opt_sgsr2 && UpscaleActive()) SceneRender::Get().sgsr2_.Ensure(cur_w, cur_h, window_get_width(), window_get_height());
+                    SceneRender::Get().sgsr2_.BeginFrame(g_opt_sgsr2 && UpscaleActive() && EffectiveResolutionScale() < 0.999f);
                     if (g_opt_fsr1 && UpscaleActive()) SceneRender::Get().fsr1_.Ensure(window_get_width(), window_get_height(), SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
                     {
                         auto& sr_g = SceneRender::Get();
