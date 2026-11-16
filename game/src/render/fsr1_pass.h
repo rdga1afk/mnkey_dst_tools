@@ -14,7 +14,8 @@ public:
     // EASU: src = the scene colour (src_w x src_h) -> the display-size target Tex() (out_w x out_h)
     void Easu(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* src, int src_w, int src_h, int out_w, int out_h);
     // RCAS: Tex() -> the real swapchain `out`; sharpness 0..1 (1 = the strongest; AMD's default 0.2 stops = 0.9)
-    void Rcas(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out, float sharpness);
+    // `src` = another display-size texture (the SGSR 2 history) instead of Tex(); `perceptual_in` = its values are linear and RCAS wants perceptual ones (sRGB swapchain)
+    void Rcas(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out, float sharpness, SDL_GPUTexture* src = nullptr, int perceptual_in = -1);
     SDL_GPUTexture* Tex() const { return tex_; }
     int W() const { return w_; }
     int H() const { return h_; }

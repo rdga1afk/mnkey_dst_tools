@@ -84,17 +84,17 @@ void Fsr1Pass::Easu(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* src, int sw,
     cb.Draw(3, 0); cb.EndPass();
 }
 
-void Fsr1Pass::Rcas(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out, float sharpness) {
-    if (!ready_ || !tex_ || !out) return;
+void Fsr1Pass::Rcas(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out, float sharpness, SDL_GPUTexture* src, int perceptual_in) {
+    if (!ready_ || !(src || tex_) || !out) return;
     GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd = cmd; cpd.color_tex[0] = out; cpd.depth_tex = nullptr; cpd.load_color = false;
     cb.BeginColorPass(cpd);
     cb.BindPipeline(&rcas_);
-    SDL_GPUTextureSamplerBinding b{ tex_, sampler_ };
+    SDL_GPUTextureSamplerBinding b{ src ? src : tex_, sampler_ };
     cb.BindFragmentSamplers(0, &b, 1);
     struct { uint32_t con[4]; float params[4]; } u{};
     RcasConstants(sharpness, u.con);
-    u.params[0] = Srgb() ? 1.f : 0.f;
+    u.params[0] = perceptual_in >= 0 ? (float)perceptual_in : (Srgb() ? 1.f : 0.f);
     cb.PushFragmentUniforms(0, &u, sizeof(u));
     cb.Draw(3, 0); cb.EndPass();
 }

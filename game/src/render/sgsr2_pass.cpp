@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include "fsr1_pass.h"
+extern bool g_sgsr2_fsr2;   // npc_render_deferred.cpp: md.set_sgsr2_fsr2
 #include <monkey_dust/render/md_camera.h>
 
 namespace {
@@ -112,7 +114,7 @@ void Sgsr2Pass::Ensure(int rw, int rh, int ow, int oh) {
     have_prev_ = false;   // the history is empty: the first frame resets the accumulation
 }
 
-void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp_f[16], md::GpuTextureHandle out) {
+void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp_f[16], md::GpuTextureHandle out, Fsr1Pass* rcas, float rcas_sharp, bool srgb_out) {
     if (!ready_ || !rw_ || !scene || !depth || !out) return;
     // the exact view-projection of this frame (with the jitter): the clip position was shifted by jitter * w, take it out; the inverse of the float inverse (S7InvVp) is useless here: near 0.5 m / far 1e5 m makes it ~1e-3 off
     double vp[16], inv[16];
@@ -147,7 +149,7 @@ void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL
     const float ratio = (float)ow_ / (float)rw_;
     p.scale_ratio[0] = std::fmin(20.f, std::pow((float)(ow_ * oh_) / (float)(rw_ * rh_), 3.f)); p.scale_ratio[1] = ratio;
     p.jitter[0] = jit_px_[0]; p.jitter[1] = jit_px_[1];
-    p.fov_tan = (float)std::tan(fov * 0.5); p.min_lerp = 0.25f; p.reset = reset ? 1.f : 0.f; p.same_camera = (have_prev_ && motion_px < 0.05) ? 1u : 0u;
+    p.fov_tan = (float)std::tan(fov * 0.5); p.min_lerp = 0.25f; p.reset = reset ? 1.f : 0.f; p.same_camera = ((have_prev_ && motion_px < 0.05) ? 1u : 0u) | (g_sgsr2_fsr2 ? 0u : 2u);   // bit 1: the FSR 2 parts of the shader off (cost measurement, md.set_sgsr2_fsr2)
     if (p.same_camera) for (int i = 0; i < 16; ++i) p.clip_to_prev[i] = (i % 5 == 0) ? 1.f : 0.f;   // a still camera has exactly zero motion (float noise of the matrix product is above the shader's 1e-6 test and drops the history)
     std::memcpy(prev_vp_, vp, sizeof(vp)); have_prev_ = true;
 
@@ -173,6 +175,7 @@ void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL
     cb.PushFragmentUniforms(0, &p, sizeof(p));
     cb.Draw(3, 0); cb.EndPass();
 
+    if (rcas && rcas->Ready() && rcas_sharp > 0.f) { rcas->Rcas(cmd, out, rcas_sharp, next, srgb_out ? 1 : 0); cur_ ^= 1; return; }
     cpd.color_tex[0] = out; cpd.load_color = false;
     cb.BeginColorPass(cpd);
     cb.BindPipeline(&blit_);

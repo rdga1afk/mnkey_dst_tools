@@ -36,8 +36,35 @@ layout(std140, set = 3, binding = 0) uniform Params
     uint                       bSameCamera;
 } params;
 
+// FSR 2 parts added to the SGSR 2 port (DE-311): variance box and history clip in YCoCg, thin-feature lock. Ported in our own words from
+// GPUOpen-Effects/FidelityFX-FSR2 (MIT, Copyright (c) 2022-2023 Advanced Micro Devices, Inc.; src/ffx-fsr2-api/shaders: ffx_fsr2_common.h RGBToYCoCg, ffx_fsr2_accumulate.h RectifyHistory, ffx_fsr2_lock.h ComputeThinFeatureConfidence), see engine/THIRD_PARTY.md.
+// bSameCamera bit 1 (value 2) = switch the FSR 2 parts off (cost measurement only).
+vec3 RGBToYCoCg(vec3 c) { return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
+vec3 YCoCgToRGB(vec3 y) { return vec3(y.x + y.y - y.z, y.x + y.z, y.x - y.y - y.z); }
+
+// thin bright / dark ridge in the 3x3 neighbourhood of the render pixel (FSR 2 ComputeThinFeatureConfidence, luma = YCoCg Y)
+bool ThinFeature(ivec2 pos) {
+    float l[9]; int k = 0;
+    for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x, ++k) {
+        ivec2 q = clamp(pos + ivec2(x, y), ivec2(0), ivec2(params.renderSize) - ivec2(1));
+        vec3 c = texelFetch(InputColor, q, 0).xyz; l[k] = 0.25 * c.r + 0.5 * c.g + 0.25 * c.b;
+    }
+    float nuc = l[4]; uint mask = 1u << 4; float dmin = 3.4e38, dmax = 0.0;
+    for (int i = 0; i < 9; ++i) {
+        if (i == 4) continue;
+        float d = max(l[i], nuc) / max(min(l[i], nuc), 1e-6);
+        if (d > 0.0 && d < 1.05) mask |= 1u << uint(i); else { dmin = min(dmin, l[i]); dmax = max(dmax, l[i]); }
+    }
+    if (!(nuc > dmax || nuc < dmin)) return false;
+    const uint rej[4] = uint[4](0x01Bu, 0x036u, 0x0D8u, 0x1B0u);   // upper left, upper right, lower left, lower right 2x2 blocks
+    for (int i = 0; i < 4; ++i) if ((mask & rej[i]) == rej[i]) return false;
+    return true;
+}
+
 void main()
 {
+    const bool fsr2 = (params.bSameCamera & 2u) == 0u;
+    const bool still = (params.bSameCamera & 1u) != 0u;
     float Biasmax_viewportXScale = params.scaleRatio.x;
     float scalefactor = params.scaleRatio.y;
 
@@ -83,89 +110,101 @@ void main()
     vec2 srcpos_srcOutputPos = srcpos - Hruv * params.renderSize;  //srcOutputPos = Hruv * params.renderSize;
     vec3 rectboxmin;
     vec3 rectboxmax;
+    vec3 rgbmin;
+    vec3 rgbmax;
     vec3 topMid = texelFetch(InputColor, InputPos + ivec2(0, 1), 0).xyz;
     {
 
         vec3 samplecolor = topMid;
+
+        vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
         vec2 baseoffset = srcpos_srcOutputPos + vec2(0.0, 1.0);
         float baseoffset_dot = dot(baseoffset, baseoffset);
         float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
         float weight = FastLanczos(base);
         Upsampledcw += vec4(samplecolor * weight, weight);
         float boxweight = exp(baseoffset_dot * curvebias);
-        rectboxmin = samplecolor;
-        rectboxmax = samplecolor;
-        vec3 wsample = samplecolor * boxweight;
+        rectboxmin = yc; rgbmin = samplecolor;
+        rectboxmax = yc; rgbmax = samplecolor;
+        vec3 wsample = yc * boxweight;
         rectboxcenter += wsample;
-        rectboxvar += (samplecolor * wsample);
+        rectboxvar += (yc * wsample);
         rectboxweight += boxweight;
     }
     vec3 rightMid = texelFetch(InputColor, InputPos + ivec2(1, 0), 0).xyz;
     {
 
         vec3 samplecolor = rightMid;
+
+        vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
         vec2 baseoffset = srcpos_srcOutputPos + vec2(1.0, 0.0);
         float baseoffset_dot = dot(baseoffset, baseoffset);
         float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
         float weight = FastLanczos(base);
         Upsampledcw += vec4(samplecolor * weight, weight);
         float boxweight = exp(baseoffset_dot * curvebias);
-        rectboxmin = min(rectboxmin, samplecolor);
-        rectboxmax = max(rectboxmax, samplecolor);
-        vec3 wsample = samplecolor * boxweight;
+        rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+        rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+        vec3 wsample = yc * boxweight;
         rectboxcenter += wsample;
-        rectboxvar += (samplecolor * wsample);
+        rectboxvar += (yc * wsample);
         rectboxweight += boxweight;
     }
     vec3 leftMid = texelFetch(InputColor, InputPos + ivec2(-1, 0) , 0).xyz;
     {
 
         vec3 samplecolor = leftMid;
+
+        vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
         vec2 baseoffset = srcpos_srcOutputPos + vec2(-1.0, 0.0);
         float baseoffset_dot = dot(baseoffset, baseoffset);
         float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
         float weight = FastLanczos(base);
         Upsampledcw += vec4(samplecolor * weight, weight);
         float boxweight = exp(baseoffset_dot * curvebias);
-        rectboxmin = min(rectboxmin, samplecolor);
-        rectboxmax = max(rectboxmax, samplecolor);
-        vec3 wsample = samplecolor * boxweight;
+        rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+        rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+        vec3 wsample = yc * boxweight;
         rectboxcenter += wsample;
-        rectboxvar += (samplecolor * wsample);
+        rectboxvar += (yc * wsample);
         rectboxweight += boxweight;
     }
     vec3 centerMid = texelFetch(InputColor, InputPos + ivec2(0, 0) , 0).xyz;
     {
 
         vec3 samplecolor = centerMid;
+
+        vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
         vec2 baseoffset = srcpos_srcOutputPos;
         float baseoffset_dot = dot(baseoffset, baseoffset);
         float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
         float weight = FastLanczos(base);
         Upsampledcw += vec4(samplecolor * weight, weight);
         float boxweight = exp(baseoffset_dot * curvebias);
-        rectboxmin = min(rectboxmin, samplecolor);
-        rectboxmax = max(rectboxmax, samplecolor);
-        vec3 wsample = samplecolor * boxweight;
+        rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+        rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+        vec3 wsample = yc * boxweight;
         rectboxcenter += wsample;
-        rectboxvar += (samplecolor * wsample);
+        rectboxvar += (yc * wsample);
         rectboxweight += boxweight;
     }
     vec3 btmMid = texelFetch(InputColor, InputPos + ivec2(0, -1) , 0).xyz;
     {
 
         vec3 samplecolor = btmMid;
+
+        vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
         vec2 baseoffset = srcpos_srcOutputPos + vec2(0.0, -1.0);
         float baseoffset_dot = dot(baseoffset, baseoffset);
         float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
         float weight = FastLanczos(base);
         Upsampledcw += vec4(samplecolor * weight, weight);
         float boxweight = exp(baseoffset_dot * curvebias);
-        rectboxmin = min(rectboxmin, samplecolor);
-        rectboxmax = max(rectboxmax, samplecolor);
-        vec3 wsample = samplecolor * boxweight;
+        rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+        rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+        vec3 wsample = yc * boxweight;
         rectboxcenter += wsample;
-        rectboxvar += (samplecolor * wsample);
+        rectboxvar += (yc * wsample);
         rectboxweight += boxweight;
     }
 
@@ -175,66 +214,70 @@ void main()
         {
             vec3 topRight = texelFetch(InputColor, InputPos + ivec2(1, 1), 0).xyz;
             vec3 samplecolor = topRight;
+            vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
             vec2 baseoffset = srcpos_srcOutputPos + vec2(1.0, 1.0);
             float baseoffset_dot = dot(baseoffset, baseoffset);
             float base = clamp(baseoffset_dot * kernelbias2, 0.0, 1.0);
             float weight = FastLanczos(base);
             Upsampledcw += vec4(samplecolor * weight, weight);
             float boxweight = exp(baseoffset_dot * curvebias);
-            rectboxmin = min(rectboxmin, samplecolor);
-            rectboxmax = max(rectboxmax, samplecolor);
-            vec3 wsample = samplecolor * boxweight;
+            rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+            rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+            vec3 wsample = yc * boxweight;
             rectboxcenter += wsample;
-            rectboxvar += (samplecolor * wsample);
+            rectboxvar += (yc * wsample);
             rectboxweight += boxweight;
         }
         {
             vec3 topLeft = texelFetch(InputColor, InputPos + ivec2(-1, 1), 0).xyz;
             vec3 samplecolor = topLeft;
+            vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
             vec2 baseoffset = srcpos_srcOutputPos + vec2(-1.0, 1.0);
             float baseoffset_dot = dot(baseoffset, baseoffset);
             float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
             float weight = FastLanczos(base);
             Upsampledcw += vec4(samplecolor * weight, weight);
             float boxweight = exp(baseoffset_dot * curvebias);
-            rectboxmin = min(rectboxmin, samplecolor);
-            rectboxmax = max(rectboxmax, samplecolor);
-            vec3 wsample = samplecolor * boxweight;
+            rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+            rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+            vec3 wsample = yc * boxweight;
             rectboxcenter += wsample;
-            rectboxvar += (samplecolor * wsample);
+            rectboxvar += (yc * wsample);
             rectboxweight += boxweight;
         }
         {
             vec3 btmRight = texelFetch(InputColor, InputPos + ivec2(1, -1) , 0).xyz;
             vec3 samplecolor = btmRight;
+            vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
             vec2 baseoffset = srcpos_srcOutputPos + vec2(1.0, -1.0);
             float baseoffset_dot = dot(baseoffset, baseoffset);
             float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
             float weight = FastLanczos(base);
             Upsampledcw += vec4(samplecolor * weight, weight);
             float boxweight = exp(baseoffset_dot * curvebias);
-            rectboxmin = min(rectboxmin, samplecolor);
-            rectboxmax = max(rectboxmax, samplecolor);
-            vec3 wsample = samplecolor * boxweight;
+            rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+            rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+            vec3 wsample = yc * boxweight;
             rectboxcenter += wsample;
-            rectboxvar += (samplecolor * wsample);
+            rectboxvar += (yc * wsample);
             rectboxweight += boxweight;
         }
 
         {
             vec3 btmLeft = texelFetch(InputColor, InputPos + ivec2(-1, -1) , 0).xyz;
             vec3 samplecolor = btmLeft;
+            vec3 yc = fsr2 ? RGBToYCoCg(samplecolor) : samplecolor;
             vec2 baseoffset = srcpos_srcOutputPos + vec2(-1.0, -1.0);
             float baseoffset_dot = dot(baseoffset, baseoffset);
             float base = clamp(baseoffset_dot * kernelbias2, 0.0f, 1.0f);
             float weight = FastLanczos(base);
             Upsampledcw += vec4(samplecolor * weight, weight);
             float boxweight = exp(baseoffset_dot * curvebias);
-            rectboxmin = min(rectboxmin, samplecolor);
-            rectboxmax = max(rectboxmax, samplecolor);
-            vec3 wsample = samplecolor * boxweight;
+            rectboxmin = min(rectboxmin, yc); rgbmin = min(rgbmin, samplecolor);
+            rectboxmax = max(rectboxmax, yc); rgbmax = max(rgbmax, samplecolor);
+            vec3 wsample = yc * boxweight;
             rectboxcenter += wsample;
-            rectboxvar += (samplecolor * wsample);
+            rectboxvar += (yc * wsample);
             rectboxweight += boxweight;
         }
     }
@@ -244,7 +287,7 @@ void main()
     rectboxvar *= rectboxweight;
     rectboxvar = sqrt(abs(rectboxvar - rectboxcenter * rectboxcenter));
 
-    Upsampledcw.xyz =  clamp(Upsampledcw.xyz / Upsampledcw.w, rectboxmin-vec3(0.075), rectboxmax+vec3(0.075));
+    Upsampledcw.xyz =  clamp(Upsampledcw.xyz / Upsampledcw.w, rgbmin-vec3(0.075), rgbmax+vec3(0.075));
     Upsampledcw.w = Upsampledcw.w * (1.0f / 3.0f) ;
 
     float baseupdate = 1.0f - depthfactor;
@@ -261,12 +304,15 @@ void main()
     rectboxmax = min(rectboxmax, boxmax);
     rectboxmin = max(rectboxmin, boxmin);
 
-    vec3 clampedcolor = clamp(HistoryColor, rectboxmin, rectboxmax);
+    vec3 histbox = fsr2 ? RGBToYCoCg(HistoryColor) : HistoryColor;
+    vec3 clampedcolor = clamp(histbox, rectboxmin, rectboxmax);
+    if (fsr2) clampedcolor = YCoCgToRGB(clampedcolor);
     float startLerpValue = params.minLerpContribution;
     if ((abs(mda.x) + abs(mda.y)) > 0.000001) startLerpValue = 0.0;
-    float lerpcontribution = (any(greaterThan(rectboxmin, HistoryColor)) || any(greaterThan(HistoryColor, rectboxmax))) ? startLerpValue : 1.0f;
+    float lerpcontribution = (any(greaterThan(rectboxmin, histbox)) || any(greaterThan(histbox, rectboxmax))) ? startLerpValue : 1.0f;
 
-    if (params.bSameCamera != 0u) lerpcontribution = max(lerpcontribution, 0.8);   // OWN CHANGE (not in the Qualcomm shader): a still camera keeps 80 % of an out-of-box history per frame; the full clamp followed the jitter phase (still-to-still mean abs diff 0.3-4 / 255 against 0.005)
+    if (fsr2 && motion_viewport_len < 0.5 && ThinFeature(InputPos)) lerpcontribution = max(lerpcontribution, 0.9);   // thin stable feature: keep the history (FSR 2 lock)
+    if (still) lerpcontribution = max(lerpcontribution, 0.8);   // OWN CHANGE (not in the Qualcomm shader): a still camera keeps 80 % of an out-of-box history per frame; the full clamp followed the jitter phase (still-to-still mean abs diff 0.3-4 / 255 against 0.005)
     HistoryColor = mix(clampedcolor, HistoryColor, clamp(lerpcontribution, 0.0, 1.0));
     float basemin = min(basealpha, 0.1f);
     basealpha = mix(basemin, basealpha, clamp(lerpcontribution, 0.0, 1.0));
@@ -275,7 +321,7 @@ void main()
     float alphasum = max(EPSILON, basealpha + Upsampledcw.w);
     float alpha = clamp(Upsampledcw.w / alphasum, 0.0, 1.0);
     // OWN CHANGE (not in the Qualcomm shader): with a still camera the jittered samples are accumulated slowly (1/64 per frame) instead of ~0.3
-    if (params.bSameCamera != 0u) alpha = min(alpha, 1.0 / 64.0);
+    if (still) alpha = min(alpha, 1.0 / 64.0);
     alpha = clamp(alpha + params.reset, 0.0, 1.0);
 
     Upsampledcw.xyz = mix(HistoryColor, Upsampledcw.xyz, alpha);

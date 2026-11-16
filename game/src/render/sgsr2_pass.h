@@ -16,7 +16,8 @@ public:
     void BeginFrame(bool on);
     void Ensure(int render_w, int render_h, int out_w, int out_h);
     // scene = internal-size colour, depth = internal-size sampleable depth (standard Z), vp = this frame's view-projection WITH the jitter (column-major, y-up NDC)
-    void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp[16], md::GpuTextureHandle out);
+    // rcas != nullptr and rcas_sharp > 0: FSR 1 RCAS (shared Fsr1Pass pipeline) sharpens the history onto `out` instead of the plain copy; `srgb_out` = the swapchain is sRGB
+    void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp[16], md::GpuTextureHandle out, class Fsr1Pass* rcas = nullptr, float rcas_sharp = 0.f, bool srgb_out = false);
 private:
     GpuPipeline convert_, upscale_, blit_;
     SDL_GPUTexture* motion_ = nullptr; SDL_GPUTexture* zero_ = nullptr; bool zero_ready_ = false; SDL_GPUTexture* hist_[2] = {};

@@ -30,6 +30,8 @@ float NpcRender::EffectiveResolutionScale() {
 }
 
 bool  g_opt_fsr1 = false;    // md.set_fsr1: AMD FSR 1 upscale (EASU + RCAS, shaders/fsr1_*.frag), scene below native only, default off
+bool  g_sgsr2_fsr2 = true;   // md.set_sgsr2_fsr2: the FSR 2 parts of the SGSR 2 shader (YCoCg box, thin-feature lock); off only to measure their cost
+float g_sgsr2_rcas = 0.f;   // md.set_sgsr2_rcas: FSR 1 RCAS sharpness (0..1) after the SGSR 2 output, 0 = off (DE-311)
 bool  g_opt_sgsr2 = false;   // md.set_sgsr2: Snapdragon GSR 2 (temporal) instead of SGSR 1, scene below native only, default off (dynres 0.6)
 bool  g_opt_sgsr1 = true;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default on (DE-283)
 bool  g_opt_fxaa = false;   // #180 md.set_fxaa: FXAA 3.11 with Kenshi's parameters as the last pass (the scene goes through the intermediate target)
@@ -525,7 +527,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }
                             if (!upscaled && g_opt_sgsr2 && sr_up.sgsr2_.Ready() && EffectiveResolutionScale() < 0.999f) {   // dynres 0.6: SGSR 2, depth of the G-buffer (terrain + NPC prepass) and the inverse view-projection of this frame
                                 auto& tsp_up = sr_up.terrain_shading_projected_;
-                                GpuPushDebugGroup(fc.cmd, "SGSR2"); sr_up.sgsr2_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), tsp_up.GBufferDepth().SDLTexture(), sr_up.sgsr2_vp_, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                                GpuPushDebugGroup(fc.cmd, "SGSR2"); { const SDL_GPUTextureFormat sf = SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()); sr_up.sgsr2_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), tsp_up.GBufferDepth().SDLTexture(), sr_up.sgsr2_vp_, real_sc, &sr_up.fsr1_, g_sgsr2_rcas, sf == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB || sf == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB); } GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
                             if (!upscaled && g_opt_sgsr1 && sr_up.upscale_pass_.Sgsr1Ready() && EffectiveResolutionScale() < 0.999f) { GpuPushDebugGroup(fc.cmd, "SGSR1"); sr_up.upscale_pass_.ApplySgsr1(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }   // #198 S1
                             if (!upscaled && g_opt_fsr1 && sr_up.fsr1_.Ready() && sr_up.fsr1_.Tex() && EffectiveResolutionScale() < 0.999f) {   // FSR 1: EASU to the window size, RCAS onto the swapchain
