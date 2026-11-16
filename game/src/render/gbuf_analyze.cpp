@@ -50,4 +50,12 @@ bool Analyze(const uint16_t* A, const uint16_t* B, size_t n, char* text, size_t 
     return why.empty();
 }
 
+
+bool AnalyzeDistance(const float* d, size_t n, char* text, size_t text_size) {
+    size_t nan_px = 0, neg_px = 0, pos = 0;
+    for (size_t i = 0; i < n; ++i) { if (!std::isfinite(d[i])) ++nan_px; else if (d[i] < 0.f) ++neg_px; else if (d[i] > 0.f) ++pos; }
+    const bool ok = !nan_px && !neg_px && pos >= n / 100;
+    snprintf(text, text_size, "distance_target: %s nan=%zu neg=%zu positive=%zu/%zu", ok ? "PASS" : "FAIL", nan_px, neg_px, pos, n);
+    return ok;
+}
 }

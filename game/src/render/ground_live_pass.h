@@ -82,6 +82,7 @@ public:
     SDL_GPUTexture* Albedo() const { return t_[0]; }
     SDL_GPUTexture* Normal() const { return t_[1]; }
     SDL_GPUTexture* Dist() const { return t_[2]; }
+    SDL_GPUTexture* Raw(int i) const { return (i >= 0 && i < 3) ? t_[i] : nullptr; }   // the 3 raw G-buffer targets (RGBA8, RGBA8, R32F distance); the A2 check reads t_[2]
     SDL_GPUTexture* AuxB() const { return aux_; }   // Decode(): the world normal as stored (rgb, 0..1) + the distance (a, 0 = not written), RGBA16F
     SDL_GPUTexture* AlbedoRgb() const { return rgb_; }   // Decode(): decodePixel of the albedo target + gloss in alpha, RGBA16F
     bool Decode(SDL_GPUCommandBuffer* cmd);                // after Run()

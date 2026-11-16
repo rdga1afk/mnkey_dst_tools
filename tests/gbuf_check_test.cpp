@@ -28,5 +28,13 @@ int main() {
     Fill(A, B); for (size_t i = 0; i < N; ++i) { B[i * 4] = A[i * 4]; B[i * 4 + 1] = A[i * 4 + 1]; B[i * 4 + 2] = A[i * 4 + 2]; } expect("albedo written into the normal target fails", false);
     Fill(A, B); for (size_t i = 0; i < N; ++i) { B[i * 4] = H(1.0f); B[i * 4 + 1] = H(1.0f); B[i * 4 + 2] = H(1.0f); } expect("normal of length 1.7 fails", false);
     Fill(A, B); for (size_t i = 0; i < N; i += 9) A[i * 4 + 1] = H(-0.3f); expect("negative albedo fails", false);
+    { // the raw R32F distance target
+        std::vector<float> d(N, 120.f); char t[200];
+        auto dexp = [&](const char* what, bool want) { const bool ok = gbuf_check::AnalyzeDistance(d.data(), N, t, sizeof t); const bool good = ok == want; printf("%s: %s (%s)\n", good ? "PASS" : "FAIL", what, ok ? "check passed" : "check failed"); if (!good) { ++fails; puts(t); } };
+        dexp("distance target of positive values passes", true);
+        d[5] = NAN; dexp("NaN in the distance target fails", false);
+        d.assign(N, 120.f); d[9] = -1.f; dexp("negative distance fails", false);
+        d.assign(N, 0.f); dexp("distance target with nothing written fails", false);
+    }
     printf(fails ? "gbuf_check test: FAIL (%d)\n" : "gbuf_check test: PASS\n", fails); return fails ? 1 : 0;
 }
