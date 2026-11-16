@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -171,10 +172,19 @@ def cmd_run(args) -> int:
     if args.max_seconds:
         cmd += ["--max-seconds", str(args.max_seconds)]
 
+    # the release env is the default (parity audit 17.11: runs without it show the old ground / light path); MD_LEGACY=1 = the old path, labelled [legacy]
+    legacy = os.environ.get("MD_LEGACY") == "1"
+    run_env = dict(os.environ)
+    if not legacy:
+        for line in (REPO_ROOT / "scripts" / "release_env.sh").read_text().splitlines():
+            if line.startswith("export "):
+                for m in re.finditer(r"(MD_[A-Z_]+)=\$\{\1:-([^}]*)\}", line):
+                    run_env.setdefault(m.group(1), m.group(2))
+    label = "[legacy]" if legacy else "[release]"
     code, log, tail = run_logged(cmd, tag=f"run_{script.stem}",
-                                  timeout=args.timeout or 120)
+                                  timeout=args.timeout or 120, env=run_env)
     status = {0: "OK"}.get(code, "FAIL" if code == 1 else ("WATCHDOG" if code == 124 else f"exit={code}"))
-    print(f"[md_ctl run] {script.name} seed={args.seed} {status} (exit={code})")
+    print(f"[md_ctl run] {script.name} seed={args.seed} {status} (exit={code}) {label}")
     print(f"  log: {log}")
     if code != 0:
         fail_lines = [l for l in tail.splitlines() if "FAIL" in l or "artifact" in l]
