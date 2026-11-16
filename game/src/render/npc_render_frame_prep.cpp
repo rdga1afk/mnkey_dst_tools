@@ -484,6 +484,7 @@ if (sr_prepass.terrain_granite_ready) {
     float r_asp4 = (float)window_get_width() / (float)window_get_height();
     MdCamera g_abs_cam4 = sr_prepass.GraniteAbsCam(cam);
     Mat4 g_vp4 = g_abs_cam4.ViewProjMatrix(r_asp4);
+    memcpy(sr_prepass.sgsr2_vp_, mat4_ptr(g_vp4), sizeof(sr_prepass.sgsr2_vp_));
     TownBuildings::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z);
     TownFoliage::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z);
     md::nav::NavWorld::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z);

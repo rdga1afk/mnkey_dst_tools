@@ -266,13 +266,17 @@ void main()
     if ((abs(mda.x) + abs(mda.y)) > 0.000001) startLerpValue = 0.0;
     float lerpcontribution = (any(greaterThan(rectboxmin, HistoryColor)) || any(greaterThan(HistoryColor, rectboxmax))) ? startLerpValue : 1.0f;
 
+    if (params.bSameCamera != 0u) lerpcontribution = max(lerpcontribution, 0.8);   // OWN CHANGE (not in the Qualcomm shader): a still camera keeps 80 % of an out-of-box history per frame; the full clamp followed the jitter phase (still-to-still mean abs diff 0.3-4 / 255 against 0.005)
     HistoryColor = mix(clampedcolor, HistoryColor, clamp(lerpcontribution, 0.0, 1.0));
     float basemin = min(basealpha, 0.1f);
     basealpha = mix(basemin, basealpha, clamp(lerpcontribution, 0.0, 1.0));
 
     ////blend color
     float alphasum = max(EPSILON, basealpha + Upsampledcw.w);
-    float alpha = clamp(Upsampledcw.w / alphasum + params.reset, 0.0, 1.0);
+    float alpha = clamp(Upsampledcw.w / alphasum, 0.0, 1.0);
+    // OWN CHANGE (not in the Qualcomm shader): with a still camera the jittered samples are accumulated slowly (1/64 per frame) instead of ~0.3
+    if (params.bSameCamera != 0u) alpha = min(alpha, 1.0 / 64.0);
+    alpha = clamp(alpha + params.reset, 0.0, 1.0);
 
     Upsampledcw.xyz = mix(HistoryColor, Upsampledcw.xyz, alpha);
 

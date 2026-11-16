@@ -15,8 +15,8 @@ public:
     // Once per frame BEFORE any camera matrix is built: the next Halton (2, 3) phase of 16, scaled to the render size, into g_proj_jitter_ndc. Zero when `on` is false.
     void BeginFrame(bool on);
     void Ensure(int render_w, int render_h, int out_w, int out_h);
-    // scene = internal-size colour, depth = internal-size sampleable depth (standard Z), inv_vp = inverse view-projection (column-major, y-up NDC)
-    void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, SDL_GPUSampler* depth_sampler, const float inv_vp[16], md::GpuTextureHandle out);
+    // scene = internal-size colour, depth = internal-size sampleable depth (standard Z), vp = this frame's view-projection WITH the jitter (column-major, y-up NDC)
+    void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp[16], md::GpuTextureHandle out);
 private:
     GpuPipeline convert_, upscale_, blit_;
     SDL_GPUTexture* motion_ = nullptr; SDL_GPUTexture* zero_ = nullptr; bool zero_ready_ = false; SDL_GPUTexture* hist_[2] = {};

@@ -525,7 +525,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }
                             if (!upscaled && g_opt_sgsr2 && sr_up.sgsr2_.Ready() && EffectiveResolutionScale() < 0.999f) {   // dynres 0.6: SGSR 2, depth of the G-buffer (terrain + NPC prepass) and the inverse view-projection of this frame
                                 auto& tsp_up = sr_up.terrain_shading_projected_;
-                                GpuPushDebugGroup(fc.cmd, "SGSR2"); sr_up.sgsr2_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), tsp_up.GBufferDepth().SDLTexture(), tsp_up.GBufferDepth().SDLSampler(), tsp_up.S7InvVp(), real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                                GpuPushDebugGroup(fc.cmd, "SGSR2"); sr_up.sgsr2_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), tsp_up.GBufferDepth().SDLTexture(), sr_up.sgsr2_vp_, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
                             if (!upscaled && g_opt_sgsr1 && sr_up.upscale_pass_.Sgsr1Ready() && EffectiveResolutionScale() < 0.999f) { GpuPushDebugGroup(fc.cmd, "SGSR1"); sr_up.upscale_pass_.ApplySgsr1(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }   // #198 S1
                             if (!upscaled && g_opt_fsr1 && sr_up.fsr1_.Ready() && sr_up.fsr1_.Tex() && EffectiveResolutionScale() < 0.999f) {   // FSR 1: EASU to the window size, RCAS onto the swapchain

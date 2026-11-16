@@ -53,7 +53,7 @@ void Sgsr2Pass::BeginFrame(bool on) {
     const int i = (jit_n_++ & 15) + 1;
     jit_px_[0] = halton(i, 2) - 0.5f; jit_px_[1] = halton(i, 3) - 0.5f;
     g_proj_jitter_ndc[0] = jit_px_[0] * 2.f / (float)rw_;
-    g_proj_jitter_ndc[1] = -jit_px_[1] * 2.f / (float)rh_;   // texture v points down, NDC y up (sign checked: the other three combinations are further from the native frame)
+    g_proj_jitter_ndc[1] = -jit_px_[1] * 2.f / (float)rh_;   // texture v points down, NDC y up (the other three sign combinations were measured worse)
 }
 
 bool Sgsr2Pass::Init() {
@@ -112,20 +112,27 @@ void Sgsr2Pass::Ensure(int rw, int rh, int ow, int oh) {
     have_prev_ = false;   // the history is empty: the first frame resets the accumulation
 }
 
-void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, SDL_GPUSampler*, const float inv_vp_f[16], md::GpuTextureHandle out) {
+void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp_f[16], md::GpuTextureHandle out) {
     if (!ready_ || !rw_ || !scene || !depth || !out) return;
-    double inv[16], vp[16];
-    for (int i = 0; i < 16; ++i) inv[i] = (double)inv_vp_f[i];
-    if (!Inv4(inv, vp)) return;
-    {   // the matrices of this frame carry the jitter (clip.xy += jitter * w): take it out, the history lives in the unjittered output space
-        const double jx = (double)g_proj_jitter_ndc[0], jy = (double)g_proj_jitter_ndc[1];
-        for (int c = 0; c < 4; ++c) { vp[c*4 + 0] -= jx * vp[c*4 + 3]; vp[c*4 + 1] -= jy * vp[c*4 + 3]; }
-        if (!Inv4(vp, inv)) return;
-    }
+    // the exact view-projection of this frame (with the jitter): the clip position was shifted by jitter * w, take it out; the inverse of the float inverse (S7InvVp) is useless here: near 0.5 m / far 1e5 m makes it ~1e-3 off
+    double vp[16], inv[16];
+    for (int i = 0; i < 16; ++i) vp[i] = (double)vp_f[i];
+    const double jx = (double)g_proj_jitter_ndc[0], jy = (double)g_proj_jitter_ndc[1];
+    for (int c = 0; c < 4; ++c) { vp[c*4 + 0] -= jx * vp[c*4 + 3]; vp[c*4 + 1] -= jy * vp[c*4 + 3]; }
+    if (!Inv4(vp, inv)) return;
     double ctp[16];
     const bool reset = !have_prev_;
     if (have_prev_) Mul4(prev_vp_, inv, ctp); else { for (int i = 0; i < 16; ++i) ctp[i] = (i % 5 == 0) ? 1.0 : 0.0; }
-    double diff = 0; if (have_prev_) for (int i = 0; i < 16; ++i) diff += std::fabs(vp[i] - prev_vp_[i]);
+    // largest screen motion (render pixels) of a few test points when going from this clip space to the previous one: the still-camera test (matrix entries carry the 1e-3 float noise of the 1e4 m translation, pixels do not)
+    double motion_px = 0;
+    if (have_prev_) {
+        const double tp[5][3] = { { -0.8, -0.8, 0.99 }, { 0.8, 0.8, 0.99 }, { 0.8, -0.8, 0.997 }, { 0.0, 0.0, 0.9995 }, { 0.0, 0.0, 0.995 } };   // about 50 m, 50 m, 170 m, 1 km, 100 m
+        for (const auto& t : tp) {
+            double r[4]; for (int i = 0; i < 4; ++i) r[i] = ctp[i]*t[0] + ctp[4+i]*t[1] + ctp[8+i]*t[2] + ctp[12+i];
+            const double dx = (r[0] / r[3] - t[0]) * 0.5 * rw_, dy = (r[1] / r[3] - t[1]) * 0.5 * rh_;
+            motion_px = std::fmax(motion_px, std::fmax(std::fabs(dx), std::fabs(dy)));
+        }
+    }
     // horizontal field of view from two rays (left / right edge) at two depths: tan(fov / 2) is what the shader wants
     double a0[3], a1[3], b0[3], b1[3];
     Unproj(inv, -1, 0, 0.1, a0); Unproj(inv, -1, 0, 0.9, a1); Unproj(inv, 1, 0, 0.1, b0); Unproj(inv, 1, 0, 0.9, b1);
@@ -140,7 +147,8 @@ void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL
     const float ratio = (float)ow_ / (float)rw_;
     p.scale_ratio[0] = std::fmin(20.f, std::pow((float)(ow_ * oh_) / (float)(rw_ * rh_), 3.f)); p.scale_ratio[1] = ratio;
     p.jitter[0] = jit_px_[0]; p.jitter[1] = jit_px_[1];
-    p.fov_tan = (float)std::tan(fov * 0.5); p.min_lerp = 0.25f; p.reset = reset ? 1.f : 0.f; p.same_camera = (have_prev_ && diff < 1e-5) ? 1u : 0u;
+    p.fov_tan = (float)std::tan(fov * 0.5); p.min_lerp = 0.25f; p.reset = reset ? 1.f : 0.f; p.same_camera = (have_prev_ && motion_px < 0.05) ? 1u : 0u;
+    if (p.same_camera) for (int i = 0; i < 16; ++i) p.clip_to_prev[i] = (i % 5 == 0) ? 1.f : 0.f;   // a still camera has exactly zero motion (float noise of the matrix product is above the shader's 1e-6 test and drops the history)
     std::memcpy(prev_vp_, vp, sizeof(vp)); have_prev_ = true;
 
     GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd;
