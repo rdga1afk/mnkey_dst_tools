@@ -1,3 +1,4 @@
+#include "../render/gbuf_check.h"
 #include "../render/horizon_cull.h"
 #include "monkey_dust/render/ground_slot.h"
 #include "world/world_registry.h"
@@ -379,6 +380,8 @@ static int l_md_gpu_live_resources(lua_State* L) {
 }
 // md.set_terrain_lod_mode(0|1): 0 = skirts (default), 1 = restricted quadtree (neighbours at most 1 level apart) + border vertices snapped to the coarser neighbour, no skirts (the plugin's way).
 static int l_md_set_terrain_lod_mode(lua_State* L) { g_terrain_lod_mode = (lua_tointeger(L, 1) == 1) ? 1 : 0; return 0; }
+// md.gbuffer_check(path): A2, one G-buffer sanity check of the live ground on the next rendered frame (decoded albedo and aux targets read back, see render/gbuf_check.h); the verdict line goes to <path> and the log.
+static int l_md_gbuffer_check(lua_State* L) { gbuf_check::Request(luaL_checkstring(L, 1)); return 0; }
 static int l_md_set_terrain_lod_patch(lua_State* L) { g_terrain_lod_patch = (lua_tointeger(L, 1) == 64) ? 64 : 16; return 0; }
 static int l_md_set_terrain_lod_params(lua_State* L) {
     g_terrain_lod_near_px = (float)luaL_checknumber(L, 1); g_terrain_lod_far_px = (float)luaL_checknumber(L, 2);
@@ -498,6 +501,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_terrain_lod_params", l_md_set_terrain_lod_params);
     sys.RegisterNamespaceFunction("set_terrain_lod_patch", l_md_set_terrain_lod_patch);
     sys.RegisterNamespaceFunction("set_terrain_lod_mode", l_md_set_terrain_lod_mode);
+    sys.RegisterNamespaceFunction("gbuffer_check", l_md_gbuffer_check);
     sys.RegisterNamespaceFunction("set_opt_skip_flat_on_cliff", l_md_set_opt_skip_flat_on_cliff);
     sys.RegisterNamespaceFunction("set_opt_ground_split", l_md_set_opt_ground_split);
     sys.RegisterNamespaceFunction("set_opt_ground_reuse_cr", l_md_set_opt_ground_reuse_cr);

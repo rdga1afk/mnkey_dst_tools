@@ -4,6 +4,7 @@
 #include "npc_render_internal.h"
 #include "dynres3.h"
 #include "../bugcap.h"
+#include "gbuf_check.h"
 #include <cmath>
 #include "../world/char_def.h"
 
@@ -548,6 +549,9 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         }
                     } else
 #endif
+                    if (gbuf_check::Wants()) {
+                        if (!gbuf_check::Submit(r_cmd)) md::GpuDevice::Get().SubmitFrame(r_cmd);   // A2: md.gbuffer_check(path)
+                    } else
                     if (bugcap::SnapWants()) {
                         // one-key snapshot (F9): this frame is read back into the snapshot folder
                         uint32_t _bw = 0, _bh = 0;
