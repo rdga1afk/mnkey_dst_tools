@@ -143,9 +143,8 @@ void main() {
     vec3 N = vec3(0.0, 1.0, 0.0);
 #endif
 
-    // stitched mode: a border vertex ignores the morph (full height). The skirts used to hide the crack between two nodes whose morphs differ; without them the shared border must carry the same height on both sides (same level: both full; coarse next to fine: the fine node's snapped border samples the true height).
-    const bool stitchBorder = stitch && (col == 0 || col == cells || row == 0 || row == cells);
-    if ((TS_LOD_MORPH != 0) && morph < 0.999 && !stitchBorder && ((col | row) & 1) != 0) {
+    // stitched mode (md.set_terrain_lod_mode 1): no geomorph. In the original the GPU morph constant is never set (custom parameter 10, TERRAIN_LOD_MORPH_2026-11-14.md), so every vertex is drawn at its own level's height; borders then agree by construction with the snap to the coarser lattice.
+    if ((TS_LOD_MORPH != 0) && !stitch && morph < 0.999 && ((col | row) & 1) != 0) {
         // the two neighbours across (the plugin's morph targets): diagonal for (odd, odd), along the axis for the others
         vec2 da, db;
         if ((col & 1) != 0 && (row & 1) != 0) { da = vec2(-1.0, -1.0); db = vec2(1.0, 1.0); }
