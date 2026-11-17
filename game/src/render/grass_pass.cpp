@@ -173,6 +173,7 @@ void Record(const Frame& f) {
     if (!S.ready || !S.vbo || !S.ibo || !f.cmd || !f.terrain_depth || !f.view_proj) return;
     SDL_GPUColorTargetInfo cti[3] = {};
     for (int i = 0; i < 3; ++i) { cti[i].texture = f.target[i]; cti[i].load_op = f.clear ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD; cti[i].store_op = SDL_GPU_STOREOP_STORE; }
+    cti[0].clear_color = { 0.f, 0.5f, 0.f, 0.f };   // albedo = YCoCg with the chroma at 0.5 = neutral: decodePixel (gbuffer.hlsl edgeFilterChroma) borrows chroma from the neighbours, a texel cleared to 0 gave a chroma of -0.5 to every dark or isolated blade pixel (the magenta specks)
     SDL_GPUDepthStencilTargetInfo dti = {}; dti.texture = f.depth; dti.load_op = SDL_GPU_LOADOP_CLEAR; dti.clear_depth = 1.f; dti.store_op = SDL_GPU_STOREOP_DONT_CARE;
     dti.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE; dti.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE; dti.cycle = false;
     SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(f.cmd, cti, 3, &dti);

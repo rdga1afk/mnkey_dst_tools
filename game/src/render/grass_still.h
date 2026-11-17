@@ -12,6 +12,8 @@ bool Enabled();
 bool Run(SDL_GPUDevice* dev, const std::string& kenshi_dir, SDL_GPUTexture* ground, SDL_GPUTextureFormat fmt, int gw, int gh, const GroundLiveFrame& f,
          const GroundLiveLightParams& lp, const GroundLiveFogParams& fp, grasspass::Frame gf);
 void Restore(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* ground);   // before a full frame writes the ground target
+struct DebugTargets { SDL_GPUTexture *albedo = nullptr, *aux = nullptr, *dist = nullptr; int w = 0, h = 0; };
+bool GetDebugTargets(DebugTargets& t);   // the overlay's decoded G-buffer of the last frame (A2 grass check); false when the overlay has not run
 void Shutdown();
 
 }  // namespace md::grassstill

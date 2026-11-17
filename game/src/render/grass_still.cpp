@@ -114,6 +114,11 @@ bool Run(SDL_GPUDevice* dev, const std::string& kd, SDL_GPUTexture* ground, SDL_
     return ok;
 }
 
+bool GetDebugTargets(DebugTargets& t) {
+    if (!S.ok || !S.ov.AlbedoRgb() || !S.ov.AuxB() || !S.ov.Width()) return false;
+    t.albedo = S.ov.AlbedoRgb(); t.aux = S.ov.AuxB(); t.dist = S.ov.Raw(2); t.w = S.ov.Width(); t.h = S.ov.Height(); return true;
+}
+
 void Restore(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* ground) {
     if (S.dirty && S.base && ground && cmd) Copy(cmd, S.base, ground, S.bw, S.bh);
     S.dirty = false; S.base_valid = false;

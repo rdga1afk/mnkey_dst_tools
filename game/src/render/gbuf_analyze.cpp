@@ -58,4 +58,26 @@ bool AnalyzeDistance(const float* d, size_t n, char* text, size_t text_size) {
     snprintf(text, text_size, "distance_target: %s nan=%zu neg=%zu positive=%zu/%zu", ok ? "PASS" : "FAIL", nan_px, neg_px, pos, n);
     return ok;
 }
+
+size_t AnalyzeGrass(const uint16_t* A, const uint16_t* B, const float* D, int w, int h, char* text, size_t text_size) {
+    size_t written = 0, flagged = 0, shown = 0; std::string list;
+    for (int y = 0; y < h; ++y) for (int x = 0; x < w; ++x) {
+        const size_t i = (size_t)y * w + x;
+        const float a[4] = { Half(A[i * 4]), Half(A[i * 4 + 1]), Half(A[i * 4 + 2]), Half(A[i * 4 + 3]) }, b[4] = { Half(B[i * 4]), Half(B[i * 4 + 1]), Half(B[i * 4 + 2]), Half(B[i * 4 + 3]) };
+        const float d = D ? D[i] : 0.f;
+        bool fin = std::isfinite(d); for (int k = 0; k < 4; ++k) fin = fin && std::isfinite(a[k]) && std::isfinite(b[k]);
+        if (fin && !(b[3] > 0.f) && !(d > 0.f)) continue;   // not written
+        ++written;
+        bool bad = !fin;
+        if (fin) {
+            const double nx = 2.0 * b[0] - 1.0, ny = 2.0 * b[1] - 1.0, nz = 2.0 * b[2] - 1.0, len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            bad = a[0] < -0.1f || a[1] < -0.1f || a[2] < -0.1f || d < 0.f || len < 0.5 || len > 2.0;
+        }
+        if (!bad) continue;
+        ++flagged;
+        if (shown < 6) { char t[220]; snprintf(t, sizeof t, " (%d,%d) alb=[%g %g %g %g] aux=[%g %g %g %g] dist=%g;", x, y, a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3], d); list += t; ++shown; }
+    }
+    snprintf(text, text_size, "grass_overlay: %s written=%zu flagged=%zu (limit 20)%s", flagged > 20 ? "FAIL" : "PASS", written, flagged, list.c_str());
+    return flagged;
+}
 }
