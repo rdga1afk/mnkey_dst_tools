@@ -98,7 +98,11 @@ void InitGame(MdEntity& player_entity, GameState& gs, MdCamera& camera, float& c
         }
     }
     {   // only Kenshi 1.0.68 is supported: warn visibly (not in scenario / gate runs), then start anyway
-        const std::string vw = md::KenshiVersionWarning(md::KenshiDir());
+        std::string build_label;
+        const std::string bw = md::KenshiBuildWarning(md::KenshiDir(), &build_label);
+        MD_LOG(MD_LOG_INFO, "Kenshi install build: %s", build_label.c_str());
+        { const std::string title = std::string(md_build_title) + " · Kenshi " + build_label; SDL_SetWindowTitle(_wnd::ptr(), title.c_str()); }
+        const std::string vw = !bw.empty() ? bw : md::KenshiVersionWarning(md::KenshiDir());
         if (!vw.empty()) {
             MD_LOG(MD_LOG_WARNING, "%s", vw.c_str());
             if (!g_no_dialogs) { SDL_ShowWindow(_wnd::ptr()); SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "monkeydust: unsupported Kenshi version", vw.c_str(), _wnd::ptr()); }

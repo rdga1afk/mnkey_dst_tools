@@ -79,3 +79,20 @@ TEST(KenshiDir, SupportedVersionOnly1_0_68) {
     EXPECT_NE(w.find("1.0.64"), std::string::npos);
     EXPECT_NE(w.find("1.0.68"), std::string::npos);
 }
+
+// Build identification by file hashes: the reviewed install is known, a changed file is not.
+TEST(KenshiBuild, ReviewedInstallIsKnownAndAModifiedFileWarns) {
+    const char* env = std::getenv("KENSHI_DIR");
+    if (!env || !*env) GTEST_SKIP() << "no KENSHI_DIR";
+    std::string label;
+    EXPECT_EQ(md::KenshiBuildWarning(env, &label), "");
+    EXPECT_EQ(label, "1.0.68 Steam");
+    uint64_t h[md::kBuildFiles];
+    ASSERT_TRUE(md::KenshiFingerprint(env, h));
+    const char* platform = nullptr;
+    EXPECT_NE(md::KenshiBuildLookup(h, &platform), nullptr);
+    h[1] ^= 1;                                                                    // one changed file
+    EXPECT_EQ(md::KenshiBuildLookup(h, &platform), nullptr);
+    EXPECT_FALSE(md::KenshiBuildWarning("/nonexistent_kenshi_dir", &label).empty());   // files missing: warns, label says unknown
+    EXPECT_EQ(label, "unknown build");
+}
