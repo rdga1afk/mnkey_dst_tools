@@ -48,6 +48,7 @@ extern bool g_terrain_detail_n_atten;
 extern bool g_terrain_lod;
 extern int g_terrain_lod_patch;
 extern int g_terrain_lod_mode;
+extern int g_terrain_lod_stateful;
 extern bool g_opt_skip_flat_on_cliff;
 extern bool g_opt_force_upscale;
 extern int g_opt_ground_split;
@@ -402,6 +403,7 @@ static int l_md_gpu_live_resources(lua_State* L) {
     return 1;
 }
 // md.set_terrain_lod_mode(0|1): 1 (default since DE-310) = restricted quadtree (limit log2(cells) - 2 levels) + border vertices snapped to the coarser neighbour, no skirts, no geomorph (the plugin's behaviour); 0 = skirts (old, until after 19.11).
+static int l_md_set_terrain_lod_stateful(lua_State* L) { g_terrain_lod_stateful = lua_toboolean(L, 1) ? 1 : 0; return 0; }   // DE-316
 static int l_md_set_terrain_lod_mode(lua_State* L) { g_terrain_lod_mode = (lua_tointeger(L, 1) == 1) ? 1 : 0; return 0; }
 // md.gbuffer_check(path): A2, one G-buffer sanity check of the live ground on the next rendered frame (decoded albedo and aux targets read back, see render/gbuf_check.h); the verdict line goes to <path> and the log.
 static int l_md_gbuffer_check(lua_State* L) { gbuf_check::Request(luaL_checkstring(L, 1)); return 0; }
@@ -523,6 +525,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_terrain_lod", l_md_set_terrain_lod);
     sys.RegisterNamespaceFunction("set_terrain_lod_params", l_md_set_terrain_lod_params);
     sys.RegisterNamespaceFunction("set_terrain_lod_patch", l_md_set_terrain_lod_patch);
+    sys.RegisterNamespaceFunction("set_terrain_lod_stateful", l_md_set_terrain_lod_stateful);
     sys.RegisterNamespaceFunction("set_terrain_lod_mode", l_md_set_terrain_lod_mode);
     sys.RegisterNamespaceFunction("gbuffer_check", l_md_gbuffer_check);
     sys.RegisterNamespaceFunction("set_opt_skip_flat_on_cliff", l_md_set_opt_skip_flat_on_cliff);

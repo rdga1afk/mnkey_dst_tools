@@ -74,6 +74,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_grass_placement.cpp
     ${MD_UTEST_DIR}/test_pu_script.cpp
     ${MD_UTEST_DIR}/test_pu_system.cpp
+    ${MD_UTEST_DIR}/test_lod_state.cpp
     ${MD_UTEST_DIR}/test_flip_back_check.cpp
     ${MD_UTEST_DIR}/test_inverse_check.cpp
     ${MD_UTEST_DIR}/test_kenshi_land.cpp

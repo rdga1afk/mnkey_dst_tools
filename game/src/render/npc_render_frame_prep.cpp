@@ -22,6 +22,7 @@ bool  g_terrain_lod = true;
 bool  g_terrain_lod_error = false; // LOD is on but unavailable (no KENSHI_DIR / fullmap.tif): the scenario driver stops on it
 bool  g_opt_skip_flat_on_cliff = true; // #155 step 1: skip the flat layer chain where cliff_w >= 1 (pixel-identical), md.set_opt_skip_flat_on_cliff
 int   g_terrain_lod_mode = (getenv("MD_TERRAIN_LOD_MODE") && atoi(getenv("MD_TERRAIN_LOD_MODE")) == 0) ? 0 : 1;   // 1 (default since DE-310, owner 16.11) = restricted quadtree + border snapping, no skirts, no geomorph (the plugin's behaviour); 0 = the old selection + skirts (md.set_terrain_lod_mode, env MD_TERRAIN_LOD_MODE=0) until after 19.11
+int   g_terrain_lod_stateful = (getenv("MD_TERRAIN_LOD_STATEFUL") && atoi(getenv("MD_TERRAIN_LOD_STATEFUL")) == 1) ? 1 : 0;   // DE-316: the persistent LOD tree (md.set_terrain_lod_stateful); off until its gates pass
 int   g_terrain_lod_patch = 16;    // patch size in quads (16 or 64), md.set_terrain_lod_patch
 extern int g_opt_ground_split, g_kenshi_lighting_mode;   // #207 H13.3
 int   g_terrain_lod_levels[11] = {}; // nodes per level of the last LOD selection (stats)
@@ -529,12 +530,21 @@ if (sr_prepass.terrain_granite_ready) {
             if (md::GroundLiveDriver::Wanted()) { static const int minl = getenv("MD_GROUND_LIVE_MINL") ? atoi(getenv("MD_GROUND_LIVE_MINL")) : 5; lp.min_level = minl; }   // level 5 = 921.6 m = one blendinfo cell: no node crosses a cell, so every node has an exact biome list (coordinator 6758553091)
             const auto sel_t0 = std::chrono::steady_clock::now();
             FS_BEGIN("LodSelect");
-            qt_count = sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp,
-                                                                         lod_nodes, md::TerrainLodTree::kMaxNodes);
+            qt_count = (g_terrain_lod_stateful && g_terrain_lod_mode == 1)
+                ? sr_prepass.terrain_quadtree_renderer_.SelectLodStateful(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp, lod_nodes, md::TerrainLodTree::kMaxNodes)
+                : sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp, lod_nodes, md::TerrainLodTree::kMaxNodes);
             FS_END("LodSelect"); FS_BEGIN("LodRestrict");
             if (g_terrain_lod_mode == 1) qt_count = md::RestrictLodNodes(lod_nodes, qt_count, md::TerrainLodTree::kMaxNodes, g_terrain_lod_patch == 64 ? 3 : 2);   // the plugin's limit log2(cells) - 2 (4 for 64 cells, capped at the 3 the node data holds)
             FS_END("LodRestrict");
             const double sel_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sel_t0).count();
+            {   // MD_LOD_TIMES=1: the mean of Select + Restrict over 240 frames, and the stateful tree's splits / merges / blocks per frame
+                static const bool lod_times = getenv("MD_LOD_TIMES") != nullptr;
+                static double sum_ms = 0, sum_split = 0, sum_merge = 0; static int n_fr = 0;
+                if (lod_times) {
+                    sum_ms += sel_ms; sum_split += sr_prepass.terrain_quadtree_renderer_.LodStateSplits(); sum_merge += sr_prepass.terrain_quadtree_renderer_.LodStateMerges();
+                    if (++n_fr == 240) { MD_LOG(MD_LOG_INFO, "[LodCPU] stateful=%d select+restrict %.3f ms/frame, splits %.1f merges %.1f per frame, blocks %d, nodes %d", g_terrain_lod_stateful, sum_ms / n_fr, sum_split / n_fr, sum_merge / n_fr, sr_prepass.terrain_quadtree_renderer_.LodStateBlocks(), qt_count); sum_ms = sum_split = sum_merge = 0; n_fr = 0; }
+                }
+            }
             static md::TerrainLodNode pre_cull_nodes[8192]; int n_pre_cull = 0;   // the selection before the horizon cull: it keeps deciding the array tier of the ground lists (AssignSlots)
             if (md::GroundLiveDriver::Wanted() && md::HorizonCullEnabled()) { n_pre_cull = std::min(qt_count, 8192); memcpy(pre_cull_nodes, lod_nodes, (size_t)n_pre_cull * sizeof(md::TerrainLodNode)); }
             qt_count = md::HorizonCullFilter(sr_prepass.granite_abs_cam_, lod_nodes, qt_count);   // #207 horizon map: drops nodes hidden behind terrain; off by default (md.set_horizon_cull)
