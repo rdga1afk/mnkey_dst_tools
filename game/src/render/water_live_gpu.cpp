@@ -1,5 +1,6 @@
 #include "water_live_gpu.h"
 #include <monkey_dust/platform/md_log.h>
+#include <monkey_dust/render/kenshi_sky.h>
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -33,7 +34,7 @@ bool SetNamed(const std::vector<hlsl::UniformMember>& mem, std::vector<unsigned 
 }
 
 // farClip of the material (UNCHECKED, see docs/research/WATER_LIVE_INPUTS.md): the depth map and `farClip` of waterFP must use the same value
-const float kFarClip = 40000.f;
+float FarClipUnits() { return md::ViewDistanceUnits(); }
 
 bool Invert4(const float m[16], float out[16]) {   // general 4x4 inverse (column-major in, column-major out)
     float a[4][8] = {};
@@ -78,7 +79,7 @@ void WaterLivePass::BuildDepthMap(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* sce
         ti.width = w; ti.height = h; ti.layer_count_or_depth = 1; ti.num_levels = 1; dtex_ = SDL_CreateGPUTexture(dev_, &ti); dw_ = w; dh_ = h;
         if (!dtex_) { MD_LOG(MD_LOG_WARNING, "water live: depth map texture: %s", SDL_GetError()); return; }
     }
-    std::vector<unsigned char> ub(dsz_, 0); const float cf[4] = { cam[0], cam[1], cam[2], kFarClip };
+    std::vector<unsigned char> ub(dsz_, 0); const float cf[4] = { cam[0], cam[1], cam[2], FarClipUnits() };
     float inv_vp[16]; if (!Invert4(vp, inv_vp)) return;
     SetNamed(dmem_, ub, "invVP", inv_vp, 16); SetNamed(dmem_, ub, "camFar", cf, 4);
     SDL_GPUColorTargetInfo ci = {}; ci.texture = dtex_; ci.load_op = SDL_GPU_LOADOP_DONT_CARE; ci.store_op = SDL_GPU_STOREOP_STORE;
@@ -87,7 +88,7 @@ void WaterLivePass::BuildDepthMap(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* sce
     SDL_GPUTextureSamplerBinding tb = { scene_depth, nsmp_ }; SDL_BindGPUFragmentSamplers(p, 0, &tb, 1);
     SDL_PushGPUFragmentUniformData(cmd, 0, ub.data(), (Uint32)ub.size());
     SDL_DrawGPUPrimitives(p, 3, 1, 0, 0); SDL_EndGPURenderPass(p);
-    static bool logged = false; if (!logged) { logged = true; MD_LOG(MD_LOG_INFO, "water live: depth map built (%ux%u, scene depth sampler bound, far clip %.0f)", w, h, kFarClip); }
+    static bool logged = false; if (!logged) { logged = true; MD_LOG(MD_LOG_INFO, "water live: depth map built (%ux%u, scene depth sampler bound, far clip %.0f)", w, h, FarClipUnits()); }
     dvalid_ = true;
 }
 
@@ -153,7 +154,7 @@ void WaterLivePass::Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const
     SetNamed(sh_.vmem, vub_, "worldOffset", off, 3); SetNamed(sh_.vmem, vub_, "sunDirection", f.to_sun, 3);
     SetNamed(sh_.vmem, vub_, "pWorldMatrix", world, 16); SetNamed(sh_.vmem, vub_, "pInverseWorldMatrix", inv, 16); SetNamed(sh_.vmem, vub_, "pWorldViewProj", wvp, 16);
     const float sunc[4] = { f.sun_colour[0], f.sun_colour[1], f.sun_colour[2], 1.f }, ambp[4] = { 0.f, 0.f, 0.f, 1.f }, env[4] = { f.ambient[0], f.ambient[1], f.ambient[2], 1.f };
-    const float far_clip = kFarClip, inv_strength = 1.f, inv_opacity = 0.01f, dist[2] = { 120.f, 0.01f }, gloss = 0.9f, glow = 0.f, rain = 0.f, blend_ch = 4.f, fogf[4] = { 40000.f, 0.f, 0.f, 0.f };
+    const float far_clip = FarClipUnits(), inv_strength = 1.f, inv_opacity = 0.01f, dist[2] = { 120.f, 0.01f }, gloss = 0.9f, glow = 0.f, rain = 0.f, blend_ch = 4.f, fogf[4] = { 40000.f, 0.f, 0.f, 0.f };
     SetNamed(sh_.fmem, fub_, "sunColour", sunc, 4); SetNamed(sh_.fmem, fub_, "GROUND_Colour", f.ambient, 3); SetNamed(sh_.fmem, fub_, "ambientParams", ambp, 4); SetNamed(sh_.fmem, fub_, "sunDirection", f.to_sun, 3);
     SetNamed(sh_.fmem, fub_, "envColour__w", env, 4); SetNamed(sh_.fmem, fub_, "FOG_FAR", fogf, 4); SetNamed(sh_.fmem, fub_, "farClip", &far_clip, 1); SetNamed(sh_.fmem, fub_, "invStrength", &inv_strength, 1);
     SetNamed(sh_.fmem, fub_, "invOpacity", &inv_opacity, 1); SetNamed(sh_.fmem, fub_, "distortion", dist, 2); SetNamed(sh_.fmem, fub_, "gloss__w", &gloss, 1); SetNamed(sh_.fmem, fub_, "glow", &glow, 1);

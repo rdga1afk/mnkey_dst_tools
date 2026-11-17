@@ -61,3 +61,41 @@ TEST(LodPluginOracle, EdgeSnapEqualsThePluginsFunction) {
     EXPECT_EQ(rows, 32);
     EXPECT_EQ(bad, 0);
 }
+
+// The vertex shader's own border-snap lines (between the EDGE-SNAP markers, extracted by CMake and compiled here as C++) against the C++ twin, which the emulator
+// vectors above pin to the plugin: every border vertex, 16- and 64-cell patches, all four level differences on each of the four sides.
+static void ShaderSnap(int edgeDiff, int cells, int& col, int& row) {
+#include "edge_snap_shader.inc"
+}
+TEST(LodPluginOracle, ShaderEdgeSnapEqualsTheCppTwin) {
+    int checked = 0, bad = 0;
+    for (int cells : { 16, 64 })
+        for (int side = 0; side < 4; ++side)
+            for (int d = 0; d <= 3; ++d)
+                for (int i = 0; i <= cells; ++i) {
+                    const int edgeDiff = d << (2 * side);   // bits: z min, z max, x min, x max
+                    int col = (side < 2) ? i : (side == 2 ? 0 : cells), row = (side == 0) ? 0 : (side == 1 ? cells : i);
+                    int want_col = col, want_row = row;
+                    if (side < 2) want_col = md::TerrainSnapBorder(i, d, side == 1); else want_row = md::TerrainSnapBorder(i, d, side == 3);
+                    ShaderSnap(edgeDiff, cells, col, row);
+                    ++checked;
+                    if (col != want_col || row != want_row) ++bad;
+                }
+    EXPECT_GT(checked, 600);
+    EXPECT_EQ(bad, 0);
+}
+
+// Sky controller FUN_14066f190 (read in the exe): pFogParams = (D, D*k1, min(D, D*k2), 0), D = the `view distance` option * 10. The settings loader FUN_1403e84f0 uses the
+// default 0x459c4000 (5000.0) when the file has no key; the install's settings.cfg has none. k1 = 0.06 and k2 = 0.6 are not in the exe's code (runtime constants): they come
+// from MeitouClient / Okran, both agreeing.
+#include <monkey_dust/render/kenshi_sky.h>
+TEST(LodPluginOracle, FogParamsXIsTheViewDistanceTimesTen) {
+    const uint32_t kDefaultBits = 0x459c4000u; float def; std::memcpy(&def, &kDefaultBits, 4);
+    ASSERT_EQ(def, 5000.f);
+    md::g_view_distance_m = def;
+    const md::KsVec4 fp = md::KenshiSkySettings().FogParams();
+    EXPECT_EQ(fp.x, 50000.f);
+    EXPECT_EQ(fp.x, md::ViewDistanceUnits());
+    EXPECT_FLOAT_EQ(fp.y, 50000.f * 0.06f);
+    EXPECT_FLOAT_EQ(fp.z, 50000.f * 0.6f);
+}

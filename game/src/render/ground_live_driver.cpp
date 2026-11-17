@@ -328,7 +328,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     static const bool inv_abs_selftest = std::getenv("MD_INVARIANTS") && std::getenv("MD_INVARIANTS")[0] == '3';   // =3 hands the absolute inverse to the check: it must report
     const float* inv_chk = inv_abs_selftest ? inv_vp : f.inv_pr;
     if (inv_ && !InverseIsCameraRelative(inv_chk)) { static int shown = 0; if (shown++ < 5) MD_LOG(MD_LOG_WARNING, "[INV rel-inverse] frame=%llu the light / fog ray inverse maps clip (0,0,0.5) %.0f m from the origin: not camera-relative", (unsigned long long)frame, UnprojectedDistance(inv_chk)); ++inv_rel_bad_; }
-    memcpy(f.inv_vp, inv_vp, sizeof(f.inv_vp)); memcpy(f.cam_ws, cam, sizeof(f.cam_ws)); f.far_clip = far_clip_; f.wetness = SkyClouds::OverrideWetness();
+    memcpy(f.inv_vp, inv_vp, sizeof(f.inv_vp)); memcpy(f.cam_ws, cam, sizeof(f.cam_ws)); f.far_clip = md::ViewDistanceUnits(); f.wetness = SkyClouds::OverrideWetness();
     static const bool no_decode = getenv("MD_GROUND_LIVE_NODECODE") != nullptr;   // measurement: cost split
     { static const bool ph = getenv("MD_GROUND_LIVE_PHASE") != nullptr; pass_.SetPhase(ph ? (int)(frame & 7) : -1); }   // measurement: upper bound of the 1/8 reuse
     static GroundLiveCacheView cview;   // the rings baked in earlier frames (this frame's bake runs after the pass)

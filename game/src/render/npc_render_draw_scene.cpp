@@ -1059,7 +1059,7 @@ static const TerrainShadingProjected::KLightParams* UpdateKLight()
         const md::KsVec4 hz = sky.HorizonClouds(LightSystem::Get().current_hours), fp = sky.FogParams();
         kl.sun_real[0] = real.x; kl.sun_real[1] = real.y; kl.sun_real[2] = real.z; kl.sun_real[3] = 0.f;
         kl.horizon[0] = hz.x; kl.horizon[1] = hz.y; kl.horizon[2] = hz.z; kl.horizon[3] = hz.w;
-        kl.fog[0] = fp.y; kl.fog[1] = fp.z; kl.fog[2] = fp.x * 0.95f; kl.fog[3] = 4000.f;   // farClip of the live pass in metres (GroundLiveDriver far_clip_ 40000 units x 0.1); the tiny live consumer turns liveB.a into a distance; envColour.w = 1, ambientParams.w = 1 (common.program defaults)
+        kl.fog[0] = fp.y; kl.fog[1] = fp.z; kl.fog[2] = fp.x * 0.95f; kl.fog[3] = md::ViewDistanceUnits() * 0.1f;   // farClip of the live pass in metres (= D, GroundLiveDriver::FarClip); the tiny live consumer turns liveB.a into a distance; envColour.w = 1, ambientParams.w = 1 (common.program defaults)
         kl.sun_real[3] = md::GroundLiveDriver::OrigLight() ? 1.f : 0.f;   // 1: the ground resolve reads the lit colour of the original main_fs (liveA) and only adds fog and exposure
         return &kl;
     }

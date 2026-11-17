@@ -8,6 +8,7 @@
 // GroundLivePass (stencil groups from the slot target) + the original decodePixel after the pass. Every enclosing node's list gives identical weights (private leaf-vs-patch proof,
 // scripts/kbi1_leaf_vs_patch.py), so the node size of our LOD does not matter. The result is not consumed by the lighting yet (measurement path).
 #include "ground_live_cache.h"
+#include <monkey_dust/render/kenshi_sky.h>
 #include "ground_live_pass.h"
 #include <monkey_dust/render/biome_layer_arrays.h>
 #include <monkey_dust/world/kbi1.h>
@@ -26,7 +27,7 @@ public:
     static bool Wanted();   // MD_GROUND_LIVE=1
     // NPC G-buffer pass: called after the ground Run() and before Decode() / Light() with the raw targets (set per frame by the caller, cleared by it).
     using NpcHook = void (*)(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, void* user);
-    float FarClip() const { return far_clip_; }
+    float FarClip() const { return md::ViewDistanceUnits(); }   // D = view distance * 10 (sky controller FUN_14066f190): depth write, the light's pFogParams.x and the programs' farClip agree
     void SetNpcHook(NpcHook h, void* user) { npc_hook_ = h; npc_user_ = user; }
     void Shutdown() { arrays_.Stop(); }   // before GpuDevice::Shutdown(): joins the layer-array worker, whose build in flight uses the GPU device (ASan double-free at exit, PR #164 6856689259)
     static bool OrigLight();   // MD_GROUND_LIVE_ORIGLIGHT=1 (with MD_GROUND_LIVE_LIGHT): the ground is lit by the original main_fs (GroundLivePass::Light) instead of TS_KenshiLight
@@ -74,7 +75,7 @@ private:
     std::vector<unsigned char> blend_rgba_; int blend_w_ = 0, blend_h_ = 0; std::map<int, SDL_GPUTexture*> blend_perm_;   // the blend map with its channels permuted to the entry order of a list (BLEND<k> = the entry's slot in the original)
     SDL_GPUTexture* BlendFor(SDL_GPUDevice* dev, const PatchBiomes& pb);
     SDL_GPUTexture *colour_ = nullptr, *overlay_ = nullptr, *blend_ = nullptr, *white_ = nullptr, *colour_l3_ = nullptr, *colour_l4_ = nullptr, *clear_ = nullptr, *distant_ = nullptr;
-    float far_clip_ = 40000.f; int max_groups_ = 31;
+    int max_groups_ = 31;
     int slot_list_[32] = {}; int n_slots_ = 0;      // slot -> index in lists_ (this frame)
     float slot_dmin_[32] = {};
     struct NodeSlot { float x0, z0, size; int slot; };

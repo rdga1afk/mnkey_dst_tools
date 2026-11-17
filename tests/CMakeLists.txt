@@ -9,6 +9,12 @@ option(MONKEY_DUST_GAME_TESTS_ONLY "Build only game-specific tests" OFF)
 
 if(NOT MONKEY_DUST_GAME_TESTS_ONLY)
 
+# the vertex shader's border-snap lines compiled as C++ for LodPluginOracle.ShaderEdgeSnapEqualsTheCppTwin (the rule is checked on the shader's own text)
+set(MD_LOD_SHADER ${MD_UTEST_DIR}/../shaders/terrain_quadtree_batched_lod.vert)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${MD_LOD_SHADER})
+file(READ ${MD_LOD_SHADER} _md_lod_vert)
+string(REGEX MATCH "// EDGE-SNAP-BEGIN[^\n]*\n(.*)// EDGE-SNAP-END" _md_unused "${_md_lod_vert}")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/edge_snap_shader.inc "${CMAKE_MATCH_1}")
 add_executable(md_tests
     ${MD_UTEST_DIR}/test_health_make.cpp
     ${MD_UTEST_DIR}/test_md_camera_translate.cpp
@@ -95,6 +101,7 @@ target_link_libraries(md_tests PRIVATE
     monkey_dust::engine
     GTest::gtest_main
 )
+target_include_directories(md_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 md_gaia_pch(md_tests)
 
