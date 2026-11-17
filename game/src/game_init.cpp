@@ -1,6 +1,8 @@
 #include <monkey_dust/io/data_files.h>
 #include "game_common.h"
 #include "render/first_run_dialog.h"
+#include "render/town_buildings.h"
+#include "render/town_foliage.h"
 #include <monkey_dust/io/kenshi_dir.h>
 extern const char* const md_build_title;   // generated at build time: cmake/build_info.cmake
 
@@ -230,10 +232,21 @@ void InitGame(MdEntity& player_entity, GameState& gs, MdCamera& camera, float& c
         // above) — by construction (zone_ox = grid_x - TNKN/2 in
         // SceneRender::Init()) this is always the CURRENT zone's own chunk.
         const float spawn_half = (SceneRender::TNKN / 2) * CHUNK_SIZE;
-        const float spawn_x    = SceneRender::Get().tnoff_x + spawn_half;
-        const float spawn_z    = SceneRender::Get().tnoff_z + spawn_half;
+        float spawn_x = SceneRender::Get().tnoff_x + spawn_half;
+        float spawn_z = SceneRender::Get().tnoff_z + spawn_half;
+        if (const char* sw = getenv("MD_START_WORLD")) {   // the same world -> local mapping as md.set_camera_pose_world
+            float wx = 0, wz = 0;
+            if (sscanf(sw, "%f,%f", &wx, &wz) == 2) {
+                spawn_x = wx + SceneRender::Get().tnoff_x - (float)SceneRender::Get().zone_ox * CHUNK_SIZE;
+                spawn_z = wz + SceneRender::Get().tnoff_z - (float)SceneRender::Get().zone_oz * CHUNK_SIZE;
+            }
+        }
         float p_spawn_y = TerrainQuery::Get().GetHeight(spawn_x, spawn_z) + 1.5f;
         reg.Handle(player_entity).emplace<WorldTransform>(spawn_x, p_spawn_y, spawn_z, 0.0f);
+        if (getenv("MD_TOWNS")) {   // md.sh: the town, its foliage and the grass are on, as in a scenario that calls md.set_town_buildings / set_town_foliage / set_grass
+            TownBuildings::Get().SetEnabled(true, 300.f);
+            TownFoliage::Get().SetEnabled(true, 100.f); TownFoliage::Get().SetGrassExe(true); TownFoliage::Get().SetGrass(true, 50.f, 1.f);
+        }
         // the player entity is only the camera / streaming focus: position, movement input and a nav component the movement code reads
         PlayerController pctrl_wo = {};
         pctrl_wo.move_speed = 5.0f;

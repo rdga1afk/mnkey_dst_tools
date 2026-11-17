@@ -223,6 +223,12 @@ void SceneRender::Init() {
         }
     }
 
+    // MD_START_WORLD=<x>,<z> (world metres): the window is built around that point (md.sh starts at the Hub town)
+    if (const char* sw = getenv("MD_START_WORLD")) {
+        float wx = 0, wz = 0;
+        if (sscanf(sw, "%f,%f", &wx, &wz) == 2) { zone_ox = (int)floorf(wx / CHUNK_SIZE) - TNKN / 2; zone_oz = (int)floorf(wz / CHUNK_SIZE) - TNKN / 2; }
+    }
+
     // Real per-biome data (ground textures, colours) lives in a private data
     // file, not compiled into the public engine/tools repos — see
     // docs/ENGINE_AUDIT.md / TERRAIN_FIX_PROMPT.md for the rationale. Must

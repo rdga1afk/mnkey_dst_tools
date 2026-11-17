@@ -99,7 +99,7 @@ bool GroundLiveHdr::Init(SDL_GPUDevice* dev) {
     ready_ = point_ && linear_ && adapted_ && last_ && lum_[0] && lum_[1] && lum_[2] && lum_[3] && lum_[4];
     if (!ready_) MD_LOG(MD_LOG_WARNING, "ground live hdr: sampler / texture create failed");
     else MD_LOG(MD_LOG_INFO, "ground live hdr ready (bloom format %d)", (int)bloom_fmt_);
-    reset_ = true; last_cleared_ = false;
+    reset_ = true; settle_ = 60; last_cleared_ = false;
     return ready_;
 }
 
@@ -163,7 +163,8 @@ bool GroundLiveHdr::Run(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* hdr, int w, i
     }
     {   // rt_adaptedLum <- AdaptLuminance(rt_lum0, rt_lastLum); rt_lastLum <- Copy(rt_adaptedLum)
         Prog& p = prog_[kAdapt];
-        const float ft = reset_ ? 1e4f : dt;
+        const float ft = (reset_ || settle_ > 0) ? 1e4f : dt;
+        if (settle_ > 0) --settle_;
         Set(p, kFrameTime, &ft, 1); Set(p, kMinLum, &prm.min_luminance, 1); Set(p, kMaxLum, &prm.max_luminance, 1);
         Set(p, kBloomMag, &prm.bloom_magnitude, 1); Set(p, kAdaptRate, &prm.adaptation_rate, 1);
         const SDL_GPUTextureSamplerBinding tb[3] = { { lum_[0], linear_ }, { lum_[0], point_ }, { last_, linear_ } };   // binding 1 unused by the entry

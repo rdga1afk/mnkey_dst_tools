@@ -71,6 +71,7 @@ private:
     SDL_GPUTextureFormat bloom_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTexture* hdr_ = nullptr;   // the last Run's input, read by Composite
     int bw_ = 0, bh_ = 0;
+    int settle_ = 60;   // the first frames adapt at once: the world streams in after the first Run, the exposure must not start from the empty frame
     bool reset_ = true, last_cleared_ = false, ready_ = false;
 };
 
