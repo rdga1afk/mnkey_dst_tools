@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "fsr1_pass.h"
+extern bool g_upscaler_lite;   // md.set_upscaler("fsr2lite"): variant 5 shader instead of the SGSR 2 one
 extern bool g_sgsr2_fsr2;   // npc_render_deferred.cpp: md.set_sgsr2_fsr2
 #include <monkey_dust/render/md_camera.h>
 
@@ -71,6 +72,8 @@ bool Sgsr2Pass::Init() {
     if (!convert_.Create(pd)) { fprintf(stderr, "[Sgsr2Pass] convert pipeline create failed\n"); return false; }
     pd.frag_path = "shaders/sgsr2_upscale.frag"; pd.frag_samplers = 3;
     if (!upscale_.Create(pd)) { fprintf(stderr, "[Sgsr2Pass] upscale pipeline create failed\n"); return false; }
+    pd.frag_path = "shaders/fsr2lite_upscale.frag";
+    if (!lite_.Create(pd)) { fprintf(stderr, "[Sgsr2Pass] fsr2lite pipeline create failed\n"); return false; }
     pd.frag_path = "shaders/upscale.frag"; pd.frag_samplers = 1; pd.color_format = SDL_GPU_TEXTUREFORMAT_INVALID;   // the history onto the swapchain: plain copy (sharp = 0)
     if (!blit_.Create(pd)) { fprintf(stderr, "[Sgsr2Pass] blit pipeline create failed\n"); return false; }
     SDL_GPUSamplerCreateInfo si{};
@@ -92,7 +95,7 @@ void Sgsr2Pass::Shutdown() {
         if (linear_) GpuReleaseSampler(dev, linear_);
     }
     motion_ = zero_ = nullptr; hist_[0] = hist_[1] = nullptr; nearest_ = linear_ = nullptr;
-    convert_.Destroy(); upscale_.Destroy(); blit_.Destroy(); ready_ = false; rw_ = rh_ = ow_ = oh_ = 0;
+    convert_.Destroy(); upscale_.Destroy(); lite_.Destroy(); blit_.Destroy(); ready_ = false; rw_ = rh_ = ow_ = oh_ = 0;
 }
 
 void Sgsr2Pass::Ensure(int rw, int rh, int ow, int oh) {
@@ -169,7 +172,7 @@ void Sgsr2Pass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL
     SDL_GPUTexture* prev = hist_[cur_ ^ 1]; SDL_GPUTexture* next = hist_[cur_];
     cpd.color_tex[0] = next; cpd.load_color = false;
     cb.BeginColorPass(cpd);
-    cb.BindPipeline(&upscale_);
+    cb.BindPipeline(g_upscaler_lite ? &lite_ : &upscale_);
     SDL_GPUTextureSamplerBinding uin[3] = { { prev, linear_ }, { motion_, linear_ }, { scene, linear_ } };
     cb.BindFragmentSamplers(0, uin, 3);
     cb.PushFragmentUniforms(0, &p, sizeof(p));

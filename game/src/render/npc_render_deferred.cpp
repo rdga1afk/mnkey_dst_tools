@@ -32,6 +32,7 @@ float NpcRender::EffectiveResolutionScale() {
 bool  g_opt_fsr1 = false;    // md.set_fsr1: AMD FSR 1 upscale (EASU + RCAS, shaders/fsr1_*.frag), scene below native only, default off
 bool  g_sgsr2_fsr2 = true;   // md.set_sgsr2_fsr2: the FSR 2 parts of the SGSR 2 shader (YCoCg box, thin-feature lock); off only to measure their cost
 float g_sgsr2_rcas = 0.f;   // md.set_sgsr2_rcas: FSR 1 RCAS sharpness (0..1) after the SGSR 2 output, 0 = off (DE-311)
+bool  g_upscaler_lite = false;   // md.set_upscaler("fsr2lite"): variant 5 (own temporal upscaler on the FSR 2 model) in the SGSR 2 slot
 bool  g_opt_sgsr2 = false;   // md.set_sgsr2: Snapdragon GSR 2 (temporal) instead of SGSR 1, scene below native only, default off (dynres 0.6)
 bool  g_opt_sgsr1 = true;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default on (DE-283)
 bool  g_opt_fxaa = false;   // #180 md.set_fxaa: FXAA 3.11 with Kenshi's parameters as the last pass (the scene goes through the intermediate target)

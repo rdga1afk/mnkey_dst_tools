@@ -19,7 +19,7 @@ public:
     // rcas != nullptr and rcas_sharp > 0: FSR 1 RCAS (shared Fsr1Pass pipeline) sharpens the history onto `out` instead of the plain copy; `srgb_out` = the swapchain is sRGB
     void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* scene, SDL_GPUTexture* depth, const float vp[16], md::GpuTextureHandle out, class Fsr1Pass* rcas = nullptr, float rcas_sharp = 0.f, bool srgb_out = false);
 private:
-    GpuPipeline convert_, upscale_, blit_;
+    GpuPipeline convert_, upscale_, lite_, blit_;
     SDL_GPUTexture* motion_ = nullptr; SDL_GPUTexture* zero_ = nullptr; bool zero_ready_ = false; SDL_GPUTexture* hist_[2] = {};
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
     float jit_px_[2] = {};   // the jitter of this frame in render pixels (-0.5..0.5): the UBO jitterOffset, and the part removed from the view-projection

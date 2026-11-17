@@ -302,6 +302,13 @@ static int l_md_dynres3_state(lua_State* L) { lua_pushnumber(L, g_dynres3_scale(
 extern bool g_opt_fsr1;
 static int l_md_set_fsr1(lua_State* L) { g_opt_fsr1 = lua_toboolean(L, 1) != 0; return 0; }   // md.set_fsr1(on): AMD FSR 1 (EASU + RCAS) instead of the bilinear + sharpen upscale
 static int l_md_set_sgsr2(lua_State* L) { g_opt_sgsr2 = lua_toboolean(L, 1) != 0; return 0; }   // dynres 0.6: Snapdragon GSR 2 (temporal) upscale instead of SGSR 1 (scene below native only), default off
+extern bool g_upscaler_lite;
+static int l_md_set_upscaler(lua_State* L) {   // "sgsr1" (off here) | "sgsr2" | "fsr2lite" (variant 5, RCAS 0.4 unless md.set_sgsr2_rcas was called later)
+    const std::string m = luaL_checkstring(L, 1);
+    g_opt_sgsr2 = (m == "sgsr2" || m == "fsr2lite"); g_upscaler_lite = (m == "fsr2lite");
+    if (m == "fsr2lite") g_sgsr2_rcas = 0.4f;
+    return 0;
+}
 static int l_md_set_sgsr2_rcas(lua_State* L) { g_sgsr2_rcas = (float)luaL_checknumber(L, 1); return 0; }   // DE-311: RCAS sharpness after SGSR 2, 0 = off (default)
 static int l_md_set_sgsr2_fsr2(lua_State* L) { g_sgsr2_fsr2 = lua_toboolean(L, 1) != 0; return 0; }   // DE-311: the FSR 2 parts of the SGSR 2 shader on / off (default on; off = cost measurement)
 static int l_md_set_sgsr1(lua_State* L) { g_opt_sgsr1 = lua_toboolean(L, 1) != 0; return 0; }   // #198 S1: Snapdragon GSR 1 upscale instead of bilinear + sharpen (scene below native only), default off
@@ -552,6 +559,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_fxaa", l_md_set_fxaa);
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_sgsr2", l_md_set_sgsr2);
+    sys.RegisterNamespaceFunction("set_upscaler", l_md_set_upscaler);
     sys.RegisterNamespaceFunction("set_sgsr2_rcas", l_md_set_sgsr2_rcas);
     sys.RegisterNamespaceFunction("set_sgsr2_fsr2", l_md_set_sgsr2_fsr2);
     sys.RegisterNamespaceFunction("set_fsr1", l_md_set_fsr1);
