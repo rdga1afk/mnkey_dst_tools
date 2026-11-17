@@ -43,3 +43,21 @@ TEST(LodPluginOracle, FarRampEqualsThePluginsFunction) {
     EXPECT_LT(worst_plugin, 1e-5);
     EXPECT_GT(worst_linear, 0.3) << "the linear ramp matches the plugin: the finding no longer holds";
 }
+
+// Border snap (FUN_180005e10): the plugin's index entries for every side, 16- and 64-cell patches, level difference 0..3; sides 0 / 2 are the x min / z min
+// borders, 1 / 3 the x max / z max ones.
+TEST(LodPluginOracle, EdgeSnapEqualsThePluginsFunction) {
+    std::ifstream in("tools/tests/data/plugin_edge_snap.tsv"); std::string line; int rows = 0, bad = 0;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line); std::string f[4];
+        for (int k = 0; k < 4; ++k) std::getline(ss, f[k], '\t');
+        const int side = std::stoi(f[0]), n = std::stoi(f[1]), d = std::stoi(f[2]);
+        std::istringstream vs(f[3]); std::string v; int i = 1;
+        while (std::getline(vs, v, ',')) { if (md::TerrainSnapBorder(i, d, side == 1 || side == 3) != std::stoi(v)) ++bad; ++i; }
+        ASSERT_EQ(i, n - 1);
+        ++rows;
+    }
+    EXPECT_EQ(rows, 32);
+    EXPECT_EQ(bad, 0);
+}
