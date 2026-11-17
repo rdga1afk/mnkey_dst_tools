@@ -15,8 +15,10 @@ float g_dynres_scale = 0.67f, g_dynres_cur = 1.f, g_dynres_v_move = 2.f, g_dynre
 int   g_dynres_down = 5, g_dynres_up = 2, g_dynres_cnt = 0;
 extern bool g_dynres_input_event;
 float g_dynres_ema = 0.9f; int g_dynres_hold = 0, g_dynres_hold_left = 0; long g_dynres_changes = 0;   // damping (dynres v2 step 3; md.set_dyn_res_damping, defaults = off = the old behaviour): EMA factor of the speed / turn signals (0 = off), frames a change holds the level, count of level changes
+extern float g_grass_scale_dyn;   // grass_still.cpp: the grass scale dynres asks for (1 or 0.5)
 bool  g_dynres3 = !(getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '0');   // dynres v3 (DE-279, md.set_dynres3): the scale while moving comes from the cost model T = F + K s^2 fitted on the GPU time of the fence waiter; default on (DE-283), MD_DYNRES3=0 / md.set_dynres3(false) = v2
-static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
+static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static bool s_d3_gh_for[8] = {}; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
+void md_set_dynres_grass(bool on) { s_d3.gh_enable = on; if (!on) g_grass_scale_dyn = 1.f; }   // md.set_dynres_grass
 float g_dynres3_scale() { return s_d3.Scale(); } float g_dynres3_F() { return s_d3.F; } float g_dynres3_K() { return s_d3.K; }
 static bool DynResActive() { return g_dynres_on && SceneRender::Get().resolution_scale >= 0.999f; }
 float NpcRender::EffectiveResolutionScale() {
@@ -193,7 +195,8 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
             { static bool said = false; if (!said) { said = true; fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms); } }
             { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
             { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v); }   // dynres 0.5 prediction, off by default
-            const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs()); }
+            const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs() + (s_d3_gh_for[(ws - 1) % 8] ? s_d3.gh_saving : 0.f)); }
+            s_d3.GrassStep(dt); g_grass_scale_dyn = s_d3.GrassScale();
         }
         if (input_on && g_dynres_input_event && (g_dynres3 ? !s_d3_mov : g_dynres_cur >= 0.999f)) { if (g_dynres3) s_d3_mov = true; else g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
         const bool low = g_dynres3 ? s_d3_mov : g_dynres_cur < 0.999f;
@@ -205,7 +208,8 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         if (g_dynres3) g_dynres_cur = s_d3_mov ? s_d3.Scale() : 1.f;
         else if (low && want_low && g_dynres_cur != g_dynres_scale) g_dynres_cur = g_dynres_scale;   // a new low level (md.set_dyn_res) while already low took effect only after a stop: apply it at once
     } else g_dynres_cur = 1.f;
-    if (g_dynres3) s_d3_scale_for[md::GpuDevice::Get().FrameSerial() % 8] = g_dynres_cur;   // the scale this frame renders at, for its GPU ms later
+    if (g_dynres3) s_d3_scale_for[md::GpuDevice::Get().FrameSerial() % 8] = g_dynres_cur;
+    s_d3_gh_for[md::GpuDevice::Get().FrameSerial() % 8] = g_grass_scale_dyn < 0.999f;   // the scale this frame renders at, for its GPU ms later
             {
                 FS_BEGIN("FenceWait");
                 md::GpuDevice::Get().BeginFrame();

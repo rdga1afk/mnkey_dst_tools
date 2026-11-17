@@ -7,6 +7,7 @@
 #include <monkey_dust/render/gpu_hal_free_functions.h>
 #include <monkey_dust/render/gpu_pipeline.h>
 
+float g_grass_scale_dyn = 1.f;   // dynres 0.7: the scale the dynres controller asks for (npc_render_deferred.cpp); the smaller of the two applies
 float g_grass_scale = 1.f;   // md.set_grass_scale: the grass overlay at this fraction of the ground resolution (1 = as before)
 
 namespace md::grassstill {
@@ -71,7 +72,7 @@ bool Run(SDL_GPUDevice* dev, const std::string& kd, SDL_GPUTexture* ground, SDL_
          const GroundLiveLightParams& lp, const GroundLiveFogParams& fp, grasspass::Frame gf) {
     if (!S.tried) { S.tried = true; S.dev = dev; S.ok = S.ov.Init(dev, kd) && S.ov.LightReady() && S.ov.FogReady(); if (!S.ok) fprintf(stderr, "[GrassStill] overlay pass not ready\n"); }
     if (!S.ok || !ground || !gf.cmd) return false;
-    const float sc = std::min(1.f, std::max(0.25f, g_grass_scale));
+    const float sc = std::min(1.f, std::max(0.25f, std::min(g_grass_scale, g_grass_scale_dyn)));
     const bool half = sc < 0.999f;
     const int ow = half ? std::max(1, (int)std::lround(gw * sc)) : gw, oh = half ? std::max(1, (int)std::lround(gh * sc)) : gh;   // the overlay's own size
     if (half && (!EnsurePipes(dev, fmt) || !EnsureHalf(dev, ow, oh, fmt))) return false;

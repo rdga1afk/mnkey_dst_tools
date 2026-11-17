@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-inline constexpr const char* kDynresVersion = "dynres 0.5";
+inline constexpr const char* kDynresVersion = "dynres 0.7";
 
 struct Dynres3 {
     static constexpr int kN = 240;                         // samples kept (4 s at 60 fps)
@@ -30,6 +30,19 @@ struct Dynres3 {
     int   above = 0, below = 0, n = 0, head = 0;
     float xs[kN] = {}, ys[kN] = {};
 
+    // dynres 0.7 (owner 17.11, coordinator 6942547662): the grass overlay at half resolution is the LAST step of dynres in grass: it switches on only while the scale sits at its floor and the frame is still over the
+    // budget in force (heavy_ms with grass), and off again once the frame fits with grass at full scale (normalised: the caller adds gh_saving to the ms of frames drawn with half-resolution grass), each after gh_hold_s.
+    bool  gh_enable = true, grass_half = false;   // default on (owner 17.11) after the oracle checks
+    float gh_saving = 9.f;                                 // ms saved by half-resolution grass at the floor scale (ABBA 17.11, zone 17,28, scene 0.67: 31.9 -> 21.9 = 10 ms; 9 keeps a margin)
+    float gh_hold_s = 1.0f, gh_on_s = 0.f, gh_off_s = 0.f, last_full_ms = 0.f;
+    float GrassScale() const { return grass_half ? 0.5f : 1.0f; }
+    void GrassStep(float dt) {                             // once per frame
+        if (!gh_enable || !heavy) { grass_half = false; gh_on_s = gh_off_s = 0.f; return; }
+        const bool at_floor = scale <= floor_scale + 0.005f;
+        if (!grass_half) { gh_on_s = (at_floor && last_full_ms > target_ms) ? gh_on_s + dt : 0.f; if (gh_on_s >= gh_hold_s) { grass_half = true; gh_on_s = gh_off_s = 0.f; } }
+        else { gh_off_s = (!at_floor || last_full_ms <= 0.9f * target_ms) ? gh_off_s + dt : 0.f; if (gh_off_s >= gh_hold_s) { grass_half = false; gh_on_s = gh_off_s = 0.f; } }
+    }
+
     void Scene(bool heavy_now, float dt) {                 // once per frame: the scene signal (data: grass blades in range) and the frame time
         if (heavy_now == heavy) { held_s = 0.f; return; }
         held_s += dt;
@@ -39,6 +52,7 @@ struct Dynres3 {
     void Motion(float speed) { speed_mps = speed; }        // once per frame: the smoothed camera speed in m/s (0..)
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
+        last_full_ms = gpu_ms;
         if (gpu_ms > fit_min_frac * light_ms) { xs[head] = s * s; ys[head] = gpu_ms; head = (head + 1) % kN; if (n < kN) ++n; Fit(); }
         if (std::fabs(s - scale) > 0.005f) return;            // a frame at another scale (standing = native) feeds the model only; the band is about the controlled scale
         const float hi = 0.95f * target_ms, lo = 0.85f * target_ms;

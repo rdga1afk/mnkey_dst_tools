@@ -304,6 +304,10 @@ static int l_md_set_fsr1(lua_State* L) { g_opt_fsr1 = lua_toboolean(L, 1) != 0; 
 static int l_md_set_sgsr2(lua_State* L) { g_opt_sgsr2 = lua_toboolean(L, 1) != 0; return 0; }   // dynres 0.6: Snapdragon GSR 2 (temporal) upscale instead of SGSR 1 (scene below native only), default off
 extern bool g_upscaler_lite;
 extern float g_grass_scale;
+extern void md_set_dynres_grass(bool on);
+static int l_md_set_dynres_grass(lua_State* L) { md_set_dynres_grass(lua_toboolean(L, 1) != 0); return 0; }   // dynres 0.7: half-resolution grass as the last step of dynres in grass
+extern float g_grass_scale_dyn;
+static int l_md_dyn_grass_scale(lua_State* L) { lua_pushnumber(L, g_grass_scale_dyn); return 1; }   // dynres 0.7: the grass scale dynres asks for now
 static int l_md_set_grass_scale(lua_State* L) { g_grass_scale = (float)luaL_checknumber(L, 1); return 0; }   // dynres 0.7: grass overlay at this fraction of the ground resolution (1 = off, default)
 static int l_md_set_upscaler(lua_State* L) {   // "sgsr1" (off here) | "sgsr2" | "fsr2lite" (variant 5, RCAS 0.4 unless md.set_sgsr2_rcas was called later)
     const std::string m = luaL_checkstring(L, 1);
@@ -561,6 +565,8 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_fxaa", l_md_set_fxaa);
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_sgsr2", l_md_set_sgsr2);
+    sys.RegisterNamespaceFunction("set_dynres_grass", l_md_set_dynres_grass);
+    sys.RegisterNamespaceFunction("dyn_grass_scale", l_md_dyn_grass_scale);
     sys.RegisterNamespaceFunction("set_grass_scale", l_md_set_grass_scale);
     sys.RegisterNamespaceFunction("set_upscaler", l_md_set_upscaler);
     sys.RegisterNamespaceFunction("set_sgsr2_rcas", l_md_set_sgsr2_rcas);
