@@ -72,6 +72,11 @@ bool Run(SDL_GPUDevice* dev, const std::string& kd, SDL_GPUTexture* ground, SDL_
          const GroundLiveLightParams& lp, const GroundLiveFogParams& fp, grasspass::Frame gf) {
     if (!S.tried) { S.tried = true; S.dev = dev; S.ok = S.ov.Init(dev, kd) && S.ov.LightReady() && S.ov.FogReady(); if (!S.ok) fprintf(stderr, "[GrassStill] overlay pass not ready\n"); }
     if (!S.ok || !ground || !gf.cmd) return false;
+    if (md::grasspass::Blades() == 0) {   // no blades (grass switched off): grasspass::Record returns before it clears the overlay targets, so decoding and lighting them would draw the last blades again
+        if (S.dirty && S.base) Copy(gf.cmd, S.base, ground, S.bw, S.bh);
+        S.dirty = false; S.base_valid = false;
+        return true;
+    }
     const float sc = std::min(1.f, std::max(0.25f, std::min(g_grass_scale, g_grass_scale_dyn)));
     const bool half = sc < 0.999f;
     const int ow = half ? std::max(1, (int)std::lround(gw * sc)) : gw, oh = half ? std::max(1, (int)std::lround(gh * sc)) : gh;   // the overlay's own size

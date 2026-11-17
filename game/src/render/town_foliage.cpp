@@ -160,7 +160,7 @@ void TownFoliage::Tick(float cam_x, float cam_z) {
                 GrassResult& r = grass_results_.back();
                 grass_cx_ = r.cx; grass_cz_ = r.cz; grass_shown_ = true; stats_.grass_gen_ms = r.ms;
                 if (!md::grasspass::Ready()) md::grasspass::Init(md::GpuDevice::Get().SDLDevice(), md::KenshiDir());
-                md::grasspass::SetMesh(std::move(*r.exe)); stats_.grass_blades = (int)md::grasspass::Blades();
+                md::grasspass::SetMesh(std::move(*r.exe)); stats_.grass_blades = (int)md::grasspass::Blades(); grass_mesh_stale_ = true;
                 grass_results_.clear(); grass_req_pending_ = false;
             } else if (!grass_loading_ && !grass_results_.empty()) {
                 GrassResult& r = grass_results_.back();
@@ -183,6 +183,10 @@ void TownFoliage::Tick(float cam_x, float cam_z) {
             }
             GpuStaticBuffer::EndUploadBatch();
         }
+    } else if (grass_mesh_stale_) {   // grass switched off: the install-program pass still holds the last mesh and would keep drawing it
+        grass_mesh_stale_ = false;
+        if (md::grasspass::Ready()) md::grasspass::SetMesh(md::grasspass::Mesh{});
+        stats_.grass_blades = 0;
     }
     for (size_t i = 0; i < zones_.size();) {   // unload zones not wanted for UNLOAD_S
         Zone& z = *zones_[i];

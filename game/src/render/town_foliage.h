@@ -46,6 +46,7 @@ private:
     std::vector<Result> results_;
     std::atomic<bool> grass_exe_{ std::getenv("MD_GRASS") != nullptr && std::getenv("MD_GRASS")[0] == '1' };
     bool grass_on_ = false; float grass_range_ = 50.f, grass_density_ = 1.f;
+    bool grass_mesh_stale_ = false;   // the install-program grass pass holds a mesh from this object; cleared when the grass is switched off
     float grass_cx_ = 0, grass_cz_ = 0; bool grass_shown_ = false;     // centre (m) of the shown circle
     bool grass_req_pending_ = false; float grass_req_x_ = 0, grass_req_z_ = 0; bool grass_req_ = false;   // request for the worker (guarded by mu_)
     struct GrassResult { float cx, cz; std::vector<HubPlacement> parts; std::vector<HubPrepared> prepared; double ms; std::shared_ptr<md::grasspass::Mesh> exe; };   // exe: MD_GRASS, the blades of the exe's pager for the install grass program
