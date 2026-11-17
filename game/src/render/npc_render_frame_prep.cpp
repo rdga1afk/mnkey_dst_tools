@@ -486,9 +486,9 @@ if (sr_prepass.terrain_granite_ready) {
     MdCamera g_abs_cam4 = sr_prepass.GraniteAbsCam(cam);
     Mat4 g_vp4 = g_abs_cam4.ViewProjMatrix(r_asp4);
     memcpy(sr_prepass.sgsr2_vp_, mat4_ptr(g_vp4), sizeof(sr_prepass.sgsr2_vp_));
-    TownBuildings::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z);
-    TownFoliage::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z);
-    md::nav::NavWorld::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z);
+    FS_BEGIN("TownTick"); TownBuildings::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z); FS_END("TownTick");
+    FS_BEGIN("FoliageTick"); TownFoliage::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z); FS_END("FoliageTick");
+    FS_BEGIN("NavTick"); md::nav::NavWorld::Get().Tick(g_abs_cam4.pos.x, g_abs_cam4.pos.z); FS_END("NavTick");
     { extern int g_kenshi_sky; if (g_kenshi_sky) { const md::KenshiSkySettings ks; const md::KsVec3 real = ks.SunDirection(LightSystem::Get().current_hours); const float s3[3] = { real.x, real.y, real.z }; const md::KsVec3 zn = ks.ZenithLight(LightSystem::Get().current_hours); const auto ml = ks.GetMainLight(LightSystem::Get().current_hours); const float z3[3] = { zn.x, zn.y, zn.z }, c3[3] = { ml.colour.x, ml.colour.y, ml.colour.z }; SkyPanorama::Get().Update(fc.cmd, s3, z3, c3); } }   // #173: SkyX panorama, redrawn when due, before the scene pass
     {   // md.dump_depth: the projection * rotation of this frame (camera at the origin) and the absolute camera position, for the shimmer metric's reprojection
         MdCamera c0 = g_abs_cam4;
@@ -547,16 +547,20 @@ if (sr_prepass.terrain_granite_ready) {
             }
             static md::TerrainLodNode pre_cull_nodes[8192]; int n_pre_cull = 0;   // the selection before the horizon cull: it keeps deciding the array tier of the ground lists (AssignSlots)
             if (md::GroundLiveDriver::Wanted() && md::HorizonCullEnabled()) { n_pre_cull = std::min(qt_count, 8192); memcpy(pre_cull_nodes, lod_nodes, (size_t)n_pre_cull * sizeof(md::TerrainLodNode)); }
-            qt_count = md::HorizonCullFilter(sr_prepass.granite_abs_cam_, lod_nodes, qt_count);   // #207 horizon map: drops nodes hidden behind terrain; off by default (md.set_horizon_cull)
+            FS_BEGIN("HorizonCull");
+            qt_count = md::HorizonCullFilter(sr_prepass.granite_abs_cam_, lod_nodes, qt_count);
+            FS_END("HorizonCull");   // #207 horizon map: drops nodes hidden behind terrain; off by default (md.set_horizon_cull)
             {   // #207 H13.4: the selected nodes are drawn nearest first (early-Z rejects more of the far terrain); default on (owner Gates-approved 30.10), MD_LOD_SORT=0 restores the old order
                 static const bool lod_sort = !(getenv("MD_LOD_SORT") && atoi(getenv("MD_LOD_SORT")) == 0);
                 if (lod_sort) {
+                    FS_BEGIN("LodSort");
                     const float cx = sr_prepass.granite_abs_cam_[0], cz = sr_prepass.granite_abs_cam_[2];
                     static const float bucket = getenv("MD_LOD_SORT_BUCKET") ? (float)atof(getenv("MD_LOD_SORT_BUCKET")) : 0.f;   // 0 = exact distance; > 0 = stable sort by distance bucket of that many metres
                     auto key = [cx, cz](const md::TerrainLodNode& p) { const float mx = p.origin_x + 0.5f * p.size - cx, mz = p.origin_z + 0.5f * p.size - cz; return sqrtf(mx * mx + mz * mz); };
                     std::stable_sort(lod_nodes, lod_nodes + qt_count, [&](const md::TerrainLodNode& p, const md::TerrainLodNode& q) {
                         const float pd = key(p), qd = key(q);
                         return bucket > 0.f ? floorf(pd / bucket) < floorf(qd / bucket) : pd < qd; });
+                    FS_END("LodSort");
                 }
             }
             FS_BEGIN("LodSlots");
@@ -583,6 +587,7 @@ if (sr_prepass.terrain_granite_ready) {
                     MD_LOG(MD_LOG_INFO, "%s", buf);
                 }
             }
+            FS_BEGIN("LodHash");
             {   // #163: the geometry of the ground (selected nodes with their morph, the fine height window) for the ground reuse
                 uint64_t h = 1469598103934665603ull;
                 auto mix = [&](uint32_t v) { h ^= v; h *= 1099511628211ull; };
@@ -591,6 +596,7 @@ if (sr_prepass.terrain_granite_ready) {
                 mix((uint32_t)sr_prepass.terrain_quadtree_renderer_.LodFineOx()); mix((uint32_t)sr_prepass.terrain_quadtree_renderer_.LodFineOz());
                 sr_prepass.gr_geom_hash_ = h;
             }
+            FS_END("LodHash");
             {   // #207 H14 (MD_STILL_REUSE=1): same view key as the last full frame -> the G-buffer and the ground passes are skipped (the ground target + the G-buffer depth stay as they were)
                 static const bool still_env = !(getenv("MD_STILL_REUSE") && atoi(getenv("MD_STILL_REUSE")) == 0);   // H14: on by default (owner 30.10, gates + 18 views passed with it on); MD_STILL_REUSE=0 turns it off
                 static const unsigned still_period = getenv("MD_STILL_N") ? (unsigned)atoi(getenv("MD_STILL_N")) : 16u;   // a normal (reuse) frame every N frames
@@ -648,6 +654,7 @@ if (sr_prepass.terrain_granite_ready) {
         // comment for why this must be a separate copy pass on the same
         // fc.cmd, not something issued inside BeginGBufferPass's render pass.
         bool use_batched = sr_prepass.terrain_quadtree_renderer_.IsBatchedReady() && qt_count > 0;
+        FS_BEGIN("LodUpload");
         if (use_batched) {
             GpuCopyPass node_cp;
             node_cp.Begin(fc.cmd);
@@ -664,6 +671,7 @@ if (sr_prepass.terrain_granite_ready) {
                 use_batched = false;
             }
         }
+        FS_END("LodUpload");
 
         // EnsureSize is called earlier, in RenderFrame before AcquireCommandBuffer
         // -- see that call site's doc comment for why it must never run here
@@ -697,7 +705,9 @@ if (sr_prepass.terrain_granite_ready) {
             s7_rp.BeginDepthOnly(fc.cmd, s7_dd);
             gbuf_pass = s7_rp.SDLPass();
         } else {
+            FS_BEGIN("GBufBegin");
             gbuf_pass = sr_prepass.still_skip_ ? nullptr : sr_prepass.terrain_shading_projected_.BeginGBufferPass(fc.cmd);
+            FS_END("GBufBegin");
         }
         if (gbuf_pass) {
             if (s7_on) {
