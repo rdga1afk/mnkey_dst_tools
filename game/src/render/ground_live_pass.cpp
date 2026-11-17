@@ -2,6 +2,7 @@
 #include "kenshi_hlsl.h"
 #include "spirv_combine.h"
 #include <monkey_dust/io/data_files.h>
+#include <monkey_dust/render/kenshi_sky.h>
 #include <monkey_dust/platform/md_log.h>
 #include <algorithm>
 #include <cmath>
@@ -484,7 +485,7 @@ bool GroundLivePass::DrawFog(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, c
     // the SkyX constants the exe gives the fog material (F040804; the same numbers as SkyPanorama's SkyUniforms): inner 9.77501, outer 10.2963, height 0.01, Kr 0.0022, Km 0.000675, ESun 30, exposure 1.4
     const float inner = 9.77501f, outer = 10.2963f, thick = outer - inner, PI = 3.14159265f, kr = 0.0022f, km = 0.000675f;
     const float cam_pos[3] = { 0.f, inner + thick * 0.01f, 0.f }, inv_wl[3] = { 1.f / powf(0.57f, 4.f), 1.f / powf(0.48f, 4.f), 1.f / powf(0.44f, 4.f) };
-    const float v_inner = inner, v_expo = 1.4f, v_kresun = kr * 30.f, v_kr4pi = kr * 4.f * PI, v_km4pi = km * 4.f * PI, v_scale = 1.f / thick, v_sdepth = thick * 0.5f, v_sosd = v_scale / v_sdepth, v_dome = p.skydome_radius;
+    const float v_inner = inner, v_expo = 1.4f, v_kresun = kr * 30.f, v_kr4pi = kr * 4.f * PI, v_km4pi = km * 4.f * PI, v_scale = 1.f / thick, v_sdepth = thick * 0.5f, v_sosd = v_scale / v_sdepth, v_dome = md::kFogSkydomeRadius;
     const float fogp[4] = { 0.f, p.fog_near, p.fog_far, 0.f }, far_clip = f.far_clip;
     set(fog_, "md_sunDirectionReal", p.sun_real, 3); set(fog_, "md_pFogParams", fogp, 4); set(fog_, "md_uCameraPos", cam_pos, 3); set(fog_, "md_uInvWaveLength", inv_wl, 3);
     set(fog_, "md_uInnerRadius", &v_inner, 1); set(fog_, "md_uExposure", &v_expo, 1); set(fog_, "md_uKrESun", &v_kresun, 1); set(fog_, "md_uKr4PI", &v_kr4pi, 1); set(fog_, "md_uKm4PI", &v_km4pi, 1);

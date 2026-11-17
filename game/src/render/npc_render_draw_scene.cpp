@@ -179,7 +179,7 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
     auto grass_overlay = [&]() {
         if (!(md::grasspass::Ready() && md::grassstill::Enabled() && md::GroundLiveDriver::Get().LitFrame() && md::GroundLiveDriver::Get().LightParams())) return;
         md::GroundLiveFogParams fp;
-        if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = (!SceneRender::Get().lum_adapt_active_ && gsp.IsFloat() && md::GroundLiveHdr::Active()) ? 1.f : k->params[2]; }
+        if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.exposure = (!SceneRender::Get().lum_adapt_active_ && gsp.IsFloat() && md::GroundLiveHdr::Active()) ? 1.f : k->params[2]; }
         const float asp = (float)window_get_width() / (float)window_get_height();
         const MdCamera abs_cam = SceneRender::Get().GraniteAbsCam(cam);
         const Mat4 gvp = abs_cam.ViewProjMatrix(asp);
@@ -258,7 +258,7 @@ if (g_opt_ground_split > 0 && depth.SDLTexture() && SceneRender::Get().terrain_g
             DrawGroundResolve(fc, cam, grp);
             if (!gtsp.HasTranslatedResolve() && live_on) {   // release (no translated resolve): the live consumer = the original fog quad over the lit live ground + the fixed exposure
                 md::GroundLiveFogParams fp;
-                if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.skydome_radius = k->fog[2]; fp.exposure = live_hdr ? 1.f : k->params[2]; }
+                if (const auto* k = UpdateKLight()) { for (int i = 0; i < 3; ++i) fp.sun_real[i] = k->sun_real[i]; for (int i = 0; i < 4; ++i) fp.horizon[i] = k->horizon[i]; fp.fog_near = k->fog[0]; fp.fog_far = k->fog[1]; fp.exposure = live_hdr ? 1.f : k->params[2]; }
                 md::GroundLiveDriver::Get().DrawFog(grp, fc.cmd, fp, gsp.Fmt(), stencil_pass ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT : SDL_GPU_TEXTUREFORMAT_D32_FLOAT);
             }
             SceneRender::Get().ground_split_active_ = true;

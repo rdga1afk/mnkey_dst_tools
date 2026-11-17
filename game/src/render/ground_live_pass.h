@@ -69,7 +69,6 @@ struct GroundLiveLightParams {
 struct GroundLiveFogParams {
     float sun_real[3] = { 0.f, 1.f, 0.f };          // sunDirectionReal
     float fog_near = 0.f, fog_far = 0.f;            // pFogParams.y / .z
-    float skydome_radius = 1.f;                     // uSkydomeRadius
     float horizon[4] = { 0.f, 0.f, 0.f, 0.f };      // horizonClouds
     float exposure = 1.f;
 };

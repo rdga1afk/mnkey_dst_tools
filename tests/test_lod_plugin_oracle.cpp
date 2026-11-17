@@ -5,6 +5,7 @@
 #include <monkey_dust/world/terrain_lod_tree.h>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -126,4 +127,19 @@ TEST(LodPluginOracle, SunDirectionEqualsTheExesUpdate) {
     std::printf("sun direction vs the exe: %d rows, worst abs difference %.2e\n", rows, worst);
     EXPECT_EQ(rows, 432);
     EXPECT_LT(worst, 2e-6);
+}
+
+// Orig: the fog material's uSkydomeRadius is the SkyXFogParams default of the install's common.program (70000); nothing in the exe names it and the SkyX DLL writes it only on its own
+// ground pass, so it does not depend on the view distance (the earlier min(0.6 D, D) was our own guess: 30000 at D = 50000).
+TEST(LodPluginOracle, FogSkydomeRadiusIsTheInstallsDefault) {
+    EXPECT_EQ(md::kFogSkydomeRadius, 70000.f);
+    const char* dir = std::getenv("KENSHI_DIR");
+    if (!dir || !*dir) return;   // the constant above is the check without an install
+    std::ifstream in(std::string(dir) + "/data/materials/common/common.program"); std::string line; bool found = false;
+    while (std::getline(in, line)) {
+        if (line.find("shared_param_named uSkydomeRadius") == std::string::npos) continue;
+        std::istringstream ss(line); std::string a, b, c, d; float v = 0.f; ss >> a >> b >> c >> d >> v;
+        EXPECT_EQ(v, md::kFogSkydomeRadius); found = true;
+    }
+    EXPECT_TRUE(found);
 }
