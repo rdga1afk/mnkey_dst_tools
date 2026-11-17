@@ -119,12 +119,12 @@ void main() {
         row = (side == 0) ? 0 : (side == 1) ? cells : k;
     }
 
-    if (stitch) {   // the plugin's border rewrite: a border vertex goes to the nearest vertex of the coarser neighbour's lattice (step 2^diff, a half rounds down)
+    if (stitch) {   // the plugin's border rewrite: a border vertex goes to the nearest vertex of the coarser neighbour's lattice (step 2^diff, Plugin_Terrain FUN_180005e10: a half rounds down on the x min / z min edges, up on x max / z max)
         const int dz0 = edgeDiff & 3, dz1 = (edgeDiff >> 2) & 3, dx0 = (edgeDiff >> 4) & 3, dx1 = (edgeDiff >> 6) & 3;
         const int dAlongX = (row == 0) ? dz0 : (row == cells) ? dz1 : 0;
         const int dAlongZ = (col == 0) ? dx0 : (col == cells) ? dx1 : 0;
-        if (dAlongX > 0) { int st = 1 << dAlongX; col = (col / st + (((col % st) * 2 > st) ? 1 : 0)) * st; }
-        if (dAlongZ > 0) { int st = 1 << dAlongZ; row = (row / st + (((row % st) * 2 > st) ? 1 : 0)) * st; }
+        if (dAlongX > 0) { int st = 1 << dAlongX; col = (col / st + (((col % st) * 2 > st || (row == cells && (col % st) * 2 == st)) ? 1 : 0)) * st; }
+        if (dAlongZ > 0) { int st = 1 << dAlongZ; row = (row / st + (((row % st) * 2 > st || (col == cells && (row % st) * 2 == st)) ? 1 : 0)) * st; }
     }
     // stitched mode: positions as (integer lattice index) * spacing, so two nodes (and two levels) sharing a border compute bit-identical positions: without skirts a one-ulp gap is a hole
     vec2 xz = stitch ? (floor(origin / gSpacing + 0.5) + vec2(float(col), float(row))) * gSpacing : origin + vec2(float(col), float(row)) * gSpacing;

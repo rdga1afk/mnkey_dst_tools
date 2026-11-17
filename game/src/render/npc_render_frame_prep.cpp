@@ -22,7 +22,7 @@ bool  g_terrain_lod = true;
 bool  g_terrain_lod_error = false; // LOD is on but unavailable (no KENSHI_DIR / fullmap.tif): the scenario driver stops on it
 bool  g_opt_skip_flat_on_cliff = true; // #155 step 1: skip the flat layer chain where cliff_w >= 1 (pixel-identical), md.set_opt_skip_flat_on_cliff
 int   g_terrain_lod_mode = (getenv("MD_TERRAIN_LOD_MODE") && atoi(getenv("MD_TERRAIN_LOD_MODE")) == 0) ? 0 : 1;   // 1 (default since DE-310, owner 16.11) = restricted quadtree + border snapping, no skirts, no geomorph (the plugin's behaviour); 0 = the old selection + skirts (md.set_terrain_lod_mode, env MD_TERRAIN_LOD_MODE=0) until after 19.11
-int   g_terrain_lod_plugin_ramp = (getenv("MD_TERRAIN_LOD_PLUGIN_RAMP") && atoi(getenv("MD_TERRAIN_LOD_PLUGIN_RAMP")) == 1) ? 1 : 0;   // far ramp of the LOD threshold as Plugin_Terrain FUN_180003b30 computes it (md.set_terrain_lod_plugin_ramp)
+int   g_terrain_lod_plugin_ramp = (getenv("MD_TERRAIN_LOD_PLUGIN_RAMP") && atoi(getenv("MD_TERRAIN_LOD_PLUGIN_RAMP")) == 0) ? 0 : 1;   // far ramp of the LOD threshold as Plugin_Terrain FUN_180003b30 computes it (md.set_terrain_lod_plugin_ramp)
 int   g_terrain_lod_stateful = (getenv("MD_TERRAIN_LOD_STATEFUL") && atoi(getenv("MD_TERRAIN_LOD_STATEFUL")) == 1) ? 1 : 0;   // DE-316: the persistent LOD tree (md.set_terrain_lod_stateful); off until its gates pass
 int   g_terrain_lod_patch = 16;    // patch size in quads (16 or 64), md.set_terrain_lod_patch
 extern int g_opt_ground_split, g_kenshi_lighting_mode;   // #207 H13.3
