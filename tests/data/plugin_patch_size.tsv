@@ -1,0 +1,8 @@
+# N	vertices_per_side(+0xec)	neighbour_limit(+0xf0)   (plugin FUN_1800016c0)
+2	3	0
+4	5	1
+8	9	2
+16	17	3
+32	33	4
+64	65	5
+128	129	6

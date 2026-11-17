@@ -99,3 +99,15 @@ TEST(LodPluginOracle, FogParamsXIsTheViewDistanceTimesTen) {
     EXPECT_FLOAT_EQ(fp.y, 50000.f * 0.06f);
     EXPECT_FLOAT_EQ(fp.z, 50000.f * 0.6f);
 }
+
+// setPatchSize (FUN_1800016c0): vertices per side N + 1 and the neighbour limit log2(N) - 1, N = 2..128.
+TEST(LodPluginOracle, NeighbourLimitEqualsThePluginsSetPatchSize) {
+    std::ifstream in("tools/tests/data/plugin_patch_size.tsv"); std::string line; int rows = 0;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        int n, verts, f0; std::istringstream ss(line); ss >> n >> verts >> f0;
+        EXPECT_EQ(md::TerrainNeighbourLimit(n), f0) << "N " << n;
+        ++rows;
+    }
+    EXPECT_EQ(rows, 7);
+}
