@@ -528,9 +528,12 @@ if (sr_prepass.terrain_granite_ready) {
             lp.viewport_px = (float)sr_prepass.terrain_shading_projected_.GBufferColor().Height() / fmaxf(g_dynres_cur, 0.1f);   // the height at dynres 1, so the LOD does not change when dynres switches
             if (md::GroundLiveDriver::Wanted()) { static const int minl = getenv("MD_GROUND_LIVE_MINL") ? atoi(getenv("MD_GROUND_LIVE_MINL")) : 5; lp.min_level = minl; }   // level 5 = 921.6 m = one blendinfo cell: no node crosses a cell, so every node has an exact biome list (coordinator 6758553091)
             const auto sel_t0 = std::chrono::steady_clock::now();
+            FS_BEGIN("LodSelect");
             qt_count = sr_prepass.terrain_quadtree_renderer_.SelectLod(sr_prepass.granite_abs_cam_, sr_prepass.terrain_frustum_planes_, lp,
                                                                          lod_nodes, md::TerrainLodTree::kMaxNodes);
+            FS_END("LodSelect"); FS_BEGIN("LodRestrict");
             if (g_terrain_lod_mode == 1) qt_count = md::RestrictLodNodes(lod_nodes, qt_count, md::TerrainLodTree::kMaxNodes, g_terrain_lod_patch == 64 ? 3 : 2);   // the plugin's limit log2(cells) - 2 (4 for 64 cells, capped at the 3 the node data holds)
+            FS_END("LodRestrict");
             const double sel_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - sel_t0).count();
             static md::TerrainLodNode pre_cull_nodes[8192]; int n_pre_cull = 0;   // the selection before the horizon cull: it keeps deciding the array tier of the ground lists (AssignSlots)
             if (md::GroundLiveDriver::Wanted() && md::HorizonCullEnabled()) { n_pre_cull = std::min(qt_count, 8192); memcpy(pre_cull_nodes, lod_nodes, (size_t)n_pre_cull * sizeof(md::TerrainLodNode)); }
@@ -546,7 +549,9 @@ if (sr_prepass.terrain_granite_ready) {
                         return bucket > 0.f ? floorf(pd / bucket) < floorf(qd / bucket) : pd < qd; });
                 }
             }
+            FS_BEGIN("LodSlots");
             if (md::GroundLiveDriver::Wanted()) md::GroundLiveDriver::Get().AssignSlots(lod_nodes, qt_count, sr_prepass.granite_abs_cam_, pre_cull_nodes, n_pre_cull);   // before the nodes are uploaded
+            FS_END("LodSlots");
             for (int& c : g_terrain_lod_levels) c = 0;
             for (int i = 0; i < qt_count; ++i) ++g_terrain_lod_levels[lod_nodes[i].level];
             if (md::GroundLiveDriver::Wanted() && getenv("MD_GROUND_LIVE_COUNT")) {   // measurement: share of LOD nodes whose AABB corners lie in different blendinfo cells (921.6 m), where the original's list is empty
