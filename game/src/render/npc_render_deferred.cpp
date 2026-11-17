@@ -34,6 +34,7 @@ float NpcRender::EffectiveResolutionScale() {
 bool  g_opt_fsr1 = false;    // md.set_fsr1: AMD FSR 1 upscale (EASU + RCAS, shaders/fsr1_*.frag), scene below native only, default off
 bool  g_sgsr2_fsr2 = true;   // md.set_sgsr2_fsr2: the FSR 2 parts of the SGSR 2 shader (YCoCg box, thin-feature lock); off only to measure their cost
 float g_sgsr2_rcas = 0.f;   // md.set_sgsr2_rcas: FSR 1 RCAS sharpness (0..1) after the SGSR 2 output, 0 = off (DE-311)
+bool  g_hialgo = false, g_hialgo_x2 = false, g_hialgo_catmull = true; int g_fxaa_profile = 0, g_stair_taps = 0;   // DE-312: md.set_upscaler("hialgo" | "x2"), md.set_fxaa_profile, md.set_stair_blur
 bool  g_upscaler_lite = false;   // md.set_upscaler("fsr2lite"): variant 5 (own temporal upscaler on the FSR 2 model) in the SGSR 2 slot
 bool  g_opt_sgsr2 = false;   // md.set_sgsr2: Snapdragon GSR 2 (temporal) instead of SGSR 1, scene below native only, default off (dynres 0.6)
 bool  g_opt_sgsr1 = true;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default on (DE-283)
@@ -297,6 +298,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                     if (UpscaleActive())
                         SceneRender::Get().upscale_pass_.Ensure(cur_w, cur_h,
                             SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
+                    if (g_hialgo && UpscaleActive()) SceneRender::Get().hialgo_.Ensure(cur_w, cur_h, SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
                     if (g_opt_sgsr2 && UpscaleActive()) SceneRender::Get().sgsr2_.Ensure(cur_w, cur_h, window_get_width(), window_get_height());
                     SceneRender::Get().sgsr2_.BeginFrame(g_opt_sgsr2 && UpscaleActive() && EffectiveResolutionScale() < 0.999f);
                     if (g_opt_fsr1 && UpscaleActive()) SceneRender::Get().fsr1_.Ensure(window_get_width(), window_get_height(), SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
@@ -530,6 +532,9 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             GpuPushDebugGroup(fc.cmd, "Upscale");
                             bool upscaled = false;
                             if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }
+                            if (g_hialgo && sr_up.hialgo_.Ready() && EffectiveResolutionScale() < 0.999f) {   // DE-312: FXAA -> (stair blur) -> neighbour-clamped upscale + clamped sharpening
+                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_fxaa_profile, g_stair_taps, g_hialgo_x2, g_hialgo_catmull); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                            }
                             if (!upscaled && g_opt_sgsr2 && sr_up.sgsr2_.Ready() && EffectiveResolutionScale() < 0.999f) {   // dynres 0.6: SGSR 2, depth of the G-buffer (terrain + NPC prepass) and the inverse view-projection of this frame
                                 auto& tsp_up = sr_up.terrain_shading_projected_;
                                 GpuPushDebugGroup(fc.cmd, "SGSR2"); { const SDL_GPUTextureFormat sf = SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()); sr_up.sgsr2_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), tsp_up.GBufferDepth().SDLTexture(), sr_up.sgsr2_vp_, real_sc, &sr_up.fsr1_, g_sgsr2_rcas, sf == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB || sf == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB); } GpuPopDebugGroup(fc.cmd); upscaled = true;

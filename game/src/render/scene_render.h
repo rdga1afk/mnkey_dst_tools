@@ -3,6 +3,7 @@
 #include "upscale_pass.h"
 #include "fsr1_pass.h"
 #include "sgsr2_pass.h"
+#include "hialgo_pass.h"
 #include "ground_split_pass.h"
 #include <monkey_dust/render/gpu_sampler_texture.h>
 #include <monkey_dust/render/gpu_static_buffer.h>
@@ -176,6 +177,7 @@ struct SceneRender {
     float upscale_sharpness = 0.3f;
     UpscalePass upscale_pass_;
     float sgsr2_vp_[16] = {};   // the view-projection of the frame as the ground pass used it (with the SGSR 2 jitter), copied in CullAndPrepass
+    HialgoPass hialgo_;   // DE-312: md.set_upscaler("hialgo"), default off
     Sgsr2Pass sgsr2_;   // md.set_sgsr2: Snapdragon GSR 2 temporal upscale (dynres 0.6), default off
     Fsr1Pass fsr1_;   // md.set_fsr1: AMD FSR 1 (EASU + RCAS) instead of the bilinear + sharpen upscale, measurement only
     // #163 5b-2: the ground resolve in its own pass (md.set_opt_ground_split); ground_split_active_ is decided once per frame in DrawScene and read by DrawTerrainAndProps.

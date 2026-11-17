@@ -346,6 +346,7 @@ void NpcRender::Init() {
     SceneRender::Get().upscale_pass_.Init();
     SceneRender::Get().fsr1_.Init();
     SceneRender::Get().sgsr2_.Init();
+    SceneRender::Get().hialgo_.Init();
     SceneRender::Get().ground_split_pass_.Init();
 
     // Vis/ind buffers + shadow textures — only needed in pure SDL_GPU.

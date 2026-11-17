@@ -4,9 +4,11 @@
 layout(location = 0) in  vec2 v_uv;
 layout(location = 0) out vec4 out_color;
 layout(set = 2, binding = 0) uniform sampler2D u_scene;
-layout(std140, set = 3, binding = 0) uniform FxaaUBO { vec2 u_rcp; vec2 _pad; };
+layout(std140, set = 3, binding = 0) uniform FxaaUBO { vec2 u_rcp; vec2 _pad; vec4 u_prof; };   // u_prof: x subpix, y edge threshold, z edge threshold min (profile "kenshi" 0.75 / 0.166 / 0.0833; DE-312 profile "hialgo" 0.15 / 0.20 / 0.0833)
 
-const float kSubpix = 0.75, kEdgeThr = 0.166, kEdgeThrMin = 0.0833;
+#define kSubpix u_prof.x
+#define kEdgeThr u_prof.y
+#define kEdgeThrMin u_prof.z
 const float kStep[5] = float[5](1.0, 1.5, 2.0, 4.0, 12.0);
 
 float lumaAt(vec2 p) { return texture(u_scene, p).g; }

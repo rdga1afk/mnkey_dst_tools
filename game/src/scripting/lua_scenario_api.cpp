@@ -309,8 +309,14 @@ static int l_md_set_dynres_grass(lua_State* L) { md_set_dynres_grass(lua_toboole
 extern float g_grass_scale_dyn;
 static int l_md_dyn_grass_scale(lua_State* L) { lua_pushnumber(L, g_grass_scale_dyn); return 1; }   // dynres 0.7: the grass scale dynres asks for now
 static int l_md_set_grass_scale(lua_State* L) { g_grass_scale = (float)luaL_checknumber(L, 1); return 0; }   // dynres 0.7: grass overlay at this fraction of the ground resolution (1 = off, default)
+extern int g_fxaa_profile, g_stair_taps; extern bool g_hialgo_catmull;
+static int l_md_set_fxaa_profile(lua_State* L) { g_fxaa_profile = std::string(luaL_checkstring(L, 1)) == "hialgo" ? 1 : 0; return 0; }   // DE-312: "kenshi" (default) | "hialgo"
+static int l_md_set_stair_blur(lua_State* L) { g_stair_taps = lua_toboolean(L, 1) ? (int)luaL_optinteger(L, 2, 8) : 0; return 0; }   // DE-312: stair-only blur on the internal frame, taps per side (default 8, cap 31), off by default
+static int l_md_set_hialgo_catmull(lua_State* L) { g_hialgo_catmull = lua_toboolean(L, 1) != 0; return 0; }   // DE-312: 4x4 Catmull-Rom (default) or 4-tap bilinear inside the neighbour clamp
 static int l_md_set_upscaler(lua_State* L) {   // "sgsr1" (off here) | "sgsr2" | "fsr2lite" (variant 5, RCAS 0.4 unless md.set_sgsr2_rcas was called later)
     const std::string m = luaL_checkstring(L, 1);
+    extern bool g_hialgo, g_hialgo_x2;
+    g_hialgo = (m == "hialgo" || m == "x2"); g_hialgo_x2 = (m == "x2");
     g_opt_sgsr2 = (m == "sgsr2" || m == "fsr2lite"); g_upscaler_lite = (m == "fsr2lite");
     if (m == "fsr2lite") g_sgsr2_rcas = 0.4f;
     return 0;
@@ -568,6 +574,9 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_dynres_grass", l_md_set_dynres_grass);
     sys.RegisterNamespaceFunction("dyn_grass_scale", l_md_dyn_grass_scale);
     sys.RegisterNamespaceFunction("set_grass_scale", l_md_set_grass_scale);
+    sys.RegisterNamespaceFunction("set_fxaa_profile", l_md_set_fxaa_profile);
+    sys.RegisterNamespaceFunction("set_stair_blur", l_md_set_stair_blur);
+    sys.RegisterNamespaceFunction("set_hialgo_catmull", l_md_set_hialgo_catmull);
     sys.RegisterNamespaceFunction("set_upscaler", l_md_set_upscaler);
     sys.RegisterNamespaceFunction("set_sgsr2_rcas", l_md_set_sgsr2_rcas);
     sys.RegisterNamespaceFunction("set_sgsr2_fsr2", l_md_set_sgsr2_fsr2);
