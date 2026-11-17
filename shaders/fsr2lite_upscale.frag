@@ -76,13 +76,12 @@ void main()
 
     vec3 col = vec3(0.0); float wsum = 0.0;
     vec3 ymin = vec3(3.4e38), ymax = vec3(-3.4e38);
-    float luma[9]; int k = 0;
-    for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x, ++k) {
-        vec3 c = texelFetch(InputColor, clamp(InputPos + ivec2(x, y), ivec2(0), lim), 0).xyz;
+    const ivec2 offs[5] = ivec2[5](ivec2(0, 0), ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1));   // 5 taps: the cross (the corners weigh little and are fetched only for the thin-feature test)
+    for (int i = 0; i < 5; ++i) {
+        vec3 c = texelFetch(InputColor, clamp(InputPos + offs[i], ivec2(0), lim), 0).xyz;
         vec3 yc = RGBToYCoCg(c);
-        luma[k] = yc.x;
         ymin = min(ymin, yc); ymax = max(ymax, yc);
-        vec2 d = rel + vec2(float(x), float(y));
+        vec2 d = rel + vec2(offs[i]);
         float w = Kernel2(d.x) * Kernel2(d.y);
         col += c * w; wsum += w;
     }
@@ -103,7 +102,12 @@ void main()
     if (still && lumaInstability < 0.35) { histC = histY; outside = 0.0; }
 
     // thin-feature lock: a stable thin ridge keeps its history
-    bool lock = (motion_len < 0.5) && ThinFeature(luma) && lumaInstability < 0.25;
+    bool lock = false;
+    if (motion_len < 0.5 && lumaInstability < 0.25) {
+        float luma[9]; int k = 0;
+        for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x, ++k) { vec3 c = texelFetch(InputColor, clamp(InputPos + ivec2(x, y), ivec2(0), lim), 0).xyz; luma[k] = 0.25 * c.r + 0.5 * c.g + 0.25 * c.b; }
+        lock = ThinFeature(luma);
+    }
 
     float maxAge = still ? 64.0 : 16.0;
     age = min(age, maxAge);
