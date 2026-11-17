@@ -31,14 +31,13 @@ layout(std140, set = 3, binding = 0) uniform Params
 vec3 RGBToYCoCg(vec3 c) { return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
 vec3 YCoCgToRGB(vec3 y) { return vec3(y.x + y.y - y.z, y.x + y.z, y.x - y.y - y.z); }
 
-float Lanczos2(float x)   // support 2; x in render pixels
+float Kernel2(float x)   // Catmull-Rom, support 2: the closest sin-free stand-in for the Lanczos-2 lobe (sin() cost ~3 ms at 1080p on Gen9)
 {
     x = abs(x);
-    if (x < 1e-4) return 1.0;
-    if (x >= 2.0) return 0.0;
-    const float PI = 3.14159265;
-    float px = PI * x;
-    return (sin(px) / px) * (sin(0.5 * px) / (0.5 * px));
+    float x2 = x * x;
+    if (x < 1.0) return 1.5 * x2 * x - 2.5 * x2 + 1.0;
+    if (x < 2.0) return -0.5 * x2 * x + 2.5 * x2 - 4.0 * x + 2.0;
+    return 0.0;
 }
 
 // thin bright / dark ridge in the 3x3 neighbourhood (FSR 2 ComputeThinFeatureConfidence)
@@ -84,7 +83,7 @@ void main()
         luma[k] = yc.x;
         ymin = min(ymin, yc); ymax = max(ymax, yc);
         vec2 d = rel + vec2(float(x), float(y));
-        float w = Lanczos2(d.x) * Lanczos2(d.y);
+        float w = Kernel2(d.x) * Kernel2(d.y);
         col += c * w; wsum += w;
     }
     vec3 recon = col / max(wsum, 1e-4);
@@ -98,7 +97,8 @@ void main()
     vec3 pad = (ymax - ymin) * 0.1 + vec3(0.002);
     vec3 histC = clamp(histY, ymin - pad, ymax + pad);
     float outside = any(notEqual(histC, histY)) ? 1.0 : 0.0;
-    float lumaInstability = abs(histY.x - RGBToYCoCg(recon).x) / max(max(histY.x, RGBToYCoCg(recon).x), 1e-3);
+    float reconY = 0.25 * recon.r + 0.5 * recon.g + 0.25 * recon.b;
+    float lumaInstability = abs(histY.x - reconY) / max(max(histY.x, reconY), 1e-3);
     // a still camera has no motion to ghost: the converged history is kept unless it differs strongly (animated pixels), so the jitter phase does not move the box around it
     if (still && lumaInstability < 0.35) { histC = histY; outside = 0.0; }
 
