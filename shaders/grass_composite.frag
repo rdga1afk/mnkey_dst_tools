@@ -7,6 +7,9 @@ layout(set = 2, binding = 0) uniform sampler2D u_base;
 layout(set = 2, binding = 1) uniform sampler2D u_grass;
 void main() {
     vec4 b = texture(u_base, v_uv);
-    vec4 g = texture(u_grass, v_uv);
-    o = vec4(b.rgb * (1.0 - g.a) + g.rgb, max(b.a, g.a));
+    vec4 g = texture(u_grass, v_uv);   // premultiplied by coverage, bilinear
+    // the full-resolution blades are hard cut-outs (alpha test): sharpen the bilinear coverage back towards an edge and take the colour unpremultiplied, so a silhouette is neither soft nor dark
+    float a = clamp((g.a - 0.5) * 2.5 + 0.5, 0.0, 1.0);
+    vec3 c = g.rgb / max(g.a, 1e-3);
+    o = vec4(mix(b.rgb, c, a), max(b.a, a));
 }
