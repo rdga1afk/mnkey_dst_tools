@@ -49,10 +49,11 @@ struct State {
     std::vector<md::fcsdef::AssetRow> assets; bool assets_ready = false;
     std::vector<md::fcs::LoadEntry> mods;           // the installed mods in load order (core files excluded): the «Load mod» list
     bool w_world = true, w_item = true, w_info = false, w_changes = false, w_find = false, w_settings = false, w_assets = false, w_errors = false, w_conv = false, w_pkg = false, w_merge = false, w_setfield = false, show_refs = true;   // child windows of the main shell
+    std::vector<md::fcsdef::RefHit> ref_cache; std::string ref_cache_for; bool ref_cache_ok = false; std::string owner_cache; std::string owner_cache_for; bool owner_cache_ok = false;   // «who references the selected item»: a scan of every record, computed on selection / edit, not per frame
     bool col_sid = false, col_type = false, col_state = false;   // Game World list columns (Columns submenu)
 } g;
 
-void Refresh() { if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
+void Refresh() { g.ref_cache_ok = false; g.owner_cache_ok = false; if (!g.selected.empty()) { g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }
 void Select(const md::fcsdef::LayoutNode& n);
 // (Re)builds browser / edit layer / dialogues over g.data; the selection starts over.
 void Rebuild() {
@@ -60,7 +61,7 @@ void Rebuild() {
     g.edits = std::make_unique<md::fcsdef::EditSession>(g.schema, g.data, std::string(g.mod_name) + ".mod");
     g.browser->SetEdits(g.edits.get());
     g.dialogs = std::make_unique<md::fcsdef::DialogModel>(*g.edits, g.schema, g.data);
-    g.problems.clear(); g.hits.clear(); g.repl_hits.clear(); g.line.clear(); g.line_parent.clear(); g.hist.clear(); g.hpos = -1; g.selected.clear(); g.card.clear(); g.insts.clear(); g.rows.clear(); g.node = nullptr;
+    g.ref_cache_ok = false; g.owner_cache_ok = false; g.problems.clear(); g.hits.clear(); g.repl_hits.clear(); g.line.clear(); g.line_parent.clear(); g.hist.clear(); g.hpos = -1; g.selected.clear(); g.card.clear(); g.insts.clear(); g.rows.clear(); g.node = nullptr;
     if (!g.schema.layout.empty()) { Select(g.schema.layout[0]); if (!g.rows.empty()) { g.selected = g.rows[0].string_id; g.card = g.browser->Card(g.selected); g.insts = g.browser->Instances(g.selected); } }   // the first category and its first item are open on start
 }
 
@@ -363,8 +364,12 @@ void DrawGameWorld() {
         if (g.col_state) ImGui::TableSetupColumn("State");
         for (const std::string& c : cols) ImGui::TableSetupColumn(c.c_str());
         ImGui::TableHeadersRow();
-        for (const md::fcsdef::ItemRow& r : g.rows) {
-            if (g.filter[0] && r.name.find(g.filter) == std::string::npos) continue;
+        static std::vector<int> view;   // rows that pass the filter; only the visible ones are drawn (the list has thousands of rows)
+        const bool filtered = g.filter[0] != 0;
+        if (filtered) { view.clear(); for (int i = 0; i < (int)g.rows.size(); ++i) if (g.rows[i].name.find(g.filter) != std::string::npos) view.push_back(i); }
+        ImGuiListClipper clip; clip.Begin(filtered ? (int)view.size() : (int)g.rows.size());
+        while (clip.Step()) for (int vi = clip.DisplayStart; vi < clip.DisplayEnd; ++vi) {
+            const md::fcsdef::ItemRow& r = g.rows[filtered ? view[vi] : vi];
             const md::fcsdef::RecordState st = g.edits->StateOfRecord(r.string_id);
             ImGui::TableNextRow(); ImGui::TableNextColumn();
             const bool tint = st != md::fcsdef::RecordState::Original;
@@ -434,7 +439,7 @@ void DrawItemWin() {
     }
     if (!g.selected.empty() && g.edits->StateOfRecord(g.selected) == md::fcsdef::RecordState::Removed) { if (ImGui::Button("Restore")) { g.edits->Restore(g.selected); RefreshRows(); } }
     ImGui::Checkbox("only fields set by the data", &g.only_changed); ImGui::SameLine(); ImGui::Checkbox("hidden by conditions", &g.show_hidden);
-    if (!g.selected.empty()) { const std::string owner = g.edits->OwnerOf(g.selected); if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); } }
+    if (!g.selected.empty()) { if (!g.owner_cache_ok || g.owner_cache_for != g.selected) { g.owner_cache = g.edits->OwnerOf(g.selected); g.owner_cache_for = g.selected; g.owner_cache_ok = true; } const std::string& owner = g.owner_cache; if (!owner.empty()) { ImGui::SameLine(); ImGui::TextDisabled("OWNED by %s", g.edits->NameOf(owner).c_str()); } }
     constexpr float kSplit1 = 498, kSplit2 = 297;   // itemproperties: horizontal split (top | description), vertical split (grid | reference lists)
     Dump("split|Item|split1|" + std::to_string((int)kSplit1)); Dump("split|Item|split2|" + std::to_string((int)kSplit2));
     static std::string s_field;   // the field shown in the bottom pane
@@ -541,7 +546,8 @@ void DrawItemWin() {
     ImGui::SameLine(0, 0);
     ImGui::BeginChild("kd_refs", ImVec2(0, 0), true);
     if (g.show_refs && !g.selected.empty()) {
-        for (const md::fcsdef::RefHit& r : md::fcsdef::Referencing(*g.edits, g.data, g.selected)) if (ImGui::Selectable((r.name + "   (" + r.category + ")##rb" + r.string_id + r.category).c_str())) Go(r.string_id);
+        if (!g.ref_cache_ok || g.ref_cache_for != g.selected) { g.ref_cache = md::fcsdef::Referencing(*g.edits, g.data, g.selected); g.ref_cache_for = g.selected; g.ref_cache_ok = true; }
+        for (const md::fcsdef::RefHit& r : g.ref_cache) if (ImGui::Selectable((r.name + "   (" + r.category + ")##rb" + r.string_id + r.category).c_str())) Go(r.string_id);
     }
     ImGui::EndChild();
     ImGui::EndChild();   // kd_item_top
