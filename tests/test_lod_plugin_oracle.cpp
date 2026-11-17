@@ -111,3 +111,19 @@ TEST(LodPluginOracle, NeighbourLimitEqualsThePluginsSetPatchSize) {
     }
     EXPECT_EQ(rows, 7);
 }
+
+// The sun's direction (exe SkyXController::update, FUN_14066d400, run in the emulator): rows hour / sunrise / sunset / tilt -> x, y, z (float bits).
+TEST(LodPluginOracle, SunDirectionEqualsTheExesUpdate) {
+    std::ifstream in("tools/tests/data/exe_sun_direction.tsv"); std::string line; int rows = 0; double worst = 0;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line); std::string f[7]; for (int k = 0; k < 7; ++k) std::getline(ss, f[k], '\t');
+        md::KenshiSkySettings s; s.sunrise = std::stof(f[1]); s.sunset = std::stof(f[2]); s.tilt = std::stof(f[3]);
+        const md::KsVec3 v = s.SunDirection(std::stof(f[0]));
+        worst = std::fmax(worst, std::fmax(std::fabs(v.x - Bits(f[4])), std::fmax(std::fabs(v.y - Bits(f[5])), std::fabs(v.z - Bits(f[6])))));
+        ++rows;
+    }
+    std::printf("sun direction vs the exe: %d rows, worst abs difference %.2e\n", rows, worst);
+    EXPECT_EQ(rows, 432);
+    EXPECT_LT(worst, 2e-6);
+}
