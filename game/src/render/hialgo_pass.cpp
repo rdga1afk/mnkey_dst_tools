@@ -2,6 +2,7 @@
 #include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/render/gpu_hal_free_functions.h>
 #include <cstdio>
+#include <utility>
 
 bool HialgoPass::Init() {
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
@@ -27,20 +28,27 @@ void HialgoPass::Shutdown() {
     if (dev) {
         if (a_) GpuReleaseTexture(dev, a_);
         if (b_) GpuReleaseTexture(dev, b_);
+        if (alt_a_) GpuReleaseTexture(dev, alt_a_);
+        if (alt_b_) GpuReleaseTexture(dev, alt_b_);
         if (linear_) GpuReleaseSampler(dev, linear_);
         if (nearest_) GpuReleaseSampler(dev, nearest_);
     }
-    a_ = b_ = nullptr; linear_ = nearest_ = nullptr; w_ = h_ = 0;
+    a_ = b_ = alt_a_ = alt_b_ = nullptr; linear_ = nearest_ = nullptr; w_ = h_ = alt_w_ = alt_h_ = 0;
     fxaa_.Destroy(); blur_.Destroy(); up_.Destroy(); ready_ = false;
 }
 
 void HialgoPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
     if (!ready_ || w <= 0 || h <= 0) return;
     if (a_ && b_ && w == w_ && h == h_ && fmt == fmt_) return;
+    if (alt_a_ && alt_b_ && w == alt_w_ && h == alt_h_ && fmt == alt_fmt_) {   // back to the previous size: swap
+        std::swap(a_, alt_a_); std::swap(b_, alt_b_); std::swap(w_, alt_w_); std::swap(h_, alt_h_); std::swap(fmt_, alt_fmt_);
+        return;
+    }
     md::GpuDevice::Get().WarnIfActive("HialgoPass::Ensure");
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
-    if (a_) GpuReleaseTexture(dev, a_);
-    if (b_) GpuReleaseTexture(dev, b_);
+    if (alt_a_) GpuReleaseTexture(dev, alt_a_);
+    if (alt_b_) GpuReleaseTexture(dev, alt_b_);
+    alt_a_ = a_; alt_b_ = b_; alt_w_ = w_; alt_h_ = h_; alt_fmt_ = fmt_;   // the current pair becomes the alt one
     SDL_GPUTextureCreateInfo ti{};
     ti.type = SDL_GPU_TEXTURETYPE_2D; ti.format = fmt; ti.width = (uint32_t)w; ti.height = (uint32_t)h; ti.layer_count_or_depth = 1; ti.num_levels = 1;
     ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;

@@ -19,6 +19,7 @@ public:
 private:
     GpuPipeline fxaa_, blur_, up_;
     SDL_GPUTexture* a_ = nullptr; SDL_GPUTexture* b_ = nullptr; int w_ = 0, h_ = 0; SDL_GPUTextureFormat fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
+    SDL_GPUTexture* alt_a_ = nullptr; SDL_GPUTexture* alt_b_ = nullptr; int alt_w_ = 0, alt_h_ = 0; SDL_GPUTextureFormat alt_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;   // the previous size (dynres 1.0 <-> floor): swapped back, nothing is created
     SDL_GPUSampler* linear_ = nullptr; SDL_GPUSampler* nearest_ = nullptr;
     bool ready_ = false;
 };
