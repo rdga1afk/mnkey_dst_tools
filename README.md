@@ -13,7 +13,7 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 
 **Editor, measurement drivers and offline converters for [monkey_dust](https://github.com/rdga1afk/mnkey_dst_engine), a native Linux engine that renders Kenshi's world from your own install.**
 
-[English](#english) · [Українською](#українською) · [Engine](https://github.com/rdga1afk/mnkey_dst_engine) · [Docs site](https://rdga1afk.github.io/mnkey_dst_engine/)
+[English](#english) · [Українською](#українською) · [Engine](https://github.com/rdga1afk/mnkey_dst_engine) · Project page: https://rdga1afk.github.io/mnkey_dst_engine/ · [Docs site](https://rdga1afk.github.io/mnkey_dst_engine/)
 
 ---
 
@@ -23,7 +23,7 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 > Tools that touch game data read them from **your own Kenshi install** and write results outside this repository. This repository contains **no Kenshi data**. Kenshi content itself is edited with Kenshi's own **Forgotten Construction Set (FCS)**, not with these tools.
 
 ### The game's source is here (since 11.11.2026)
-The game itself moved into this repository (MIT): `game/` (source, CMake, our own small data), `shaders/` (our GLSL), `tests/` (unit tests), `scripts/` (shader compile and embedding). Kenshi's own shader programs are not here: the game compiles them at run time from your install. A few shaders translated from Kenshi stay in a private repository until they are replaced by the originals; a game built from this repository alone starts and loads the world from your install, and logs one line for each feature that is off for that reason.
+The game itself moved into this repository (GPL-3.0-or-later): `game/` (source, CMake, our own small data), `shaders/` (our GLSL), `tests/` (unit tests), `scripts/` (shader compile and embedding). Kenshi's own shader programs are not here: the game compiles them at run time from your install. A few shaders translated from Kenshi stay in a private repository until they are replaced by the originals; a game built from this repository alone starts and loads the world from your install, and logs one line for each feature that is off for that reason.
 **This repository builds on its own** (the game, the editor and the unit tests; see Build below). Running the game needs a Kenshi install (`KENSHI_DIR`); the features that need the few private translated shaders stay off and each logs one `[GpuPipeline] missing shader` line. Status, measurements and goals: [engine README](https://github.com/rdga1afk/mnkey_dst_engine#readme) and the [docs site](https://rdga1afk.github.io/mnkey_dst_engine/).
 
 ### What is here
@@ -95,7 +95,7 @@ Dependency rule: `tools/` includes only `engine/` (`<monkey_dust/...>`) and `too
 Early Linux builds of the monkey_dust game will be published in this repository's [Releases](https://github.com/rdga1afk/mnkey_dst_tools/releases) (planned, date not set yet). The builds contain no Kenshi files: they read your own Kenshi install at startup.
 
 ### Licence
-MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies taken before then keep that licence). `third_party/imgui_test_engine` has its own licence (Dear ImGui Test Engine License), is used only for automated tests and is not part of release builds. Kenshi is a trademark of Lo-Fi Games; this project is not affiliated with Lo-Fi Games.
+GPL-3.0-or-later, see [LICENSE](LICENSE) ("or any later version" applies). MIT from 08.11.2026 until 17.11.2026, GPL-3.0 before that; copies taken before 17.11.2026 keep the licence they were taken under. `third_party/imgui_test_engine` has its own licence (Dear ImGui Test Engine License), is used only for automated tests and is not part of release builds. Kenshi is a trademark of Lo-Fi Games; this project is not affiliated with Lo-Fi Games.
 
 ---
 
@@ -105,7 +105,7 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 > Інструменти, що працюють з даними гри, читають їх з **вашої власної інсталяції Kenshi** і пишуть результати поза цим репозиторієм. Тут **немає даних Kenshi**. Сам контент Kenshi редагується її власним **Forgotten Construction Set (FCS)**, а не цими інструментами.
 
 ### Код гри тепер тут (з 11.11.2026)
-Сама гра переїхала в цей репозиторій (MIT): `game/` (код, CMake, наші невеликі дані), `shaders/` (наш GLSL), `tests/` (модульні тести), `scripts/` (компіляція й вбудовування шейдерів). Власних шейдерних програм Kenshi тут немає: гра компілює їх під час запуску з вашої інсталяції. Кілька шейдерів, перекладених з Kenshi, лишаються в приватному репозиторії, доки їх не замінять оригінали; гра, зібрана лише з цього репозиторію, запускається й завантажує світ з вашої інсталяції, а для кожної функції, вимкненої з цієї причини, пише один рядок у журнал.
+Сама гра переїхала в цей репозиторій (GPL-3.0-or-later): `game/` (код, CMake, наші невеликі дані), `shaders/` (наш GLSL), `tests/` (модульні тести), `scripts/` (компіляція й вбудовування шейдерів). Власних шейдерних програм Kenshi тут немає: гра компілює їх під час запуску з вашої інсталяції. Кілька шейдерів, перекладених з Kenshi, лишаються в приватному репозиторії, доки їх не замінять оригінали; гра, зібрана лише з цього репозиторію, запускається й завантажує світ з вашої інсталяції, а для кожної функції, вимкненої з цієї причини, пише один рядок у журнал.
 **Цей репозиторій збирається самостійно** (гра, редактор і модульні тести; див. «Збірка»). Для запуску гри потрібна інсталяція Kenshi (`KENSHI_DIR`); можливості, що потребують кількох приватних перекладених шейдерів, вимкнені, і кожна пише один рядок `[GpuPipeline] missing shader`. Стан, заміри й цілі — у [README рушія](https://github.com/rdga1afk/mnkey_dst_engine#readme) і на [сайті документації](https://rdga1afk.github.io/mnkey_dst_engine/).
 
 ### Що тут є
@@ -151,4 +151,4 @@ MIT, see [LICENSE](LICENSE) (until 08.11.2026 the repository was GPL-3.0; copies
 Ранні збірки гри monkey_dust для Linux публікуватимуться в [релізах](https://github.com/rdga1afk/mnkey_dst_tools/releases) цього репозиторію (заплановано, дату ще не визначено). Збірки не містять файлів Kenshi: вони читають вашу власну інсталяцію під час запуску.
 
 ### Ліцензія
-MIT, див. [LICENSE](LICENSE) (до 08.11.2026 репозиторій був під GPL-3.0; копії, взяті раніше, лишаються під нею). `third_party/imgui_test_engine` має власну ліцензію (Dear ImGui Test Engine License), використовується лише для автоматичних тестів і не входить у релізні збірки. Kenshi — торгова марка Lo-Fi Games; проєкт з Lo-Fi Games не пов'язаний.
+GPL-3.0-or-later, див. [LICENSE](LICENSE) (діє «або будь-яка пізніша версія»). MIT — з 08.11.2026 до 17.11.2026, до того GPL-3.0; копії, взяті до 17.11.2026, лишаються під ліцензією, з якою їх узято. `third_party/imgui_test_engine` має власну ліцензію (Dear ImGui Test Engine License), використовується лише для автоматичних тестів і не входить у релізні збірки. Kenshi — торгова марка Lo-Fi Games; проєкт з Lo-Fi Games не пов'язаний.
