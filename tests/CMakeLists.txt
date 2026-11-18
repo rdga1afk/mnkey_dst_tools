@@ -86,6 +86,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_inverse_check.cpp
     ${MD_UTEST_DIR}/test_kenshi_land.cpp
     ${MD_UTEST_DIR}/test_weather.cpp
+    ${MD_UTEST_DIR}/test_player_selection.cpp
     ${MD_UTEST_DIR}/test_biome_layer_cache.cpp
     ${MD_UTEST_DIR}/test_kbi1.cpp
     ${MD_UTEST_DIR}/test_biome_layer_arrays_gpu.cpp
