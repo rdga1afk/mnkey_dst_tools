@@ -3,6 +3,11 @@
 #include <monkey_dust/render/kenshi_sky.h>
 #include <monkey_dust/render/kenshi_hdr.h>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 TEST(KenshiSky, SunRisesAndSets) {
     md::KenshiSkySettings s;   // sunrise 5, sunset 23, latitude 54
@@ -173,4 +178,23 @@ TEST(KenshiHdr, AdaptLuminance) {
     EXPECT_FLOAT_EQ(md::KenshiAdaptLuminance(1.f, 0.f, 100.f, 0.5f, 0.8f, 1.2f), 0.8f);   // clamped to MIN_LUMINANCE
     EXPECT_FLOAT_EQ(md::KenshiAdaptLuminance(1.f, 9.f, 100.f, 0.5f, 0.8f, 1.2f), 1.2f);   // clamped to MAX_LUMINANCE
     EXPECT_NEAR(md::KenshiExposureOf(1.2f), 0.55f / 1.2f, 1e-6f);
+}
+
+// SkyX_x64.dll AtmosphereManager::_scale (0x180003860) run in the Unicorn emulator (tools_private/research/skyx_leaf_oracle.py -> tools/tests/data/skyx_scale.tsv): ours (KenshiSkySettings::Scale)
+// agrees within 1e-4 relative; the DLL evaluates the polynomial in double and calls the C library's exp.
+TEST(KenshiSky, ScaleMatchesSkyXDllEmulatorVectors) {
+    std::ifstream in("tools/tests/data/skyx_scale.tsv"); std::string line; int rows = 0, inf = 0; double worst = 0;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line); std::string x, d, b; std::getline(ss, x, '\t'); std::getline(ss, d, '\t'); std::getline(ss, b, '\t');
+        const uint32_t u = (uint32_t)std::stoul(b, nullptr, 16); float want; std::memcpy(&want, &u, 4);
+        const float got = md::KenshiSkySettings::Scale(std::stof(x), std::stof(d));
+        ++rows;
+        if (std::isinf(want)) { ++inf; EXPECT_TRUE(std::isinf(got)) << x << " " << d; continue; }
+        const double rel = want == 0.f ? std::fabs(got) : std::fabs((double)got - want) / std::fabs((double)want);
+        worst = std::fmax(worst, rel);
+    }
+    std::printf("SkyX _scale vs ours: %d rows (%d infinite), worst relative difference %.2e\n", rows, inf, worst);
+    EXPECT_EQ(rows, 80);
+    EXPECT_LT(worst, 1e-4);
 }
