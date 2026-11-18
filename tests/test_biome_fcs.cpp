@@ -1,6 +1,7 @@
 // The biome table built from the FCS BIOMES records must be the table the offline generator wrote (game/data/biome_table.txt), text for
 // text, and load into an identical registry. Runs only with KENSHI_DIR set and from the repo root (needs game/data/biome_table.txt and
 // tmp_/kenshi_re/terrain_textures, which are private data not in the public repos).
+#include "install_hash.h"
 #include <gtest/gtest.h>
 #include <monkey_dust/world/biome_def.h>
 #include <monkey_dust/world/ground_pack.h>
@@ -14,8 +15,8 @@
 #include <sstream>
 
 namespace {
-const char* TEX_DIR = "tmp_/kenshi_re/terrain_textures";
-const char* TABLE = "game/data/biome_table.txt";
+// the terrain textures of the game folder (the old scratch copy tmp_/kenshi_re/terrain_textures is not used any more)
+std::string TexDir() { return std::string(std::getenv("KENSHI_DIR") ? std::getenv("KENSHI_DIR") : "") + "/data/newland/land/textures"; }
 
 std::string Content(const std::string& text) { // the table without comments and blank lines
     std::istringstream in(text);
@@ -43,41 +44,28 @@ std::vector<md::fcs::Record> BiomeRecords(const std::string& dir) {
 }
 } // namespace
 
-TEST(BiomeFcs, TableMatchesGeneratedFile) {
+TEST(BiomeFcs, TableMatchesHashReference) {
     const char* dir = std::getenv("KENSHI_DIR");
-    if (!dir || !*dir) GTEST_SKIP() << "KENSHI_DIR not set";
-    if (!std::filesystem::exists(TABLE) || !std::filesystem::is_directory(TEX_DIR)) GTEST_SKIP() << "run from the repo root with the private data";
-    std::ifstream f(TABLE, std::ios::binary);
-    std::stringstream ss; ss << f.rdbuf();
-    std::string expected = Content(ss.str());
+    ASSERT_TRUE(dir && *dir) << "needs KENSHI_DIR";
     auto records = BiomeRecords(dir);
-    ASSERT_GE(records.size(), 136u); // 136 in gamedata.base / Newwworld.mod / rebirth.mod (the generator's input) + any in other files (Dialogue.mod: 1)
-    std::string built = Content(BiomeRegistry::BuildTableFromFcs(records, TEX_DIR));
-    if (built != expected) {
-        std::istringstream a(expected), b(built);
-        std::string la, lb; int n = 0;
-        while (n < 3 && (std::getline(a, la), std::getline(b, lb), a || b)) { if (la != lb) { ADD_FAILURE() << "first difference:\nfile : " << la << "\nbuilt: " << lb; ++n; } }
-    }
-    EXPECT_TRUE(built == expected);
+    ASSERT_GE(records.size(), 136u); // 136 in gamedata.base / Newwworld.mod / rebirth.mod (the old generator's input) + any in other files (Dialogue.mod: 1)
+    const std::string built = Content(BiomeRegistry::BuildTableFromFcs(records, TexDir().c_str()));
+    ASSERT_FALSE(built.empty());
+    MD_EXPECT_INSTALL_HASH("biome_table_from_fcs", built.data(), built.size());
 }
 
-TEST(BiomeFcs, RegistryIdentical) {
+// The registry the game loads from the FCS records: biome count, ground textures and every BiomeDef, against a hash reference (tests/data/install_hashes.tsv).
+TEST(BiomeFcs, RegistryMatchesHashReference) {
     const char* dir = std::getenv("KENSHI_DIR");
-    if (!dir || !*dir) GTEST_SKIP() << "KENSHI_DIR not set";
-    if (!std::filesystem::exists(TABLE) || !std::filesystem::is_directory(TEX_DIR)) GTEST_SKIP() << "run from the repo root with the private data";
+    ASSERT_TRUE(dir && *dir) << "needs KENSHI_DIR";
     BiomeRegistry& reg = BiomeRegistry::Get();
-    ASSERT_TRUE(reg.LoadFromFile(TABLE));
-    int n = reg.BiomeCount(), nt = reg.GroundTexCount();
-    std::vector<BiomeDef> defs;
-    for (int i = 0; i < n; ++i) defs.push_back(reg.ForIndex(i));
-    std::vector<std::string> tex, nml;
-    for (int i = 0; i < nt; ++i) { tex.push_back(reg.GroundTexPath(i)); nml.push_back(reg.GroundNmlPath(i)); }
-    ASSERT_TRUE(reg.LoadFromKenshi(dir, TEX_DIR));
-    ASSERT_EQ(reg.BiomeCount(), n);
-    ASSERT_EQ(reg.GroundTexCount(), nt);
-    for (int i = 0; i < n; ++i) EXPECT_EQ(memcmp(&defs[i], &reg.ForIndex(i), sizeof(BiomeDef)), 0) << "biome " << i;
-    for (int i = 0; i < nt; ++i) { EXPECT_EQ(tex[i], reg.GroundTexPath(i)); EXPECT_EQ(nml[i], reg.GroundNmlPath(i)); }
-    printf("[BiomeFcs] %d biomes, %d textures identical\n", n, nt);
+    ASSERT_TRUE(reg.LoadFromKenshi(dir, TexDir().c_str()));
+    const int n = reg.BiomeCount(), nt = reg.GroundTexCount();
+    ASSERT_GT(n, 50); ASSERT_GT(nt, 10);
+    std::string all = std::to_string(n) + "|" + std::to_string(nt) + "\n";
+    for (int i = 0; i < nt; ++i) all += std::string(reg.GroundTexPath(i)) + "|" + reg.GroundNmlPath(i) + "\n";
+    for (int i = 0; i < n; ++i) all.append(reinterpret_cast<const char*>(&reg.ForIndex(i)), sizeof(BiomeDef));
+    MD_EXPECT_INSTALL_HASH("biome_registry", all.data(), all.size());
 }
 
 // Which packer inputs the merged BIOMES records leave out (the original reads 0 for those) and that the pack follows the record.
@@ -139,7 +127,7 @@ bool ReadDds(const std::string& p, DdsInfo& d) {
 TEST(BiomeFcs, LayerArrayMemory) {
     const char* dir = std::getenv("KENSHI_DIR");
     if (!dir || !*dir) GTEST_SKIP() << "KENSHI_DIR not set";
-    ASSERT_TRUE(BiomeRegistry::Get().LoadFromKenshi(dir, TEX_DIR));
+    ASSERT_TRUE(BiomeRegistry::Get().LoadFromKenshi(dir, TexDir().c_str()));
     const BiomeRegistry& R = BiomeRegistry::Get();
     std::map<std::string, DdsInfo> seen; uint64_t all_unique = 0, per_biome_total = 0, worst_biome = 0; int missing = 0;
     auto bytes_of = [&](const char* path) -> uint64_t { if (!path || !*path) { ++missing; return 0; } auto it = seen.find(path); if (it == seen.end()) { DdsInfo d; if (!ReadDds(path, d)) { ++missing; return 0; } it = seen.emplace(path, d).first; all_unique += d.bytes; } return it->second.bytes; };

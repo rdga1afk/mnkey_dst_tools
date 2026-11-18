@@ -1,7 +1,11 @@
 // LoadOgreStaticMesh reads a Kenshi .mesh straight from the install and gives the geometry of the converted .glb (tools/md_convert_static.py --scale 0.1): every glb in game/data/props/features
 // (named by tools/md_convert_features.py sanitize()) against its .mesh named in game/data/features_scatter.txt. Needs KENSHI_DIR and the repo as the working folder.
 #include <gtest/gtest.h>
+#include "install_hash.h"
 #include <monkey_dust/io/kenshi_dir.h>
+#include <monkey_dust/world/feature_scatter.h>
+#include <set>
+#include <sstream>
 #include <monkey_dust/render/prop_mesh.h>
 #include "../../engine/src/render/cgltf.h"
 #include <cmath>
@@ -10,44 +14,24 @@
 #include <map>
 #include <regex>
 
-TEST(OgreStaticMesh, FeatureGlbsEqualDirectMesh) {
-    if (md::KenshiDir().empty() || !std::filesystem::exists("game/data/features_scatter.txt")) GTEST_SKIP() << "needs KENSHI_DIR and the repo as working folder";
-    std::map<std::string, std::string> by_glb;   // sanitized name -> game-data path
-    std::ifstream f("game/data/features_scatter.txt"); std::string line;
-    while (std::getline(f, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        const std::string mp = line.substr(0, line.find('|'));
-        std::string n = mp.substr(mp.find_last_of("\\/") + 1);
-        n = std::regex_replace(n, std::regex("\\.mesh$", std::regex::icase), "");
-        n = std::regex_replace(n, std::regex("[^A-Za-z0-9_.-]"), "_");
-        by_glb[n] = mp;
-    }
-    int checked = 0, bad = 0;
-    for (const auto& kv : by_glb) {
-        const std::string glb = "game/data/props/features/" + kv.first + ".glb";
-        if (!std::filesystem::exists(glb)) continue;
-        cgltf_options o = {}; cgltf_data* d = nullptr;
-        ASSERT_EQ(cgltf_parse_file(&o, glb.c_str(), &d), cgltf_result_success) << glb;
-        ASSERT_EQ(cgltf_load_buffers(&o, d, glb.c_str()), cgltf_result_success);
-        const cgltf_primitive& pr = d->meshes[0].primitives[0];
-        cgltf_accessor *pa = nullptr, *na = nullptr, *ua = nullptr;
-        for (cgltf_size a = 0; a < pr.attributes_count; ++a) { if (pr.attributes[a].type == cgltf_attribute_type_position) pa = pr.attributes[a].data; if (pr.attributes[a].type == cgltf_attribute_type_normal) na = pr.attributes[a].data; if (pr.attributes[a].type == cgltf_attribute_type_texcoord) ua = pr.attributes[a].data; }
+TEST(OgreStaticMesh, FeatureMeshesMatchHashReference) {
+    ASSERT_FALSE(md::KenshiDir().empty()) << "needs KENSHI_DIR";
+    // every mesh named by the placement text built from the game folder; no converted glb is committed (#201)
+    const std::string text = BuildFeatureScatterText(md::KenshiDir());
+    ASSERT_FALSE(text.empty());
+    std::set<std::string> meshes; std::istringstream in(text); std::string line;
+    while (std::getline(in, line)) { if (line.empty() || line[0] == '#') continue; meshes.insert(line.substr(0, line.find('|'))); }
+    std::string all; int loaded = 0;
+    for (const std::string& mp : meshes) {
         std::vector<PropVertex> v; std::vector<uint32_t> idx;
-        const bool ok = LoadOgreStaticMesh(kv.second, 0.1f, 0.f, v, idx);
-        bool same = ok && v.size() == pa->count && idx.size() == pr.indices->count;
-        double worst = 0;
-        for (cgltf_size i = 0; same && i < pa->count; ++i) {
-            float p[3], n[3], uv[2] = {0, 0}; cgltf_accessor_read_float(pa, i, p, 3); cgltf_accessor_read_float(na, i, n, 3); if (ua) cgltf_accessor_read_float(ua, i, uv, 2);
-            const float mine[8] = { v[i].x, v[i].y, v[i].z, v[i].nx, v[i].ny, v[i].nz, v[i].u, v[i].v }, ref[8] = { p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1] };
-            for (int k = 0; k < 8; ++k) worst = std::fmax(worst, std::fabs(mine[k] - ref[k]) / std::fmax(1.0f, std::fabs(ref[k])));   // the glb holds the 6-digit text of OgreXMLConverter
-        }
-        for (cgltf_size i = 0; same && i < pr.indices->count; ++i) if (idx[i] != cgltf_accessor_read_index(pr.indices, i)) same = false;
-        cgltf_free(d);
-        ++checked;
-        if (!same || worst > 1e-5) { ++bad; if (bad <= 5) ADD_FAILURE() << kv.first << " ok=" << ok << " worst=" << worst; }
+        if (!LoadOgreStaticMesh(mp, 0.1f, 0.f, v, idx)) { all += mp + "|fail\n"; continue; }
+        ++loaded;
+        all += mp + "|" + std::to_string(v.size()) + "|" + std::to_string(idx.size()) + "\n";
+        for (const PropVertex& x : v) { const float f[8] = { x.x, x.y, x.z, x.nx, x.ny, x.nz, x.u, x.v }; all.append(reinterpret_cast<const char*>(f), sizeof f); }
+        all.append(reinterpret_cast<const char*>(idx.data()), idx.size() * 4);
     }
-    EXPECT_GT(checked, 50);
-    EXPECT_EQ(bad, 0);
+    EXPECT_GT(loaded, 50);
+    MD_EXPECT_INSTALL_HASH("feature_mesh_geometry", all.data(), all.size());
 }
 
 // The hair glbs (game/data/hair, converted by tools/md_convert.py) hold the same geometry as the install's character/hair/meshes/<name>.mesh.

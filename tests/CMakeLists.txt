@@ -86,6 +86,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_inverse_check.cpp
     ${MD_UTEST_DIR}/test_kenshi_land.cpp
     ${MD_UTEST_DIR}/test_weather.cpp
+    ${MD_UTEST_DIR}/test_install_hash.cpp
     ${MD_UTEST_DIR}/test_player_selection.cpp
     ${MD_UTEST_DIR}/test_move_speed.cpp
     ${MD_UTEST_DIR}/test_biome_layer_cache.cpp
@@ -109,8 +110,20 @@ md_gaia_pch(md_tests)
 
 include(GoogleTest)
 # tests that ASSERT a Kenshi install (no skip, the lint forbids GTEST_SKIP): label needs-install, not fast; CI without an install runs `ctest -L fast -LE needs-install`
-gtest_discover_tests(md_tests WORKING_DIRECTORY ${MD_ROOT} TEST_FILTER -BiomeMapInstall.EveryCellIsTheRecordThatOwnsItsColour:ZonesFromInstall.ExactSetOfGroupsWithARegion:OgreStaticMesh.HairGlbsEqualDirectMesh:OgreStaticMesh.HairRawExtents PROPERTIES LABELS "fast" TIMEOUT 120)
-gtest_discover_tests(md_tests WORKING_DIRECTORY ${MD_ROOT} TEST_FILTER BiomeMapInstall.EveryCellIsTheRecordThatOwnsItsColour:ZonesFromInstall.ExactSetOfGroupsWithARegion:OgreStaticMesh.HairGlbsEqualDirectMesh:OgreStaticMesh.HairRawExtents TEST_LIST md_install_tests PROPERTIES LABELS "needs-install" TIMEOUT 120)
+gtest_discover_tests(md_tests WORKING_DIRECTORY ${MD_ROOT} TEST_FILTER -FeatureScatterInstall.OutputMatchesHashReference:Kbi1LookupInstall.OutputMatchesHashReference:OgreStaticMesh.FeatureMeshesMatchHashReference:DdsDecode.BodyTextureMatchesHashReference:OverlayMaskBuild.OutputMatchesHashReference:SteepnessBake.OutputMatchesHashReference:TerrainColourDds.OutputMatchesHashReference:HumanBodyBuild.OutputMatchesHashReference:BiomeFcs.TableMatchesHashReference:BiomeFcs.RegistryMatchesHashReference:TiffData.FullmapSamplesMatchHashReference:TiffData.AtlasHeightsMatchHashReference:BiomeMapInstall.EveryCellIsTheRecordThatOwnsItsColour:ZonesFromInstall.ExactSetOfGroupsWithARegion:OgreStaticMesh.HairGlbsEqualDirectMesh:OgreStaticMesh.HairRawExtents PROPERTIES LABELS "fast" TIMEOUT 120)
+gtest_discover_tests(md_tests WORKING_DIRECTORY ${MD_ROOT} TEST_FILTER FeatureScatterInstall.OutputMatchesHashReference:Kbi1LookupInstall.OutputMatchesHashReference:OgreStaticMesh.FeatureMeshesMatchHashReference:DdsDecode.BodyTextureMatchesHashReference:OverlayMaskBuild.OutputMatchesHashReference:SteepnessBake.OutputMatchesHashReference:TerrainColourDds.OutputMatchesHashReference:HumanBodyBuild.OutputMatchesHashReference:BiomeFcs.TableMatchesHashReference:BiomeFcs.RegistryMatchesHashReference:TiffData.FullmapSamplesMatchHashReference:TiffData.AtlasHeightsMatchHashReference:BiomeMapInstall.EveryCellIsTheRecordThatOwnsItsColour:ZonesFromInstall.ExactSetOfGroupsWithARegion:OgreStaticMesh.HairGlbsEqualDirectMesh:OgreStaticMesh.HairRawExtents TEST_LIST md_install_tests PROPERTIES LABELS "needs-install" TIMEOUT 120)
+
+# Hash-reference tests (coordinator 18.11): the 12 *HashReference tests build their output from the game folder and compare its SHA-256 with tests/data/install_hashes.tsv; they ASSERT the folder and FAIL on an unknown game build.
+# Skips that stay by design (each one line, reason):
+#   GaiaBench.QueryEach                                    disabled micro-benchmark (run by hand with --gtest_also_run_disabled_tests)
+#   GlobalComponentWarmup.PreviouslyMissingComponentsAreRegistered   flecs-specific by-name lookup check, not meaningful under the gaia backend
+#   SetStageCountBench.SkippedUnderGaiaBackend             benchmark of the flecs backend
+#   TerrainQuadtreeRendererTest.SingleNodeRendersFiniteInBoundsGBuffer   needs the offline biome table (BiomeRegistry::LoadFromFile), gone with #201
+#   ZoneBuildings.RankTownsBy300mParts                     research dump, runs only with MD_TOWN_RANK=<out file>
+#   FoliageScatter.RankZonesByMediumPlaces                 research dump, runs only with MD_FOLIAGE_RANK=<out file>
+#   FoliageScatter.DumpMeshMaterialTypes                   research dump, runs only with MD_FOLIAGE_DUMP=<out file>
+#   FoliageScatter.ScanGrassyCircles / ScanGrassColourMaps / ScanGrassSpriteTrim   research scans, run only with MD_GRASS_SCAN=1
+#   GroundBake.DumpInputsForPython / MatchesPython / Bench   need MD_GB_DUMP / MD_GB_REF / MD_GB_BENCH (comparison with the python baker, bench)
 
 # FCS dump tool: C++ reader vs the Python extraction (tests/verify_fcs_vs_db.py). Development only.
 add_executable(md_fcsdump ${MD_UTEST_DIR}/fcsdump.cpp

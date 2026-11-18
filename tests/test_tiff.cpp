@@ -1,5 +1,6 @@
 // Uncompressed greyscale TIFF reader (engine/src/io/tiff.cpp): synthetic files, refusals, and -- only with KENSHI_DIR set and from the repo
 // root -- every sample of Kenshi's fullmap.tif[::2] against the world heightmap the engine uses today (game/data/terrain/world_hmap.r16).
+#include "install_hash.h"
 #include <gtest/gtest.h>
 #include <monkey_dust/io/tiff.h>
 #include <monkey_dust/world/terrain_gen.h>
@@ -99,69 +100,41 @@ TEST(Tiff, RefusesWhatItCannotRead) {
     for (auto* f : {&packed, &rgb_bits, &junk}) std::filesystem::remove(*f);
 }
 
-// fullmap.tif[::2], zone by zone (129x129 samples each, stride 2 in the 16385^2 image) == world_hmap.r16 (8256^2, zone-tiled, 8-byte header)
-TEST(TiffData, FullmapMatchesWorldHmapR16) {
+// fullmap.tif[::2], zone by zone (129x129 samples each, stride 2 in the 16385^2 image) against a hash reference (tests/data/install_hashes.tsv).
+// No copy of the output is committed (#201: Kenshi-derived files are never committed); the hash is the guard.
+TEST(TiffData, FullmapSamplesMatchHashReference) {
     const char* dir = std::getenv("KENSHI_DIR");
-    if (!dir || !*dir) GTEST_SKIP() << "KENSHI_DIR not set";
+    ASSERT_TRUE(dir && *dir) << "needs KENSHI_DIR";
     const std::string tif = std::string(dir) + "/data/newland/land/fullmap.tif";
-    const char* r16_path = "game/data/terrain/world_hmap.r16";
-    if (!std::filesystem::exists(tif) || !std::filesystem::exists(r16_path)) GTEST_SKIP() << "need " << tif << " and " << r16_path;
-
+    ASSERT_TRUE(std::filesystem::exists(tif)) << "needs " << tif;
     md::tiff::Image img; std::string err;
     ASSERT_TRUE(img.Open(tif.c_str(), err)) << err;
     ASSERT_EQ(img.Width(), 16385u); ASSERT_EQ(img.Height(), 16385u); ASSERT_EQ(img.Bits(), 16u);
-
-    constexpr int ZONES = 64, VERTS = 129, SIDE = ZONES * VERTS;
-    std::ifstream r16(r16_path, std::ios::binary);
-    uint32_t magic = 0, zones = 0;
-    r16.read((char*)&magic, 4); r16.read((char*)&zones, 4);
-    ASSERT_EQ(magic, 0x3631524Du); ASSERT_EQ(zones, 64u);
-    std::vector<uint16_t> ref((size_t)SIDE * SIDE);
-    r16.read((char*)ref.data(), (std::streamsize)ref.size() * 2);
-    ASSERT_TRUE(r16.good());
-
-    size_t mismatches = 0, total = 0;
-    std::vector<uint16_t> blk;
+    constexpr int ZONES = 64, VERTS = 129;
+    std::vector<uint16_t> all, blk;
+    all.reserve(size_t(ZONES) * ZONES * VERTS * VERTS);
     for (int zy = 0; zy < ZONES; ++zy)
         for (int zx = 0; zx < ZONES; ++zx) {
             ASSERT_TRUE(img.Window((uint32_t)zx * 256, (uint32_t)zy * 256, VERTS, VERTS, 2, blk, err)) << err;
-            for (int row = 0; row < VERTS; ++row)
-                for (int col = 0; col < VERTS; ++col) {
-                    ++total;
-                    if (blk[(size_t)row * VERTS + col] != ref[(size_t)(zy * VERTS + row) * SIDE + zx * VERTS + col]) ++mismatches;
-                }
+            all.insert(all.end(), blk.begin(), blk.end());
         }
-    std::printf("[TiffData] %zu samples compared, %zu mismatches\n", total, mismatches);
-    EXPECT_EQ(total, (size_t)SIDE * SIDE);
-    EXPECT_EQ(mismatches, 0u);
+    ASSERT_EQ(all.size(), size_t(ZONES) * ZONES * VERTS * VERTS);
+    MD_EXPECT_INSTALL_HASH("fullmap_tif_samples_u16", all.data(), all.size() * 2);
 }
 
-// The atlas the engine builds from the Kenshi install (KENSHI_DIR set) must be the atlas it builds from the offline world_hmap.r16
-// (KENSHI_DIR pointing nowhere -> fallback), height for height.
-TEST(TiffData, AtlasFromKenshiEqualsAtlasFromR16) {
+// The atlas the engine builds from the game folder's fullmap.tif (TerrainAtlas_GetHeight, every zone, every vertex) against a hash reference.
+// No copy of the output is committed (#201: Kenshi-derived files are never committed); the hash is the guard.
+TEST(TiffData, AtlasHeightsMatchHashReference) {
     const char* dir = std::getenv("KENSHI_DIR");
-    if (!dir || !*dir) GTEST_SKIP() << "KENSHI_DIR not set";
-    const std::string kenshi = dir;
-    if (!std::filesystem::exists(kenshi + "/data/newland/land/fullmap.tif") || !std::filesystem::exists("game/data/terrain/world_hmap.r16"))
-        GTEST_SKIP() << "need fullmap.tif and game/data/terrain/world_hmap.r16";
+    ASSERT_TRUE(dir && *dir) << "needs KENSHI_DIR";
+    ASSERT_TRUE(std::filesystem::exists(std::string(dir) + "/data/newland/land/fullmap.tif")) << "needs fullmap.tif";
     constexpr int ZONES = 64, VERTS = 129;
-    std::vector<float> a((size_t)ZONES * ZONES * VERTS * VERTS), b(a.size());
-    auto snapshot = [&](std::vector<float>& dst) {
-        size_t i = 0;
-        for (int zy = 0; zy < ZONES; ++zy)
-            for (int zx = 0; zx < ZONES; ++zx)
-                for (int row = 0; row < VERTS; ++row)
-                    for (int col = 0; col < VERTS; ++col) dst[i++] = TerrainAtlas_GetHeight(zx, zy, col, row);
-    };
-    setenv("KENSHI_DIR", kenshi.c_str(), 1);
     ASSERT_TRUE(TerrainAtlas_Load("game/data/terrain/world_hmap"));
-    snapshot(a);
-    setenv("KENSHI_DIR", "/nonexistent", 1);
-    ASSERT_TRUE(TerrainAtlas_Load("game/data/terrain/world_hmap"));
-    snapshot(b);
-    setenv("KENSHI_DIR", kenshi.c_str(), 1);
-    size_t diff = 0;
-    for (size_t i = 0; i < a.size(); ++i) if (memcmp(&a[i], &b[i], 4) != 0) ++diff;
-    std::printf("[TiffData] atlas: %zu heights compared, %zu different\n", a.size(), diff);
-    EXPECT_EQ(diff, 0u);
+    std::vector<float> a((size_t)ZONES * ZONES * VERTS * VERTS);
+    size_t i = 0;
+    for (int zy = 0; zy < ZONES; ++zy)
+        for (int zx = 0; zx < ZONES; ++zx)
+            for (int row = 0; row < VERTS; ++row)
+                for (int col = 0; col < VERTS; ++col) a[i++] = TerrainAtlas_GetHeight(zx, zy, col, row);
+    MD_EXPECT_INSTALL_HASH("terrain_atlas_heights_f32", a.data(), a.size() * 4);
 }
