@@ -1,6 +1,6 @@
 #pragma once
 // Heat haze post effect (DE-338): the install's post/heathaze.hlsl run as it is, after FXAA (compositors.cfg order: FXAA, HeatHaze).
-// Inputs as materials/compositors/post.compositor: flow map, perturbation, the G-buffer depth (the live ground's R32F target) and the frame. Off unless MD_HEATHAZE=1.
+// Inputs as materials/compositors/post.compositor: flow map, perturbation, the G-buffer depth (the live ground's R32F target) and the frame. On by default, MD_HEATHAZE=0 turns it off.
 // The pass is skipped while the amplitude is exactly 0: the program then samples the same coordinate twice and blends them 50/50, i.e. returns its input (ctest HeatHazeZeroIsIdentity).
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_sampler_texture.h>
@@ -13,7 +13,7 @@ namespace md {
 class HeatHazePass {
 public:
     static HeatHazePass& Get();
-    static bool Wanted();                                  // MD_HEATHAZE=1 (2 = also run at amplitude 0: the check that the program returns its input there)
+    static bool Wanted();                                  // on unless MD_HEATHAZE=0 (2 = also run at amplitude 0: the check that the program returns its input there)
     bool Init(SDL_GPUDevice* dev, SDL_GPUTextureFormat fmt);   // fmt = the colour format it draws into (the swapchain format); false (logged) when a program or texture is missing
     void Shutdown();
     bool Ready() const { return ready_; }

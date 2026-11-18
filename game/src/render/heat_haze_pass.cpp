@@ -15,7 +15,7 @@ namespace md {
 
 HeatHazePass& HeatHazePass::Get() { static HeatHazePass p; return p; }
 
-bool HeatHazePass::Wanted() { static const bool w = getenv("MD_HEATHAZE") && (getenv("MD_HEATHAZE")[0] == '1' || getenv("MD_HEATHAZE")[0] == '2'); return w; }
+bool HeatHazePass::Wanted() { static const bool w = !(getenv("MD_HEATHAZE") && getenv("MD_HEATHAZE")[0] == '0'); return w; }   // on by default (DE-338, 18.11); MD_HEATHAZE=0 turns it off
 
 namespace {
 // full-screen triangle with the StdQuad_vp varyings of the program (TEXCOORD0: (0,0) top-left; TEXCOORD1 = the frustum ray, unused by the program)
