@@ -135,3 +135,14 @@ TEST(Weather, GroundWetnessRatesAndDeterminism) {
     }
     (void)rose;   // a dry install region may never rain; the bounds above are the check
 }
+
+// Orig: exe 1409e8f70, heat haze: target = record * strength * clamp(6 * sun y, 0, 1), approach by at most dt / 3, snap when closer. Hand-computed rows.
+TEST(Weather, HeatHazeStepFollowsTheExeRamp) {
+    using md::weather::HeatHazeStep;
+    EXPECT_FLOAT_EQ(HeatHazeStep(0.f, 0.6f, 1.0f, 0.3f), 0.1f);              // sun high: target 0.6, step 0.1
+    EXPECT_FLOAT_EQ(HeatHazeStep(0.55f, 0.6f, 1.0f, 0.3f), 0.6f);            // |d| = 0.05 < 0.1: snap
+    EXPECT_FLOAT_EQ(HeatHazeStep(0.6f, 0.6f, 0.0f, 0.3f), 0.5f);             // sun at the horizon: target 0, falls by 0.1
+    EXPECT_FLOAT_EQ(HeatHazeStep(0.0f, 0.6f, 0.05f, 3.0f), 0.18f);           // clamp(6 * 0.05) = 0.3: target 0.18, step 1.0 > d: snap
+    EXPECT_FLOAT_EQ(HeatHazeStep(0.0f, 0.6f, -0.4f, 3.0f), 0.0f);            // sun below the horizon: target 0
+    EXPECT_FLOAT_EQ(HeatHazeStep(0.3f, 0.3f, 0.5f, 0.016f), 0.3f);           // at the target: unchanged
+}
