@@ -1,6 +1,7 @@
 #include <monkey_dust/io/derived_cache.h>
 #include <cstring>
 #include "game_common.h"
+#include "slice_game.h"
 #include <monkey_dust/io/data_files.h>
 #include <cstdio>
 
@@ -251,6 +252,15 @@ int main(int argc, char** argv)
             _pnav.desired_vel_x = 0.f; _pnav.desired_vel_z = 0.f;
         }
         if (!skip_world) {
+            if (md::slice::Enabled()) {   // MD_SLICE=1: the squad of #212 replaces the player's own movement (docs/research/VERTICAL_SLICE_Q04_2026-11-18.md)
+                static bool s_l_prev = false, s_r_prev = false; static float s_r_hold = 0.f;
+                const bool l = input_mouse_down(MOUSE_BUTTON_LEFT), r = input_mouse_down(MOUSE_BUTTON_RIGHT);
+                if (r) s_r_hold += dt; else if (!s_r_prev) s_r_hold = 0.f;
+                md::slice::Input si; si.mouse_x = input_mouse_x(); si.mouse_y = input_mouse_y(); si.screen_w = window_get_width(); si.screen_h = window_get_height();
+                si.lmb_click = l && !s_l_prev; si.rmb_click = !r && s_r_prev && s_r_hold < 0.25f; si.shift = input_key_down(KEY_LEFT_SHIFT);
+                s_l_prev = l; s_r_prev = r;
+                md::slice::Update(player_entity, camera, si, dt, cam_x, cam_z);
+            } else
             HandlePlayerMove(player_entity, cam_x, cam_z, g_cam_az, dt, s_ctm_x, s_ctm_z, s_ctm_active, NpcRender::Get().player_sprinting);
             // render-audit-2026: this call runs BEFORE FS_BEGIN("Logic")/
             // ("RenderTotal") below, in a per-frame span FrameStats never

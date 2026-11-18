@@ -9,7 +9,7 @@ if(NOT MD_GLSLANG_INC)
 endif()
 set(MD_SPIRV_OUT_DIR "${MD_ROOT}/shaders/spirv" CACHE PATH "where the SPIR-V is written (the HAL reads <cwd>/shaders/spirv in development; the release embeds it)")
 
-file(GLOB_RECURSE GAME_SOURCES "src/*.cpp")
+file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 if(NOT MD_HLSL_RUNTIME)
     list(FILTER GAME_SOURCES EXCLUDE REGEX "kenshi_hlsl\\.cpp$")   # path 1 needs glslang (root option MD_HLSL_RUNTIME)
 endif()

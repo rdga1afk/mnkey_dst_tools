@@ -1,4 +1,5 @@
 #include "game_common.h"
+#include "slice_game.h"
 
 // Camera button click (bottom-right corner); called every frame, independent of the camera mode.
 void HandleCamButtonClick()
@@ -69,7 +70,7 @@ void UpdateOrbitCamera(MdCamera& camera,
         // Threshold: hold < CLICK_MS → Mode 2 (keep target after release).
         //            hold ≥ CLICK_MS → Mode 1 (stop on release).
         // WASD always overrides both modes.
-        bool lmb = input_mouse_down(MOUSE_BUTTON_LEFT);
+        bool lmb = input_mouse_down(MOUSE_BUTTON_LEFT) && !md::slice::Enabled();   // MD_SLICE=1: the left button selects (slice_game.cpp)
         static bool  s_lmb_prev_ctm = false;
         static float s_lmb_hold_ms  = 0.f;
         static constexpr float CLICK_MS = 200.f;

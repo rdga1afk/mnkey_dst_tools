@@ -1,0 +1,139 @@
+#include "slice_game.h"
+#include "game_common.h"
+#include <monkey_dust/nav/nav_world.h>
+#include <monkey_dust/world/slice_squad.h>
+#include <monkey_dust/world/terrain_query.h>
+#include <monkey_dust/world/chunk_def.h>
+#include <monkey_dust/world/transform_soa.h>
+#include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/components/animator.h>
+#include <monkey_dust/components/nav_agent.h>
+#include "render/scene_render.h"
+#include <cmath>
+#include <cstdlib>
+
+namespace md::slice {
+namespace {
+constexpr float kPickRadius = 1.2f;        // m around a character's centre, 1 m above the feet
+constexpr int kSquadSize = 4;
+
+md::world::SliceSquad s_squad;
+MdEntity s_ent[md::world::kSliceMaxChars];
+bool s_init = false;
+
+// local (WorldTransform) <-> absolute metres, the relation md.spawn_npc / md.teleport_player use
+void ToAbs(float lx, float lz, float& ax, float& az) { auto& sr = SceneRender::Get(); ax = lx - sr.tnoff_x + (float)sr.zone_ox * CHUNK_SIZE; az = lz - sr.tnoff_z + (float)sr.zone_oz * CHUNK_SIZE; }
+void ToLocal(float ax, float az, float& lx, float& lz) { auto& sr = SceneRender::Get(); lx = ax + sr.tnoff_x - (float)sr.zone_ox * CHUNK_SIZE; lz = az + sr.tnoff_z - (float)sr.zone_oz * CHUNK_SIZE; }
+
+float Ground(float x, float z, float fallback) { float h; return TerrainQuery::Get().GetHeight(x, z, h) ? h : fallback; }
+
+void Put(int i) {
+    auto& reg = MdRegistry::Get();
+    auto& tr = reg.Handle(s_ent[i]).get_mut<WorldTransform>();
+    const md::world::SliceChar& c = s_squad.c[i];
+    tr.x = c.pos[0]; tr.z = c.pos[2]; tr.y = c.pos[1];
+    if (tr.slot != TransformSoA::INVALID_SLOT) {
+        auto& soa = TransformSoA::Get();
+        soa.px[tr.slot] = tr.x; soa.pz[tr.slot] = tr.z; soa.py[tr.slot] = tr.y; soa.MarkTransformDirty(tr.slot);
+    }
+}
+
+void Spawn(MdEntity player) {
+    auto& reg = MdRegistry::Get();
+    const WorldTransform pt = reg.Handle(player).get_mut<WorldTransform>();
+    s_ent[0] = player; s_squad.Add(pt.x, pt.y, pt.z);
+    for (int i = 1; i < kSquadSize; ++i) {
+        const float x = pt.x + 1.5f * (float)i, z = pt.z;
+        auto e = reg.Create();
+        reg.Handle(e).emplace<WorldTransform>();
+        auto& tr = reg.Handle(e).get_mut<WorldTransform>();
+        const float y = Ground(x, z, pt.y);
+        tr.x = x; tr.z = z; tr.y = y; tr.rot_y = 0.f;
+        tr.slot = TransformSoA::Get().Alloc(e, x, z, 0);
+        if (tr.slot == TransformSoA::INVALID_SLOT) { MD_LOG(MD_LOG_WARNING, "[slice] no free transform slot"); break; }
+        TransformSoA::Get().py[tr.slot] = y; TransformSoA::Get().MarkTransformDirty(tr.slot);
+        reg.Handle(e).emplace<NavAgent>();
+        reg.Handle(e).emplace<AnimatorComponent>();
+        s_ent[s_squad.Add(x, y, z)] = e;
+    }
+}
+
+// ray through the pixel (the construction UpdateOrbitCamera uses for click-to-move)
+void PixelRay(const MdCamera& camera, const Input& in, float o[3], float d[3]) {
+    static constexpr float DEG2R = 0.01745329251f;
+    const float asp = (float)in.screen_w / (float)in.screen_h;
+    Mat4 view = camera.ViewMatrix(); const float* vf = mat4_ptr(view);
+    const float thf = tanf(camera.fovy * 0.5f * DEG2R);
+    const float ndx = (2.f * in.mouse_x / (float)in.screen_w) - 1.f, ndy = 1.f - (2.f * in.mouse_y / (float)in.screen_h);
+    d[0] = vf[0] * (ndx * thf * asp) + vf[1] * (ndy * thf) - vf[2];
+    d[1] = vf[4] * (ndx * thf * asp) + vf[5] * (ndy * thf) - vf[6];
+    d[2] = vf[8] * (ndx * thf * asp) + vf[9] * (ndy * thf) - vf[10];
+    const float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    for (int k = 0; k < 3; ++k) d[k] /= len;
+    o[0] = camera.pos.x; o[1] = camera.pos.y; o[2] = camera.pos.z;
+}
+
+int PickChar(const float o[3], const float d[3]) {
+    int best = -1; float best_t = 1e9f;
+    for (int i = 0; i < s_squad.n; ++i) {
+        const float cx = s_squad.c[i].pos[0] - o[0], cy = s_squad.c[i].pos[1] + 1.f - o[1], cz = s_squad.c[i].pos[2] - o[2];
+        const float t = cx * d[0] + cy * d[1] + cz * d[2];
+        if (t < 0.f) continue;
+        const float px = cx - t * d[0], py = cy - t * d[1], pz = cz - t * d[2];
+        if (px * px + py * py + pz * pz <= kPickRadius * kPickRadius && t < best_t) { best_t = t; best = i; }
+    }
+    return best;
+}
+
+// ground point under the cursor: the ray against the horizontal plane through the camera target (as the existing click-to-move does)
+bool GroundPoint(const MdCamera& camera, const float o[3], const float d[3], float& x, float& z) {
+    if (d[1] > -1e-6f) return false;
+    const float t = (camera.target.y - o[1]) / d[1];
+    x = o[0] + t * d[0]; z = o[2] + t * d[2];
+    return true;
+}
+
+void OrderMoveTo(float lx, float lz, bool walk) {
+    const md::world::SliceChar* lead = nullptr;
+    for (int i = 0; i < s_squad.n; ++i) if (s_squad.sel.Has(i + 1)) { lead = &s_squad.c[i]; break; }
+    if (!lead) return;
+    float ax, az, bx, bz;
+    ToAbs(lead->pos[0], lead->pos[2], ax, az); ToAbs(lx, lz, bx, bz);
+    float pts[256 * 3]; int n = 0; bool complete = false, busy = false;
+    float local[256][3];
+    if (md::nav::NavWorld::Get().FindPath(ax, az, bx, bz, pts, 256, &n, &complete, &busy) && n > 0) {
+        for (int k = 0; k < n; ++k) { ToLocal(pts[k * 3], pts[k * 3 + 2], local[k][0], local[k][2]); local[k][1] = pts[k * 3 + 1]; }
+    } else {                                           // no navmesh polygon (or a tile still being added): a straight line, the steering still avoids neighbours
+        n = 1; local[0][0] = lx; local[0][1] = lead->pos[1]; local[0][2] = lz;
+    }
+    s_squad.OrderMove(local, n, walk ? 0 : 1);
+}
+}  // namespace
+
+bool Enabled() { static const bool on = [] { const char* e = std::getenv("MD_SLICE"); return e && e[0] == '1'; }(); return on; }
+
+void Update(MdEntity player, MdCamera& camera, const Input& in, float dt, float& cam_x, float& cam_z) {
+    if (!s_init) { Spawn(player); s_init = true; s_squad.Click(0, false); }
+    if (in.screen_w > 0 && in.screen_h > 0 && (in.lmb_click || in.rmb_click)) {
+        float o[3], d[3]; PixelRay(camera, in, o, d);
+        if (in.lmb_click) { const int i = PickChar(o, d); if (i >= 0) s_squad.Click(i, in.shift); }
+        else { float gx, gz; if (GroundPoint(camera, o, d, gx, gz)) OrderMoveTo(gx, gz, in.shift); }
+    }
+    md::world::SliceTick(s_squad, dt);
+    auto& reg = MdRegistry::Get();
+    float sx = 0.f, sz = 0.f; int cnt = 0;
+    for (int i = 0; i < s_squad.n; ++i) {
+        md::world::SliceChar& c = s_squad.c[i];
+        c.pos[1] = Ground(c.pos[0], c.pos[2], c.pos[1]);
+        Put(i);
+        const float vx = c.vel[0], vz = c.vel[2];
+        auto& nav = reg.Handle(s_ent[i]).get_mut<NavAgent>();
+        nav.is_moving = c.moving; nav.move_speed = c.moving ? (c.cap > md::world::kWalkCapDefault ? 2.f : 1.f) : 0.f;
+        nav.desired_vel_x = vx; nav.desired_vel_z = vz;
+        if (c.moving && (vx != 0.f || vz != 0.f)) reg.Handle(s_ent[i]).get_mut<WorldTransform>().rot_y = std::atan2(vx, vz);
+        if (s_squad.sel.Has(i + 1)) { sx += c.pos[0]; sz += c.pos[2]; ++cnt; }
+    }
+    if (cnt) { cam_x = sx / (float)cnt; cam_z = sz / (float)cnt; }
+}
+
+}  // namespace md::slice
