@@ -126,3 +126,23 @@ TEST(GrassPlacement, AcceptanceRateFollowsTheDensityMap) {
     EXPECT_LE(double(got), double(cand) * p + 3.0 * sigma);
     EXPECT_GE(double(got), double(cand) * p * 0.95 - 3.0 * sigma);
 }
+
+// Orig: loadPage's count (exe 140a3b6b0) = (uint)(layer density * 1.0 * width * height), and the layer builder (1406d0340) sets the layer density to
+// record density * 0.005 * the "grass density" option (settings loader 1403e84f0: 1.0 when the key is absent). Hand-computed expectations, truncation included.
+TEST(GrassPlacement, CandidateCountIsRecordTimes0p005TimesOptionTimesPageArea) {
+    const float page_w = 2304.f;   // half of a 4608-unit zone
+    struct Row { float record, option, w, h; uint32_t want; };
+    const Row rows[] = {
+        { 1.0f, 1.0f, page_w, page_w, 26542u },    // 0.005 * 2304 * 2304 = 26542.08 -> 26542
+        { 2.0f, 1.0f, page_w, page_w, 53084u },    // 53084.16
+        { 1.0f, 2.0f, page_w, page_w, 53084u },    // the option multiplies exactly like the record
+        { 1.0f, 0.5f, page_w, page_w, 13271u },    // 13271.04
+        { 0.5f, 1.0f, 100.f, 200.f, 50u },         // 0.0025 * 20000 = 50
+        { 1.0f, 1.0f, 10.f, 10.f, 0u },            // 0.5 -> truncates to 0
+    };
+    for (const Row& r : rows) {
+        Layer l{}; l.density = r.record * 0.005f * r.option;
+        const Rect page{ 0.f, 0.f, r.w, r.h };
+        EXPECT_NEAR(double(CandidateCount(l, page)), double(r.want), 1.0) << r.record << " " << r.option;   // float rounding of the product can move the truncation by one
+    }
+}
