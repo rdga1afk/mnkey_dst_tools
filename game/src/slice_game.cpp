@@ -40,18 +40,15 @@ void Put(int i) {
     }
 }
 
-// TEST-ONLY start (owner 18.11, DE-350): the squad is the record "The Cannibal Hunters" of gamedata.base (4 + 1 characters, as the exe's new-game start lists it), but placed at the player's
-// position (the Hub from MD_START_WORLD) with the exe's +-50 m offsets, not at the record's own start; the original start of this record is (-43500, -6625) m. The offsets come from a fixed-seed
-// generator (the exe's random source differs). Falls back to four members when the record cannot be read.
+// TEST-ONLY start (owner 18.11, DE-350): the squad is the record "The Cannibal Hunters" of the MERGED load order (base plus the core mods, as the game reads it), placed at the player's position
+// (the Hub from MD_START_WORLD) with the exe's +-50 m offsets, not at the record's own start; the original start of this record is (-43500, -6625) m. The offsets come from a fixed-seed generator
+// (the exe's random source differs). A record that cannot be read, or lists no member, spawns nobody besides the player and logs why: there is no silent fallback to another squad.
 int SquadCount() {
-    int n = 4;
-    md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err; md::fcs::LoadOrder base; md::fcs::GameDataContainer data;
-    if (inst.LoadOrderFor(order, err)) for (const auto& f : order.files) if (f.name == "gamedata.base") base.files.push_back(f);
-    if (base.files.size() == 1 && data.Load(base, err)) {
-        const auto m = md::world::StartSquadMembers(data, "The Cannibal Hunters");
-        if (!m.empty()) n = (int)m.size();
-    } else MD_LOG(MD_LOG_WARNING, "[slice] gamedata.base not readable, four test characters");
-    return n < md::world::kSliceMaxChars ? n : md::world::kSliceMaxChars;
+    md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err; md::fcs::GameDataContainer data;
+    if (!inst.LoadOrderFor(order, err) || !data.Load(order, err)) { MD_LOG(MD_LOG_WARNING, "[slice] load order not readable (%s): the squad is only the player", err.Message().c_str()); return 1; }
+    const auto m = md::world::StartSquadMembers(data, "The Cannibal Hunters");
+    if (m.empty()) { MD_LOG(MD_LOG_WARNING, "[slice] merged record The Cannibal Hunters lists no squad member: the squad is only the player"); return 1; }
+    return (int)m.size() < md::world::kSliceMaxChars ? (int)m.size() : md::world::kSliceMaxChars;
 }
 
 float Offset() {   // uniform in -kStartJitterMetres..+kStartJitterMetres, fixed seed

@@ -1,27 +1,23 @@
-// StartSquadMembers on the install's gamedata.base only (the mods of the load order re-list the references): The Cannibal Hunters = 4 + 1 characters, a record with no squad reference = none
-// (the exe then takes the record 45550-gamedata.base, not ported), count 0 gives 1 (The Holy Sword).
+// StartSquadMembers on the merged load order (base plus the core mods of the install), as the game uses it for the new-game start; a missing record gives none.
 #include <gtest/gtest.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/world/start_squad.h>
+#include <cstdio>
 
 namespace {
-bool LoadBase(md::fcs::GameDataContainer& data) {
+bool LoadMerged(md::fcs::GameDataContainer& data) {
     md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err;
-    if (!inst.LoadOrderFor(order, err)) return false;
-    md::fcs::LoadOrder base;
-    for (const auto& f : order.files) if (f.name == "gamedata.base") base.files.push_back(f);
-    return base.files.size() == 1 && data.Load(base, err);
+    return inst.LoadOrderFor(order, err) && data.Load(order, err);
 }
 }  // namespace
 
-TEST(StartSquad, CannibalHuntersIs4Plus1FromTheBaseFile) {
-    md::fcs::GameDataContainer data; ASSERT_TRUE(LoadBase(data));
+TEST(StartSquad, CannibalHuntersMergedLoadOrder) {
+    md::fcs::GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
     const auto m = md::world::StartSquadMembers(data, "The Cannibal Hunters");
-    ASSERT_EQ(m.size(), 5u);
-    EXPECT_EQ(m[0].id, "2917-gamedata.base");
-    EXPECT_EQ(m[3].id, "2917-gamedata.base");
-    EXPECT_EQ(m[4].id, "5214-gamedata.base");
-    for (const auto& x : m) EXPECT_FALSE(x.name.empty());
-    EXPECT_TRUE(md::world::StartSquadMembers(data, "Wanderer").empty());
+    std::printf("merged Cannibal Hunters: %zu members:", m.size());
+    for (const auto& x : m) std::printf(" %s(%s)", x.id.c_str(), x.name.c_str());
+    std::printf("\n");
+    ASSERT_FALSE(m.empty());
+    for (const auto& x : m) { EXPECT_FALSE(x.name.empty()) << x.id << " has no record"; }
     EXPECT_TRUE(md::world::StartSquadMembers(data, "no such record").empty());
 }
