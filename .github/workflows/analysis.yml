@@ -92,5 +92,6 @@ jobs:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=0
           UBSAN_OPTIONS: print_stacktrace=1
         run: |
+          ln -sfn . tools   # the tests read tools/tests/data/... relative to the main repo; standalone the checkout is the tools directory
           SKIP=$(grep -v '^#' ci/sanitizer_skip.txt | paste -sd'|' -)
           ctest --test-dir build-san -L fast -LE needs-install ${SKIP:+-E "$SKIP"} --output-on-failure --timeout 300
