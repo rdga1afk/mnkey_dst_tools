@@ -89,6 +89,8 @@ void HeatHazePass::Tick(float haze_scaled, float sun_y, double game_hours) {
     if (!have_start_) { have_start_ = true; start_hours_ = game_hours; }
     time_ = (float)(game_hours - start_hours_);
     amp_ = weather::HeatHazeStep(amp_, haze_scaled, sun_y, dt);
+    static const char* fixed = getenv("MD_HEATHAZE_AMP");   // measurement only (the active-haze ABBA): a fixed amplitude instead of the weather's
+    if (fixed) amp_ = (float)atof(fixed);
 }
 
 void HeatHazePass::EnsureScratch(int w, int h) {
