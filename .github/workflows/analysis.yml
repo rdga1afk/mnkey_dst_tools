@@ -86,7 +86,7 @@ jobs:
           cmake -S . -B build-san -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMD_MARCH=skylake \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
       - name: Build the tests
-        run: cmake --build build-san --target md_tests -j"$(nproc)"
+        run: cmake --build build-san --target md_tests md_session_synthetic_test md_fcs_def_test -j"$(nproc)"
       - name: "Run - tests listed in ci/sanitizer_skip.txt are skipped, the list may only shrink"
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=0
