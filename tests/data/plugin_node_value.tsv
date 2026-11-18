@@ -1,4 +1,4 @@
-# Plugin_Terrain_x64.dll FUN_180003b30 (node value), run in Unicorn (tools_private/research/plugin_oracle.py, Q03 #211). Numbers only.
+# Plugin_Terrain_x64.dll FUN_180003b30 (node value), run in Unicorn (tools_private/research/plugin_oracle.py node_value_tsv, Q03 #211; scripts/oracle_regen.sh). Numbers only.
 # box (0,0,0)-(1,1,1), camera (1+d, 0, 0), scale 540, factor 1; f8 = far factor (a/b), fc = ramp start (m). value_ramp with f8, value_flat with f8 = 1. Columns: d f8 fc value_ramp_bits value_flat_bits
 d	f8	fc	ramp_bits	flat_bits
 1	0.142857143	750	44070000	44070000

@@ -1,3 +1,4 @@
+# generator: tools_private/research/sun_oracle.py (scripts/oracle_regen.sh)
 # hour	sunrise	sunset	tilt	x_bits	y_bits	z_bits   (exe FUN_14066d400, dt = 0)
 0	5	23	0.942477822	bf5db3d7	be967917	becf1bbc
 0.5	5	23	0.942477822	bf3504f1	bed4cd10	bf12729f

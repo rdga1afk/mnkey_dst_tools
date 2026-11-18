@@ -1,4 +1,4 @@
-# N	vertices_per_side(+0xec)	neighbour_limit(+0xf0)   (plugin FUN_1800016c0)
+# N	vertices_per_side(+0xec)	neighbour_limit(+0xf0)   (plugin FUN_1800016c0; plugin_oracle.py patch_size; scripts/oracle_regen.sh)
 2	3	0
 4	5	1
 8	9	2

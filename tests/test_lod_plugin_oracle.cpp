@@ -138,7 +138,7 @@ TEST(LodPluginOracle, FogSkydomeRadiusIsTheInstallsDefault) {
     std::ifstream in(std::string(dir) + "/data/materials/common/common.program"); std::string line; bool found = false;
     while (std::getline(in, line)) {
         if (line.find("shared_param_named uSkydomeRadius") == std::string::npos) continue;
-        std::istringstream ss(line); std::string a, b, c, d; float v = 0.f; ss >> a >> b >> c >> d >> v;
+        std::istringstream ss(line); std::string a, b, c; float v = 0.f; ss >> a >> b >> c >> v;   // shared_param_named <name> float <value>
         EXPECT_EQ(v, md::kFogSkydomeRadius); found = true;
     }
     EXPECT_TRUE(found);
