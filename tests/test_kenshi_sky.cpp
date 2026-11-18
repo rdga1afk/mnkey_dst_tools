@@ -36,6 +36,18 @@ TEST(KenshiSky, FogAndClouds) {
     EXPECT_GT(z.z, z.x);   // the zenith is blue
 }
 
+// pFogParams slice of exe 14066f190 in the Unicorn emulator (exe_oracle_vectors3.tsv, pFogParams rows): x = D, y = D * k_y, z = min(D, D * k_z), D = view distance * 10.
+// The two factors are runtime globals in the exe (0x142133f68, 0x142133f64; their values are not read, ours uses 0.06 / 0.6); the rows with k = 0.6 / 0.06 are the ones ours must equal.
+TEST(KenshiSky, FogParamsMatchExeEmulatorVectors) {
+    struct V { float view, x, y, z; };
+    const V v[] = { {1000.f, 10000.f, 600.f, 6000.f}, {700.f, 7000.f, 420.f, 4200.f}, {12345.f, 123450.f, 7407.f, 74070.f}, {0.f, 0.f, 0.f, 0.f} };   // k_z = 0.6, k_y = 0.06
+    for (const V& x : v) {
+        md::KenshiSkySettings s; s.view_distance = x.view;
+        const md::KsVec4 f = s.FogParams();
+        EXPECT_FLOAT_EQ(f.x, x.x); EXPECT_FLOAT_EQ(f.y, x.y); EXPECT_FLOAT_EQ(f.z, x.z); EXPECT_EQ(f.w, 0.f);
+    }
+}
+
 TEST(KenshiHdr, AdaptLuminance) {
     // hdrfp4.hlsl AdaptLuminance_fp4: last + (current - last) * (1 - exp(-dt * rate)), clamped
     const float dt = 1.f / 30.f;
