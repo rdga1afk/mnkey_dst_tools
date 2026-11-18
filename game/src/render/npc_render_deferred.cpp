@@ -5,6 +5,10 @@
 #include "dynres3.h"
 #include "../bugcap.h"
 #include "gbuf_check.h"
+#include "heat_haze_pass.h"
+#include "sky_clouds.h"
+#include "ground_live_driver.h"
+#include <monkey_dust/render/light_system.h>
 #include <cmath>
 #include "../world/char_def.h"
 
@@ -298,6 +302,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                     if (UpscaleActive())
                         SceneRender::Get().upscale_pass_.Ensure(cur_w, cur_h,
                             SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
+                    if (md::HeatHazePass::Wanted() && UpscaleActive()) md::HeatHazePass::Get().EnsureScratch(cur_w, cur_h);   // DE-338: the intermediate between FXAA and the haze at scale 1.0
                     if (g_hialgo && UpscaleActive()) SceneRender::Get().hialgo_.Ensure(cur_w, cur_h, SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));
                     if (g_opt_sgsr2 && UpscaleActive()) SceneRender::Get().sgsr2_.Ensure(cur_w, cur_h, window_get_width(), window_get_height());
                     SceneRender::Get().sgsr2_.BeginFrame(g_opt_sgsr2 && UpscaleActive() && EffectiveResolutionScale() < 0.999f);
@@ -531,9 +536,17 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         if (real_sc && sr_up.upscale_pass_.HasTarget(rw_, rh_)) {
                             GpuPushDebugGroup(fc.cmd, "Upscale");
                             bool upscaled = false;
-                            if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc); GpuPopDebugGroup(fc.cmd); upscaled = true; }
+                            if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().Tick(SkyClouds::WeatherHaze(), -LightSystem::Get().sun_dir.y);   // DE-338: once per frame, sunDirection.y = to the sun
+                            SDL_GPUTexture* haze_depth = md::GroundLiveDriver::Get().Pass().Raw(2);
+                            if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) {
+                                GpuPushDebugGroup(fc.cmd, "FXAA");
+                                auto& hz = md::HeatHazePass::Get();
+                                if (hz.Needed() && hz.Scratch()) { sr_up.upscale_pass_.ApplyFxaa(fc.cmd, hz.Scratch()); GpuPopDebugGroup(fc.cmd); GpuPushDebugGroup(fc.cmd, "HeatHaze"); hz.Run(fc.cmd, hz.Scratch(), real_sc, haze_depth, rw_, rh_); }   // strict order: FXAA, then HeatHaze (compositors.cfg)
+                                else sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc);
+                                GpuPopDebugGroup(fc.cmd); upscaled = true;
+                            }
                             if (g_hialgo && sr_up.hialgo_.Ready() && EffectiveResolutionScale() < 0.999f) {   // DE-312: FXAA -> (stair blur) -> neighbour-clamped upscale + clamped sharpening
-                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_fxaa_profile, g_stair_taps, g_hialgo_x2, g_hialgo_catmull); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_fxaa_profile, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
                             if (!upscaled && g_opt_sgsr2 && sr_up.sgsr2_.Ready() && EffectiveResolutionScale() < 0.999f) {   // dynres 0.6: SGSR 2, depth of the G-buffer (terrain + NPC prepass) and the inverse view-projection of this frame
                                 auto& tsp_up = sr_up.terrain_shading_projected_;

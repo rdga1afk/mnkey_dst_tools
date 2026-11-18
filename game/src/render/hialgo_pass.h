@@ -4,6 +4,7 @@
 // md.set_upscaler("hialgo") (fractional scales) / "x2" (corner-aligned parity grid of the exact 2x case). Off by default.
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_pipeline.h>
+#include "heat_haze_pass.h"
 
 class HialgoPass {
 public:
@@ -15,7 +16,8 @@ public:
     // src = the internal-size scene target (UpscalePass::Tex()), out = the swapchain; src_w x src_h its size, out_w x out_h the swapchain size.
     // fxaa_profile 0 kenshi / 1 hialgo; stair_taps 0 = no stair blur; align_x2 = corner-aligned parity grid; catmull = 4x4 Catmull-Rom (else bilinear)
     void Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle src, int src_w, int src_h, md::GpuTextureHandle out, int out_w, int out_h,
-               int fxaa_profile, int stair_taps, bool align_x2, bool catmull);
+               int fxaa_profile, int stair_taps, bool align_x2, bool catmull,
+               SDL_GPUTexture* haze_depth = nullptr);   // haze_depth: the live ground's R32F target; the heat haze (when Needed) runs between the FXAA and the stair blur (compositors.cfg: FXAA, HeatHaze)
 private:
     GpuPipeline fxaa_, blur_, up_;
     SDL_GPUTexture* a_ = nullptr; SDL_GPUTexture* b_ = nullptr; int w_ = 0, h_ = 0; SDL_GPUTextureFormat fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;

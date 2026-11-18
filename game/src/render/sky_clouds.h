@@ -14,4 +14,6 @@ void SetCameraWorld(float x_m, float z_m);
 // Scenario override (md.set_weather): fixed cloud density offset, darkness and ground wetness (the live ground pass uniform) instead of the zone's weather; off = the weather of the zone, wetness 0.
 void SetWeatherOverride(bool on, float cloud_offset, float darkness, float wetness);
 float OverrideWetness();
+// The heat haze of the zone's current weather (record "heat haze" x strength, SkyOutput.haze); 0 without the weather data or with the override on.
+float WeatherHaze();
 }

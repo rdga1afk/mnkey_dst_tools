@@ -1,3 +1,4 @@
+#include "heat_haze_pass.h"
 #include "prop_tri_live.h"
 #include "town_buildings.h"
 #include "town_foliage.h"
@@ -347,6 +348,7 @@ void NpcRender::Init() {
     SceneRender::Get().fsr1_.Init();
     SceneRender::Get().sgsr2_.Init();
     SceneRender::Get().hialgo_.Init();
+    if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().Init(md::GpuDevice::Get().SDLDevice(), SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr()));   // DE-338
     SceneRender::Get().ground_split_pass_.Init();
 
     // Vis/ind buffers + shadow textures — only needed in pure SDL_GPU.

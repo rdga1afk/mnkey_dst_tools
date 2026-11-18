@@ -57,7 +57,7 @@ void HialgoPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
 }
 
 void HialgoPass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle src, int src_w, int src_h, md::GpuTextureHandle out, int out_w, int out_h,
-                       int fxaa_profile, int stair_taps, bool align_x2, bool catmull) {
+                       int fxaa_profile, int stair_taps, bool align_x2, bool catmull, SDL_GPUTexture* haze_depth) {
     if (!ready_ || !a_ || !b_ || w_ != src_w || h_ != src_h || !src || !out) return;
     GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd; cpd.cmd = cmd; cpd.depth_tex = nullptr; cpd.load_color = false;
     {   // 1. FXAA on the internal frame (gamma: the frame is the tonemapped LDR composite)
@@ -67,13 +67,14 @@ void HialgoPass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle src,
                              fxaa_profile == 1 ? 0.15f : 0.75f, fxaa_profile == 1 ? 0.20f : 0.166f, 0.0833f, 0.f };
         cb.PushFragmentUniforms(0, u, sizeof(u)); cb.Draw(3, 0); cb.EndPass();
     }
-    SDL_GPUTexture* last = a_;
+    SDL_GPUTexture* last = a_; SDL_GPUTexture* spare = b_;
+    if (md::HeatHazePass::Get().Needed()) { md::HeatHazePass::Get().Run(cmd, last, spare, haze_depth, src_w, src_h); std::swap(last, spare); }
     if (stair_taps > 0) {   // 2. stair-only blur
-        cpd.color_tex[0] = b_; cb.BeginColorPass(cpd); cb.BindPipeline(&blur_);
-        SDL_GPUTextureSamplerBinding t{ a_, linear_ }; cb.BindFragmentSamplers(0, &t, 1);
+        cpd.color_tex[0] = spare; cb.BeginColorPass(cpd); cb.BindPipeline(&blur_);
+        SDL_GPUTextureSamplerBinding t{ last, linear_ }; cb.BindFragmentSamplers(0, &t, 1);
         const float u[4] = { 1.f / (float)src_w, 1.f / (float)src_h, (float)(stair_taps > 31 ? 31 : stair_taps), 0.f };
         cb.PushFragmentUniforms(0, u, sizeof(u)); cb.Draw(3, 0); cb.EndPass();
-        last = b_;
+        last = spare;
     }
     {   // 3. neighbour-clamped upscale + clamped sharpening onto the swapchain
         cpd.color_tex[0] = out; cpd.color_dont_care = true; cb.BeginColorPass(cpd); cb.BindPipeline(&up_);

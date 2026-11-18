@@ -107,6 +107,7 @@ void SetClock(double minutes) { gw.minutes = minutes; }
 void SetCameraWorld(float x_m, float z_m) { gw.cam_x = x_m; gw.cam_z = z_m; }
 void SetWeatherOverride(bool on, float cloud_offset, float darkness, float wetness) { gov = { on, cloud_offset, darkness, wetness }; }
 float OverrideWetness() { return gov.on ? gov.wetness : 0.f; }
+float WeatherHaze() { return (!gov.on && gw.ok) ? gw.world.Out().haze : 0.f; }
 void Draw(GpuPassView& pv, const MdCamera& cam, float hours) {
     if (!getenv("MD_SKY_INSTALL")) return;
     if (!g.tried) Init();
