@@ -146,3 +146,14 @@ TEST(Weather, HeatHazeStepFollowsTheExeRamp) {
     EXPECT_FLOAT_EQ(HeatHazeStep(0.0f, 0.6f, -0.4f, 3.0f), 0.0f);            // sun below the horizon: target 0
     EXPECT_FLOAT_EQ(HeatHazeStep(0.3f, 0.3f, 0.5f, 0.016f), 0.3f);           // at the target: unchanged
 }
+
+// Heat haze block of exe 1409e8f70 run as a slice in the Unicorn emulator (tools_private/research/exe_oracle_vectors3.tsv, heatHazeBlock rows): ours must be bit-equal.
+TEST(Weather, HeatHazeStepMatchesExeEmulatorVectors) {
+    struct V { float cur, rec, strength, sun_y, dt, exe; };
+    const V v[] = {
+        {0.0f, 1.0f, 1.0f, 0.5f, 0.05f, 0.01666666753590107f}, {0.4f, 1.0f, 1.0f, 0.5f, 0.05f, 0.4166666865348816f}, {0.99f, 1.0f, 1.0f, 0.5f, 0.05f, 1.0f},
+        {1.0f, 1.0f, 1.0f, 0.5f, 0.05f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.1f, 0.5f, 0.1666666716337204f}, {0.3f, 1.0f, 1.0f, -0.2f, 0.05f, 0.28333333134651184f},
+        {0.0f, 0.0f, 1.0f, 0.9f, 0.05f, 0.0f}, {0.2f, 0.6f, 0.5f, 0.05f, 0.01f, 0.1966666728258133f}, {0.2f, 0.6f, 0.5f, 0.05f, 0.4f, 0.09000000357627869f},
+        {0.0f, 1.0f, 0.25f, 1.0f, 1.5f, 0.25f}, {0.7f, 1.0f, 1.0f, 0.1f, 0.02f, 0.6933333277702332f}, {0.0f, 1.0f, 1.0f, 0.1f, 0.0f, 0.0f} };
+    for (const V& x : v) EXPECT_EQ(HeatHazeStep(x.cur, x.rec * x.strength, x.sun_y, x.dt), x.exe) << "cur " << x.cur << " sun_y " << x.sun_y << " dt " << x.dt;
+}
