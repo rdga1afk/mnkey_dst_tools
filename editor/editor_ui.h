@@ -4,17 +4,15 @@
 // ─────────────────────────────────────────────────────────
 // EditorUI — ImGui font globals + WickedEngine-style theme.
 //
-// Три шрифти (завантажуються в main.cpp):
+// Два шрифти (завантажуються в main.cpp):
 //   font_regular — Arimo Regular  (body text, labels)
 //   font_bold    — Arimo Bold     (panel headers, titles)
-//   font_mono    — Ubuntu Mono    (InputText, IDs, values)
 // ─────────────────────────────────────────────────────────
 
 namespace EditorUI {
 
 static ImFont* font_regular = nullptr;
 static ImFont* font_bold    = nullptr;
-static ImFont* font_mono    = nullptr;
 static float   ui_scale     = 1.0f;
 
 inline void SetupTheme() {

@@ -14,7 +14,6 @@ namespace SettingsEditor {
 
 struct Config {
     int   ui_size         = 14;
-    int   mono_size       = 13;
     float w3d_wasd_speed  = 1000.f;
     float w3d_scroll_step = 0.03f;
     float w3d_zoom_in     = 0.94f;
@@ -49,7 +48,6 @@ inline bool Load(const char* path) {
         return (v > 0.f) ? v : def;
     };
     int us = rint("\"ui_size\"");   if (us > 0) g_cfg.ui_size   = us;
-    int ms = rint("\"mono_size\""); if (ms > 0) g_cfg.mono_size = ms;
     g_cfg.w3d_wasd_speed  = rfloat("\"w3d_wasd_speed\"",  g_cfg.w3d_wasd_speed);
     g_cfg.w3d_scroll_step = rfloat("\"w3d_scroll_step\"", g_cfg.w3d_scroll_step);
     g_cfg.w3d_zoom_in     = rfloat("\"w3d_zoom_in\"",     g_cfg.w3d_zoom_in);
@@ -70,13 +68,12 @@ inline bool Save(const char* path) {
     fprintf(f,
         "{\n"
         "  \"ui_size\": %d,\n"
-        "  \"mono_size\": %d,\n"
         "  \"w3d_wasd_speed\": %.2f,\n"
         "  \"w3d_scroll_step\": %.4f,\n"
         "  \"w3d_zoom_in\": %.4f,\n"
         "  \"w3d_zoom_out\": %.4f\n"
         "}\n",
-        g_cfg.ui_size, g_cfg.mono_size,
+        g_cfg.ui_size,
         g_cfg.w3d_wasd_speed, g_cfg.w3d_scroll_step,
         g_cfg.w3d_zoom_in, g_cfg.w3d_zoom_out);
     fclose(f);
@@ -91,7 +88,7 @@ inline void DrawContent(const char* config_path,
     const float MARGIN = 12.0f;
     ImGui::Spacing();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MARGIN);
-    ImGui::SeparatorText("Fonts (Arimo + UbuntuMono, embedded)");
+    ImGui::SeparatorText("Fonts (Arimo, embedded)");
     ImGui::Spacing();
     ImGui::TextDisabled("Fonts are embedded — no system dependency.");
     ImGui::Spacing();
@@ -99,10 +96,6 @@ inline void DrawContent(const char* config_path,
     ImGui::SetNextItemWidth(120.f);
     ImGui::InputInt("UI size (px)",   &g_cfg.ui_size,   1);
     if (g_cfg.ui_size   < 6) g_cfg.ui_size   = 6;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MARGIN);
-    ImGui::SetNextItemWidth(120.f);
-    ImGui::InputInt("Mono size (px)", &g_cfg.mono_size, 1);
-    if (g_cfg.mono_size < 6) g_cfg.mono_size = 6;
     ImGui::TextDisabled("Restart editor to apply size changes.");
 
     ImGui::Spacing();

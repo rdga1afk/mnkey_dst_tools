@@ -356,9 +356,8 @@ inline void Draw(float dt) {
     if (g_sel_type == 0 && g_sel_zone >= 0) {
         WPZone& z = g_zones[g_sel_zone];
         push_bold(); ImGui::Text("Zone"); pop_bold();
-        ImGui::SameLine(); if (EditorUI::font_mono) ImGui::PushFont(EditorUI::font_mono);
+        ImGui::SameLine();
         ImGui::TextDisabled("  %s", z.id);
-        if (EditorUI::font_mono) ImGui::PopFont();
         ImGui::Separator(); ImGui::Spacing();
 
         ImGui::Text("Name:  %s", z.display_name);
@@ -369,9 +368,8 @@ inline void Draw(float dt) {
     } else if (g_sel_type == 1 && g_sel_fac >= 0) {
         WPFaction& fa = g_facs[g_sel_fac];
         push_bold(); ImGui::Text("Faction"); pop_bold();
-        ImGui::SameLine(); if (EditorUI::font_mono) ImGui::PushFont(EditorUI::font_mono);
+        ImGui::SameLine();
         ImGui::TextDisabled("  %s", fa.id);
-        if (EditorUI::font_mono) ImGui::PopFont();
         ImGui::Separator(); ImGui::Spacing();
 
         ImGui::SetNextItemWidth(-1); ImGui::InputText("Name##fn",     fa.name,     64);
@@ -396,9 +394,8 @@ inline void Draw(float dt) {
     } else if (g_sel_type == 2 && g_sel_town >= 0) {
         WPTown& t = g_towns[g_sel_town];
         push_bold(); ImGui::Text("Town"); pop_bold();
-        ImGui::SameLine(); if (EditorUI::font_mono) ImGui::PushFont(EditorUI::font_mono);
+        ImGui::SameLine();
         ImGui::TextDisabled("  %s", t.id);
-        if (EditorUI::font_mono) ImGui::PopFont();
         ImGui::Separator(); ImGui::Spacing();
 
         ImGui::SetNextItemWidth(-1); ImGui::InputText("Name##tn",    t.name,      64);

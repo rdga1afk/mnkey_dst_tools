@@ -135,7 +135,7 @@ void InitGame(MdEntity& player_entity, GameState& gs, MdCamera& camera, float& c
             if (SDL_GetDisplayUsableBounds(disp, &b) && b.h > 0) dh = b.h;
             float sc = (dh * 0.85f) / 720.f;
             if (sc < 0.5f) sc = 0.5f;
-            MdFonts::Load(14.f * sc, 13.f * sc);
+            MdFonts::Load(14.f * sc);
         }
         EditorUI::SetupTheme();
     }

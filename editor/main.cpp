@@ -182,11 +182,9 @@ int main(int argc, char** argv) {
     io.Fonts->Clear();
     float sc      = EditorUI::ui_scale;
     float ui_sz   = 14.f * sc; if (ui_sz   < 8.f) ui_sz   = 8.f;
-    float mono_sz = 13.f * sc; if (mono_sz < 8.f) mono_sz = 8.f;
-    MdFonts::Load(ui_sz, mono_sz);  // embedded Arimo + UbuntuMono — no system dependency
+    MdFonts::Load(ui_sz);  // embedded Arimo — no system dependency
     EditorUI::font_regular = MdFonts::regular;
     EditorUI::font_bold    = MdFonts::bold;
-    EditorUI::font_mono    = MdFonts::mono;
 
     ImGui_ImplSDL3_InitForSDLGPU(_wnd::ptr());
 #if defined(MD_RENDER_BACKEND_GRANITE) && defined(MD_USE_GRANITE)
