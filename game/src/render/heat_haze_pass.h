@@ -18,7 +18,7 @@ public:
     void Shutdown();
     bool Ready() const { return ready_; }
     // Once per frame: haze_scaled = SkyOutput.haze (record x strength), sun_y = sunDirection.y; the amplitude follows the exe ramp (HeatHazeStep).
-    void Tick(float haze_scaled, float sun_y);
+    void Tick(float haze_scaled, float sun_y, double game_hours);   // game_hours = the game clock in hours since day 0: the program's gameTime is that clock minus its value at the first call (exe 14066ff60 / 14066db50: day * 24 + hour minus the value at load)
     bool Needed() const { return ready_ && (amp_ != 0.f || Force()); }
     static bool Force() { static const bool f = getenv("MD_HEATHAZE") && getenv("MD_HEATHAZE")[0] == '2'; return f; }
     float Amplitude() const { return amp_; }
@@ -35,7 +35,7 @@ private:
     SDL_GPUTexture* flow_ = nullptr; SDL_GPUTexture* perturb_ = nullptr; SDL_GPUSampler* flow_smp_ = nullptr; SDL_GPUSampler* perturb_smp_ = nullptr;
     SDL_GPUTexture* scratch_ = nullptr; SDL_GPUTexture* neutral_depth_ = nullptr; int sw_ = 0, sh_ = 0;
     std::vector<unsigned char> ub_; int off_time_ = -1, off_haze_ = -1;
-    float amp_ = 0.f, time_ = 0.f; double last_s_ = -1.0; bool ready_ = false;
+    float amp_ = 0.f, time_ = 0.f; double last_s_ = -1.0, start_hours_ = 0.0; bool have_start_ = false; bool ready_ = false;
 };
 
 }   // namespace md

@@ -177,7 +177,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             float cam_az,
                             float logic_accum) {
     g_frame_dt_s = dt;
-    if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().Tick(SkyClouds::WeatherHaze(), -LightSystem::Get().sun_dir.y);   // DE-338: once per frame, before the first UpscaleActive(); sunDirection.y = to the sun
+    if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().Tick(SkyClouds::WeatherHaze(), -LightSystem::Get().sun_dir.y, SkyClouds::ClockHours());   // DE-338: once per frame, before the first UpscaleActive(); sunDirection.y = to the sun
     if (DynResActive()) {   // #182: linear speed (m/s) and turn rate (deg/s) of the camera, two thresholds (move / stand), N frames down and M frames up
         static Vec3 pp_{}, pt_{}; static bool have_ = false;
         float v = 0.f, w = 0.f;

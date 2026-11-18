@@ -82,11 +82,12 @@ void HeatHazePass::Shutdown() {
     pipe_ = nullptr; vs_ = nullptr; fs_ = nullptr; point_ = linear_ = nullptr; scratch_ = nullptr; neutral_depth_ = nullptr; sw_ = sh_ = 0; ready_ = false; dev_ = nullptr;   // the DDS textures belong to the asset cache
 }
 
-void HeatHazePass::Tick(float haze_scaled, float sun_y) {
+void HeatHazePass::Tick(float haze_scaled, float sun_y, double game_hours) {
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     float dt = last_s_ < 0.0 ? 0.f : (float)(now - last_s_);
     last_s_ = now; if (dt > 0.1f) dt = 0.1f;
-    time_ += dt;
+    if (!have_start_) { have_start_ = true; start_hours_ = game_hours; }
+    time_ = (float)(game_hours - start_hours_);
     amp_ = weather::HeatHazeStep(amp_, haze_scaled, sun_y, dt);
 }
 
@@ -118,7 +119,7 @@ HeatHazePass& HeatHazePass::Get() { static HeatHazePass p; return p; }
 bool HeatHazePass::Wanted() { return false; }
 bool HeatHazePass::Init(SDL_GPUDevice*, SDL_GPUTextureFormat) { return false; }
 void HeatHazePass::Shutdown() {}
-void HeatHazePass::Tick(float, float) {}
+void HeatHazePass::Tick(float, float, double) {}
 void HeatHazePass::EnsureScratch(int, int) {}
 void HeatHazePass::Run(SDL_GPUCommandBuffer*, SDL_GPUTexture*, SDL_GPUTexture*, SDL_GPUTexture*, int, int) {}
 }

@@ -16,4 +16,6 @@ void SetWeatherOverride(bool on, float cloud_offset, float darkness, float wetne
 float OverrideWetness();
 // The heat haze of the zone's current weather (record "heat haze" x strength, SkyOutput.haze); 0 without the weather data or with the override on.
 float WeatherHaze();
+// The game clock set by SetClock, in hours since day 0 (the heat haze's gameTime).
+double ClockHours();
 }
