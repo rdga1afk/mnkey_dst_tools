@@ -1,0 +1,96 @@
+name: Analysis
+
+# DE-349 item 1 / #214: sanitizers and static analysis. Nothing of Kenshi: only the tests that need no install run.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch: {}
+
+concurrency:
+  group: analysis-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH_DATE: "2026/11/12"   # keep equal to ci.yml
+
+jobs:
+  static:
+    name: cppcheck + clang-tidy on the changed files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+      - name: Tools
+        run: sudo apt-get update && sudo apt-get install -y cppcheck clang-tidy
+      - name: Changed C++ files
+        run: |
+          BASE=${{ github.event.pull_request.base.sha || github.event.before }}
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then BASE=$(git rev-parse HEAD~1); fi
+          git diff --name-only --diff-filter=AM "$BASE" HEAD -- '*.cpp' '*.h' ':!third_party' ':!engine' > changed.txt || true
+          echo "changed files:"; cat changed.txt
+      - name: "cppcheck - a finding that is not in ci/cppcheck_baseline.txt turns the job red, the baseline may only shrink"
+        run: |
+          : > cppcheck_all.txt
+          if [ -s changed.txt ]; then
+            xargs -a changed.txt cppcheck --enable=warning --inline-suppr --suppress=missingInclude --suppress=unusedFunction --suppress=syntaxError --std=c++17 -q \
+              --template='{file}:{id}' 2> cppcheck_all.txt || true
+          fi
+          sort -u cppcheck_all.txt | grep -v '^\.\./' > cppcheck_now.txt || true
+          grep -vxFf ci/cppcheck_baseline.txt cppcheck_now.txt > cppcheck_new.txt || true
+          echo "findings in changed files: $(wc -l < cppcheck_now.txt), new: $(wc -l < cppcheck_new.txt)"
+          cat cppcheck_new.txt
+          [ ! -s cppcheck_new.txt ]
+      - name: "clang-tidy - report only, a small check set, the warnings go into one artifact"
+        run: |
+          : > tidy.txt
+          for f in $(grep '\.cpp$' changed.txt); do
+            clang-tidy "$f" -quiet -checks='-*,bugprone-use-after-move,bugprone-infinite-loop,bugprone-undefined-memory-manipulation,clang-analyzer-core.*' -- -std=c++17 -Iengine/include -I. 2>/dev/null >> tidy.txt || true
+          done
+          wc -l tidy.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: analysis-report
+          path: |
+            cppcheck_now.txt
+            cppcheck_new.txt
+            tidy.txt
+
+  sanitizers:
+    name: ASan + UBSan (tests that need no install)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    container: archlinux:latest
+    steps:
+      - name: Toolchain (same Arch snapshot as ci.yml)
+        run: |
+          echo "Server = https://archive.archlinux.org/repos/${ARCH_DATE}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm
+          pacman -S --noconfirm --needed base-devel clang cmake ninja git ccache sdl3 lua54 mold freetype2 shaderc glslang python pkgconf gtest vulkan-headers vulkan-icd-loader
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: git safe directory
+        run: git config --global --add safe.directory '*'
+      - name: renderdoc_app.h
+        run: |
+          curl -sSfL -o /usr/local/include/renderdoc_app.h https://raw.githubusercontent.com/baldurk/renderdoc/v1.45/renderdoc/api/app/renderdoc_app.h
+          echo "b7005e7dc34c3635046868bbd76d81b9b055aede0f56daa0bd39fedee0639ffb  /usr/local/include/renderdoc_app.h" | sha256sum -c -
+      - name: Configure (sanitizers)
+        run: |
+          export CC=clang CXX=clang++
+          cmake -S . -B build-san -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMD_MARCH=skylake \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build the tests
+        run: cmake --build build-san --target md_tests -j"$(nproc)"
+      - name: "Run - tests listed in ci/sanitizer_skip.txt are skipped, the list may only shrink"
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=0
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          SKIP=$(grep -v '^#' ci/sanitizer_skip.txt | paste -sd'|' -)
+          ctest --test-dir build-san -L fast -LE needs-install ${SKIP:+-E "$SKIP"} --output-on-failure --timeout 300

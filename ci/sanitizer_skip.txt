@@ -1,0 +1,1 @@
+# tests excluded from the ASan / UBSan job (ctest -E regex alternatives, one per line); the list may only shrink. Empty at the first run: a failure there is a finding to fix or to list here.
