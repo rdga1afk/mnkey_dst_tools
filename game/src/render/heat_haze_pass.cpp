@@ -7,6 +7,8 @@
 #include <monkey_dust/render/asset_cache.h>
 #include <monkey_dust/world/weather.h>
 #include <chrono>
+#include <fstream>
+#include <sstream>
 #include <cstring>
 
 namespace md {
@@ -33,11 +35,16 @@ bool HeatHazePass::Init(SDL_GPUDevice* dev, SDL_GPUTextureFormat fmt) {
     const std::string dir = kd + "/data/materials/", src = dir + "post/heathaze.hlsl";
     hlsl::Compiled vc, fc;
     if (!hlsl::Compile(kVert, {}, 'v', vc) || !vc.valid) { MD_LOG(MD_LOG_WARNING, "heat haze: vertex: %s", vc.log.c_str()); return false; }
-    if (!hlsl::Compile("#include \"" + src + "\"\n", { src }, 'f', fc) || !fc.valid) { MD_LOG(MD_LOG_WARNING, "heat haze: fragment: %s %s", fc.log.c_str(), fc.valid_log.c_str()); return false; }
+    // The program assigns to its `uniform float gameTime` (DX9 allows it, glslang does not): the compatibility rule of path1_adapter.md s.2 for a global, applied here to the two exact statements
+    // (in memory, the install file is not touched); any other text of the file => fail closed.
+    std::string text; { std::ifstream f(src, std::ios::binary); std::stringstream ss; ss << f.rdbuf(); text = ss.str(); }
+    auto sub = [&](const char* a, const char* b) { const size_t i = text.find(a); if (i == std::string::npos) return false; text.replace(i, strlen(a), b); return true; };
+    if (!sub("uniform float gameTime;", "uniform float gameTime__u; static float gameTime;") || !sub("gameTime *= 100;", "gameTime = gameTime__u * 100;")) { MD_LOG(MD_LOG_WARNING, "heat haze: heathaze.hlsl is not the expected text: off"); return false; }
+    if (!hlsl::Compile(text, { src }, 'f', fc) || !fc.valid) { MD_LOG(MD_LOG_WARNING, "heat haze: fragment: %s %s", fc.log.c_str(), fc.valid_log.c_str()); return false; }
     std::vector<hlsl::UniformMember> mem; uint32_t sz = 0;
     if (!hlsl::GlobalBlockMembers(fc.spv, mem, sz) || !sz) { MD_LOG(MD_LOG_WARNING, "heat haze: no uniform block"); return false; }
     ub_.assign(sz + 16, 0);
-    for (const auto& m : mem) { if (m.name == "gameTime" || m.name == "gameTime__w") off_time_ = (int)m.offset; else if (m.name == "heatHaze") off_haze_ = (int)m.offset; }
+    for (const auto& m : mem) { if (m.name == "gameTime__u") off_time_ = (int)m.offset; else if (m.name == "heatHaze") off_haze_ = (int)m.offset; }
     if (off_time_ < 0 || off_haze_ < 0) { MD_LOG(MD_LOG_WARNING, "heat haze: uniforms gameTime / heatHaze not found"); return false; }
     SDL_GPUShaderCreateInfo sv = {}; sv.code = (const Uint8*)vc.spv.data(); sv.code_size = vc.spv.size() * 4; sv.entrypoint = "main"; sv.format = SDL_GPU_SHADERFORMAT_SPIRV; sv.stage = SDL_GPU_SHADERSTAGE_VERTEX;
     vs_ = SDL_CreateGPUShader(dev, &sv);

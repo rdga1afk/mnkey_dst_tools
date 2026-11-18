@@ -68,7 +68,7 @@ static void ReprojViewBasis(const MdCamera& c, double rot[9], double eye[3]) {
 
 bool NpcRender::UpscaleActive() {
     const auto& sr = SceneRender::Get();
-    const bool forced = g_opt_force_upscale || g_opt_fxaa;
+    const bool forced = g_opt_force_upscale || g_opt_fxaa || md::HeatHazePass::Get().Needed();   // DE-338: the haze needs the intermediate; at amplitude 0 it is not forced
     if ((EffectiveResolutionScale() >= 0.999f && !forced) || !sr.upscale_pass_.Ready()) return false;
     return true;
 }
@@ -177,6 +177,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             float cam_az,
                             float logic_accum) {
     g_frame_dt_s = dt;
+    if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().Tick(SkyClouds::WeatherHaze(), -LightSystem::Get().sun_dir.y);   // DE-338: once per frame, before the first UpscaleActive(); sunDirection.y = to the sun
     if (DynResActive()) {   // #182: linear speed (m/s) and turn rate (deg/s) of the camera, two thresholds (move / stand), N frames down and M frames up
         static Vec3 pp_{}, pt_{}; static bool have_ = false;
         float v = 0.f, w = 0.f;
@@ -536,15 +537,11 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         if (real_sc && sr_up.upscale_pass_.HasTarget(rw_, rh_)) {
                             GpuPushDebugGroup(fc.cmd, "Upscale");
                             bool upscaled = false;
-                            if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().Tick(SkyClouds::WeatherHaze(), -LightSystem::Get().sun_dir.y);   // DE-338: once per frame, sunDirection.y = to the sun
                             SDL_GPUTexture* haze_depth = md::GroundLiveDriver::Get().Pass().Raw(2);
-                            if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) {
-                                GpuPushDebugGroup(fc.cmd, "FXAA");
-                                auto& hz = md::HeatHazePass::Get();
-                                if (hz.Needed() && hz.Scratch()) { sr_up.upscale_pass_.ApplyFxaa(fc.cmd, hz.Scratch()); GpuPopDebugGroup(fc.cmd); GpuPushDebugGroup(fc.cmd, "HeatHaze"); hz.Run(fc.cmd, hz.Scratch(), real_sc, haze_depth, rw_, rh_); }   // strict order: FXAA, then HeatHaze (compositors.cfg)
-                                else sr_up.upscale_pass_.ApplyFxaa(fc.cmd, real_sc);
-                                GpuPopDebugGroup(fc.cmd); upscaled = true;
-                            }
+                            auto& hz = md::HeatHazePass::Get();
+                            const bool haze_full = hz.Needed() && hz.Scratch() && EffectiveResolutionScale() >= 0.999f;   // strict order at scale 1.0: (FXAA) -> intermediate -> HeatHaze -> swapchain (compositors.cfg)
+                            md::GpuTextureHandle first_out = haze_full ? hz.Scratch() : real_sc;
+                            if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, first_out); GpuPopDebugGroup(fc.cmd); upscaled = true; }
                             if (g_hialgo && sr_up.hialgo_.Ready() && EffectiveResolutionScale() < 0.999f) {   // DE-312: FXAA -> (stair blur) -> neighbour-clamped upscale + clamped sharpening
                                 GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_fxaa_profile, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
@@ -556,7 +553,8 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             if (!upscaled && g_opt_fsr1 && sr_up.fsr1_.Ready() && sr_up.fsr1_.Tex() && EffectiveResolutionScale() < 0.999f) {   // FSR 1: EASU to the window size, RCAS onto the swapchain
                                 GpuPushDebugGroup(fc.cmd, "FSR1"); sr_up.fsr1_.Easu(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, sr_up.fsr1_.W(), sr_up.fsr1_.H()); sr_up.fsr1_.Rcas(fc.cmd, real_sc, 0.9f); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
-                            if (!upscaled) sr_up.upscale_pass_.Apply(fc.cmd, real_sc, EffectiveResolutionScale() >= 0.999f ? 0.f : sr_up.upscale_sharpness, g_up_sharp); // scale 1.0 (the forced path): a plain copy
+                            if (!upscaled) sr_up.upscale_pass_.Apply(fc.cmd, first_out, EffectiveResolutionScale() >= 0.999f ? 0.f : sr_up.upscale_sharpness, g_up_sharp); // scale 1.0 (the forced path): a plain copy
+                            if (haze_full) { GpuPushDebugGroup(fc.cmd, "HeatHaze"); hz.Run(fc.cmd, hz.Scratch(), real_sc, haze_depth, rw_, rh_); GpuPopDebugGroup(fc.cmd); }
                             GpuPopDebugGroup(fc.cmd);
                             DrawFullResUi(fc, now_s, player_entity, cam_x, cam_z, cam_az);
                         }
