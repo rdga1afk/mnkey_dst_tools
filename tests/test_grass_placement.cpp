@@ -2,6 +2,7 @@
 #include <monkey_dust/world/grass_placement.h>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 using namespace md::grass;
@@ -234,5 +235,43 @@ TEST(GrassPlacement, CandidateCountMatchesExeEmulatorVectors) {
     for (const V& q : v) {
         Layer l{}; l.density = q.density;
         EXPECT_EQ(CandidateCount(l, q.page), q.exe) << "density " << q.density << " page " << q.page.left << " " << q.page.right;
+    }
+}
+
+// The whole PopulateBilinear (exe 140a41690) run in the Unicorn emulator (exe_oracle_vectors3.tsv, populateBilinear rows): a 4000-float table (LCG), the 129 x 129 map
+// byte i = (i * 37 + 11) & 255 over (0, 0, 4608, 4608), slope(x, z) = x and height(x, z) = z. Ours must give the same blade count and the same output floats (FNV-1a of the bits);
+// the cases cover the slope filter (max slope below / above the page), both height limits, the no-limit path and pages partly outside the map.
+namespace {
+float SlopeIsX(float x, float, void*) { return x; }
+float HeightIsZ(float, float z, void*) { return z; }
+uint64_t Fnv(const float* v, size_t n) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (size_t i = 0; i < n; ++i) { uint32_t b; std::memcpy(&b, &v[i], 4); for (int k = 0; k < 4; ++k) { h ^= (b >> (8 * k)) & 255u; h *= 0x100000001b3ull; } }
+    return h;
+}
+}
+TEST(GrassPlacement, PopulateBilinearMatchesExeEmulatorVectors) {
+    struct V { float max_slope, min_y, max_y; Rect page; uint32_t count, n; uint64_t fnv; };
+    const V v[] = {
+        {1000.0f, 0.0f, 0.0f, {500.0f, 500.0f, 1500.0f, 1500.0f}, 300u, 68u, 0x192ae98613f9997bull},
+        {1000.0f, 600.0f, 1200.0f, {0.0f, 0.0f, 2304.0f, 2304.0f}, 500u, 25u, 0xb9c70881bda9080aull},
+        {900.0f, 0.0f, 800.0f, {600.0f, 100.0f, 1000.0f, 700.0f}, 400u, 149u, 0x0e08fe64230cd869ull},
+        {1000.0f, 700.0f, 0.0f, {200.0f, 500.0f, 900.0f, 1500.0f}, 500u, 203u, 0xc8056ac55dbe37d2ull},
+        {1000.0f, 0.0f, 0.0f, {-300.0f, -300.0f, 300.0f, 300.0f}, 400u, 50u, 0xd89013b34425a2e4ull},
+        {2000.0f, 0.0f, 0.0f, {900.0f, 1200.0f, 1100.0f, 1400.0f}, 450u, 233u, 0x1fc796b2c506fe32ull},
+        {5000.0f, 0.0f, 3000.0f, {2304.0f, 2304.0f, 4608.0f, 4608.0f}, 580u, 79u, 0xd59aed896feb6acbull},
+    };
+    std::vector<float> tab(4000);
+    uint32_t lcg = 12345u;
+    for (float& t : tab) { lcg = lcg * 1664525u + 1013904223u; t = float(lcg >> 8) / 16777216.0f; }
+    std::vector<uint8_t> map(129 * 129 + 4);
+    for (size_t i = 0; i < map.size(); ++i) map[i] = uint8_t((i * 37 + 11) & 255);
+    for (const V& q : v) {
+        RandomTable rt; rt.Init(tab.data(), uint32_t(tab.size()));
+        Layer l{}; l.density = 1.0f; l.max_slope = q.max_slope; l.min_y = q.min_y; l.max_y = q.max_y; l.map = map.data(); l.map_w = l.map_h = 129; l.map_bounds = {0.f, 0.f, 4608.f, 4608.f};
+        std::vector<float> o(4 * q.count + 4);
+        const uint32_t n = PopulateBilinear(rt, l, TerrainFns{SlopeIsX, HeightIsZ, nullptr}, q.page, q.count, o.data());
+        EXPECT_EQ(n, q.n) << "page " << q.page.left << " " << q.page.top;
+        EXPECT_EQ(Fnv(o.data(), 4 * size_t(n)), q.fnv) << "page " << q.page.left << " " << q.page.top;
     }
 }
