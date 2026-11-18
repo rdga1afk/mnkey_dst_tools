@@ -3,6 +3,7 @@
 // (t = clamp((d - fc) / fc, 0, 1), f8 = near / far), so a node splits when value * ramp > near: the threshold is near / ramp.
 #include <gtest/gtest.h>
 #include <monkey_dust/world/terrain_lod_tree.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -142,4 +143,38 @@ TEST(LodPluginOracle, FogSkydomeRadiusIsTheInstallsDefault) {
         EXPECT_EQ(v, md::kFogSkydomeRadius); found = true;
     }
     EXPECT_TRUE(found);
+}
+
+// Neighbour restriction (Plugin_Terrain_x64.dll FUN_1800042c0 run in the Unicorn emulator, tools/tests/data/plugin_neighbours.tsv; the node split is replaced by a counting stub):
+// per side the plugin splits the neighbour while its level < level - limit + 1. Ours works on a flat list, so each side is built alone: the node at (level, i, j), its neighbour on that side
+// at the vector's level (a finer one is the same level, ours only looks for the same or a coarser cell). One split adds three nodes, so the count is 2 + 3 * splits; only sides with at most one split are compared.
+// FUN_180003d80 (opposite side) and FUN_180003da0 (link neighbours) have no counterpart in ours (flat grid).
+TEST(LodPluginOracle, RestrictNeighboursSplitCountEqualsThePlugins) {
+    std::ifstream in("tools/tests/data/plugin_neighbours.tsv"); std::string line; int rows = 0, sides = 0, bad = 0;
+    const int di[4] = {0, 0, -1, 1}, dj[4] = {-1, 1, 0, 0};
+    while (std::getline(in, line)) {
+        if (line.rfind("restrict\t", 0) != 0) continue;
+        std::istringstream ss(line); std::string f[6]; for (int k = 0; k < 6; ++k) std::getline(ss, f[k], '\t');
+        const int L = std::stoi(f[1]), limit = std::stoi(f[2]);
+        std::vector<int> calls; { std::istringstream cs(f[5]); std::string c; while (std::getline(cs, c, ',')) calls.push_back(std::stoi(c)); }
+        std::vector<std::string> spec; { std::istringstream cs(f[3]); std::string c; while (std::getline(cs, c, ',')) spec.push_back(c); }
+        ASSERT_EQ(calls.size(), 4u); ASSERT_EQ(spec.size(), 4u);
+        for (int e = 0; e < 4; ++e) {
+            if (spec[e] == "-" || calls[e] > 1) continue;   // with more splits the plugin's own split function keeps restricting the new children, ours balances the whole list
+            const int l = std::min(std::stoi(spec[e].substr(1)), L), d = L - l;
+            const float size = float(1024 >> L), size_l = float(1024 >> l);
+            const int i = 5 * (1 << d) - (di[e] > 0 ? 1 : 0), j = 5 * (1 << d) - (dj[e] > 0 ? 1 : 0);
+            md::TerrainLodNode nodes[64] = {};
+            nodes[0].origin_x = float(i) * size; nodes[0].origin_z = float(j) * size; nodes[0].size = size; nodes[0].level = L;
+            nodes[1].origin_x = float((i + di[e]) >> d) * size_l; nodes[1].origin_z = float((j + dj[e]) >> d) * size_l; nodes[1].size = size_l; nodes[1].level = l;
+            const int n = md::RestrictLodNodes(nodes, 2, 64, limit - 1);
+            if (n != 2 + 3 * calls[e]) ++bad;
+            ++sides;
+        }
+        ++rows;
+    }
+    std::printf("restrict neighbours vs the plugin: %d scenarios, %d sides, %d differ\n", rows, sides, bad);
+    EXPECT_EQ(rows, 40);
+    EXPECT_GT(sides, 60);
+    EXPECT_EQ(bad, 0);
 }
