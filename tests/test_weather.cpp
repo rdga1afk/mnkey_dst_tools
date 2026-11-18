@@ -7,7 +7,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 using namespace md::weather;
 
@@ -156,4 +160,30 @@ TEST(Weather, HeatHazeStepMatchesExeEmulatorVectors) {
         {0.0f, 0.0f, 1.0f, 0.9f, 0.05f, 0.0f}, {0.2f, 0.6f, 0.5f, 0.05f, 0.01f, 0.1966666728258133f}, {0.2f, 0.6f, 0.5f, 0.05f, 0.4f, 0.09000000357627869f},
         {0.0f, 1.0f, 0.25f, 1.0f, 1.5f, 0.25f}, {0.7f, 1.0f, 1.0f, 0.1f, 0.02f, 0.6933333277702332f}, {0.0f, 1.0f, 1.0f, 0.1f, 0.0f, 0.0f} };
     for (const V& x : v) EXPECT_EQ(HeatHazeStep(x.cur, x.rec * x.strength, x.sun_y, x.dt), x.exe) << "cur " << x.cur << " sun_y " << x.sun_y << " dt " << x.dt;
+}
+
+// Dust and wetness blocks of the exe run as slices in the Unicorn emulator (tools/tests/data/exe_weather_dust.tsv, exe_weather_wetness.tsv): ours must be bit-equal.
+namespace {
+uint32_t WxBits(float f) { uint32_t u; std::memcpy(&u, &f, 4); return u; }
+float WxFl(const std::string& s) { return float(std::strtod(s.c_str(), nullptr)); }
+std::vector<std::vector<std::string>> WxRows(const char* path) {
+    std::vector<std::vector<std::string>> r; std::ifstream in(path); std::string line;
+    while (std::getline(in, line)) { if (line.empty() || line[0] == '#') continue; std::vector<std::string> f; std::stringstream ss(line); std::string c; while (std::getline(ss, c, '\t')) f.push_back(c); r.push_back(f); }
+    return r;
+}
+}   // namespace
+
+TEST(Weather, DustStepMatchesExeEmulatorVectors) {
+    const auto rows = WxRows("tools/tests/data/exe_weather_dust.tsv");
+    ASSERT_GE(rows.size(), 50u);
+    for (const auto& f : rows) {
+        const float cur = WxFl(f[0]), rec = WxFl(f[1]), st = WxFl(f[2]), dt = WxFl(f[3]); uint32_t want = (uint32_t)std::stoul(f[4], nullptr, 16);
+        EXPECT_EQ(WxBits(DustStep(cur, rec * st, dt)), want) << "cur " << cur << " record " << rec << " strength " << st << " dt " << dt;
+    }
+}
+
+TEST(Weather, WetnessStepMatchesExeEmulatorVectors) {
+    const auto rows = WxRows("tools/tests/data/exe_weather_wetness.tsv");
+    ASSERT_EQ(rows.size(), 17u);
+    for (const auto& f : rows) EXPECT_EQ(WxBits(WetnessStep(WxFl(f[0]), WxFl(f[1]), WxFl(f[2]))), WxBits(WxFl(f[3]))) << "cur " << f[0] << " target " << f[1] << " dt " << f[2];
 }
