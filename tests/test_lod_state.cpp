@@ -15,7 +15,7 @@ constexpr float kExtent = 29491.2f;
 
 void Info(const void*, int L, int i, int j, float& err, float& ymin, float& ymax) {
     const float size = kExtent / (float)(1 << L);
-    uint32_t h = (uint32_t)(L * 73856093) ^ (uint32_t)(i * 19349663) ^ (uint32_t)(j * 83492791); h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+    uint32_t h = (uint32_t)L * 73856093u ^ (uint32_t)i * 19349663u ^ (uint32_t)j * 83492791u; h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
     err = size * 0.004f + size * 0.004f * (float)(h % 100) / 100.f;   // a rough surface: the error grows with the node, not monotonically
     ymin = 0.f; ymax = 40.f;
 }
