@@ -1,7 +1,10 @@
 #include "slice_game.h"
 #include "game_common.h"
 #include <monkey_dust/nav/nav_world.h>
+#include <monkey_dust/io/kenshi_dir.h>
+#include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/world/slice_squad.h>
+#include <monkey_dust/world/start_squad.h>
 #include <monkey_dust/world/terrain_query.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/transform_soa.h>
@@ -15,7 +18,6 @@
 namespace md::slice {
 namespace {
 constexpr float kPickRadius = 1.2f;        // m around a character's centre, 1 m above the feet
-constexpr int kSquadSize = 4;
 
 md::world::SliceSquad s_squad;
 MdEntity s_ent[md::world::kSliceMaxChars];
@@ -38,12 +40,33 @@ void Put(int i) {
     }
 }
 
+// TEST-ONLY start (owner 18.11, DE-350): the squad is the record "The Cannibal Hunters" of gamedata.base (4 + 1 characters, as the exe's new-game start lists it), but placed at the player's
+// position (the Hub from MD_START_WORLD) with the exe's +-50 m offsets, not at the record's own start; the original start of this record is (-43500, -6625) m. The offsets come from a fixed-seed
+// generator (the exe's random source differs). Falls back to four members when the record cannot be read.
+int SquadCount() {
+    int n = 4;
+    md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err; md::fcs::LoadOrder base; md::fcs::GameDataContainer data;
+    if (inst.LoadOrderFor(order, err)) for (const auto& f : order.files) if (f.name == "gamedata.base") base.files.push_back(f);
+    if (base.files.size() == 1 && data.Load(base, err)) {
+        const auto m = md::world::StartSquadMembers(data, "The Cannibal Hunters");
+        if (!m.empty()) n = (int)m.size();
+    } else MD_LOG(MD_LOG_WARNING, "[slice] gamedata.base not readable, four test characters");
+    return n < md::world::kSliceMaxChars ? n : md::world::kSliceMaxChars;
+}
+
+float Offset() {   // uniform in -kStartJitterMetres..+kStartJitterMetres, fixed seed
+    static uint32_t st = 0x2918u;
+    st = st * 1664525u + 1013904223u;
+    return ((float)(st >> 8) / (float)(1u << 24) * 2.f - 1.f) * md::world::kStartJitterMetres;
+}
+
 void Spawn(MdEntity player) {
     auto& reg = MdRegistry::Get();
     const WorldTransform pt = reg.Handle(player).get_mut<WorldTransform>();
+    const int count = SquadCount();
     s_ent[0] = player; s_squad.Add(pt.x, pt.y, pt.z);
-    for (int i = 1; i < kSquadSize; ++i) {
-        const float x = pt.x + 1.5f * (float)i, z = pt.z;
+    for (int i = 1; i < count; ++i) {
+        const float x = pt.x + Offset(), z = pt.z + Offset();
         auto e = reg.Create();
         reg.Handle(e).emplace<WorldTransform>();
         auto& tr = reg.Handle(e).get_mut<WorldTransform>();

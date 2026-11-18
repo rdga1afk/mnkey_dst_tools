@@ -1,6 +1,6 @@
 #pragma once
 // Q04 vertical slice in the running game (#212), behind MD_SLICE=1 (off by default: nothing here runs and the click-to-move of the player stays as before).
-// The squad is the player entity plus three spawned NPCs; selection, move orders, steering and avoidance come from engine/include/monkey_dust/world/slice_squad.h;
+// The squad is the player entity plus the other members of the record "The Cannibal Hunters" (TEST-ONLY start, see slice_game.cpp); selection, move orders, steering and avoidance come from engine/include/monkey_dust/world/slice_squad.h;
 // the path comes from the install navmesh (md::nav::NavWorld). Left click selects (shift adds), right click (quick, no orbit) orders a move (shift = walk, else jog),
 // the camera follows the selection centre.
 #include <monkey_dust/ecs/md_registry.h>
