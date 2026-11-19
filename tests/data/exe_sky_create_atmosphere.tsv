@@ -1,0 +1,12 @@
+# kenshi_x64.exe sky_controller_create 0x14066e380: the atmosphere options block handed to the SkyX atmosphere update; columns: field, source data address (0 = literal in the code), float32 bits as read from the exe (hex), or the integer 4. The wavelength y component is written after the vector is built (0x1416ce82c, 0.48), so it replaces the 0.54 of the vector.
+inner_radius	0x1416fd754	411c6671
+outer_radius	0x1416fd750	4124bda5
+height_position	0x141682ad8	3c23d70a
+rayleigh	0x1416fd74c	3b102de0
+mie	0x1416fd748	3a30f27c
+sun_intensity	0x141693f4c	41f00000
+wavelength_x	0x1416fd4bc	3f11eb85
+wavelength_y	0x1416ce82c	3ef5c28f
+wavelength_z	0x1416fd4c4	3ee147ae
+g	0x1416fd744	bf7db22d
+exposure	0x14169bb48	3fb33333

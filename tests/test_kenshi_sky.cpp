@@ -198,3 +198,21 @@ TEST(KenshiSky, ScaleMatchesSkyXDllEmulatorVectors) {
     EXPECT_EQ(rows, 80);
     EXPECT_LT(worst, 1e-4);
 }
+
+// The atmosphere options block of sky_controller_create (0x14066e380), floats as read from the exe data addresses (tools/tests/data/exe_sky_create_atmosphere.tsv): our defaults must be bit-equal.
+TEST(KenshiSky, AtmosphereDefaultsMatchTheExeOptionsBlock) {
+    std::ifstream in("tools/tests/data/exe_sky_create_atmosphere.tsv"); ASSERT_TRUE(in.good());
+    const md::KenshiAtmosphere a;
+    const std::pair<const char*, float> ours[] = { { "inner_radius", a.inner_radius }, { "outer_radius", a.outer_radius }, { "height_position", a.height_position }, { "rayleigh", a.rayleigh }, { "mie", a.mie },
+        { "sun_intensity", a.sun_intensity }, { "wavelength_x", a.wavelength.x }, { "wavelength_y", a.wavelength.y }, { "wavelength_z", a.wavelength.z }, { "g", a.g }, { "exposure", a.exposure } };
+    std::string line; int rows = 0;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line); std::string name, addr, hex; std::getline(ss, name, '\t'); std::getline(ss, addr, '\t'); std::getline(ss, hex, '\t');
+        const uint32_t bits = (uint32_t)std::stoul(hex, nullptr, 16); float want; std::memcpy(&want, &bits, 4);
+        bool found = false;
+        for (const auto& o : ours) if (name == o.first) { uint32_t got; std::memcpy(&got, &o.second, 4); EXPECT_EQ(got, bits) << name << " " << addr; found = true; }
+        EXPECT_TRUE(found) << name; (void)want; ++rows;
+    }
+    EXPECT_EQ(rows, 11); EXPECT_EQ(a.samples, 4);
+}
