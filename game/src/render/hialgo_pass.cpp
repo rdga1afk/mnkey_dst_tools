@@ -28,27 +28,29 @@ void HialgoPass::Shutdown() {
     if (dev) {
         if (a_) GpuReleaseTexture(dev, a_);
         if (b_) GpuReleaseTexture(dev, b_);
-        if (alt_a_) GpuReleaseTexture(dev, alt_a_);
-        if (alt_b_) GpuReleaseTexture(dev, alt_b_);
+        for (Set& s : alt_) { if (s.a) GpuReleaseTexture(dev, s.a); if (s.b) GpuReleaseTexture(dev, s.b); }
         if (linear_) GpuReleaseSampler(dev, linear_);
         if (nearest_) GpuReleaseSampler(dev, nearest_);
     }
-    a_ = b_ = alt_a_ = alt_b_ = nullptr; linear_ = nearest_ = nullptr; w_ = h_ = alt_w_ = alt_h_ = 0;
+    a_ = b_ = nullptr; for (Set& s : alt_) s = Set{}; linear_ = nearest_ = nullptr; w_ = h_ = 0;
     cmaa_.Shutdown(); blur_.Destroy(); up_.Destroy(); ready_ = false;
 }
 
 void HialgoPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
     if (!ready_ || w <= 0 || h <= 0) return;
+    if (cmaa_.Ready()) cmaa_.EnsureTargets(w, h);   // DE-362: the CMAA 2 targets of this level are made with the pair
     if (a_ && b_ && w == w_ && h == h_ && fmt == fmt_) return;
-    if (alt_a_ && alt_b_ && w == alt_w_ && h == alt_h_ && fmt == alt_fmt_) {   // back to the previous size: swap
-        std::swap(a_, alt_a_); std::swap(b_, alt_b_); std::swap(w_, alt_w_); std::swap(h_, alt_h_); std::swap(fmt_, alt_fmt_);
-        return;
+    {
+        Set cur{ a_, b_, w_, h_, fmt_ };
+        if (md::SlotSwapIn(cur, alt_, [&](const Set& s) { return s.w == w && s.h == h && s.fmt == fmt; })) { a_ = cur.a; b_ = cur.b; w_ = cur.w; h_ = cur.h; fmt_ = cur.fmt; return; }   // a stored size: swap
     }
     md::GpuDevice::Get().WarnIfActive("HialgoPass::Ensure");
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
-    if (alt_a_) GpuReleaseTexture(dev, alt_a_);
-    if (alt_b_) GpuReleaseTexture(dev, alt_b_);
-    alt_a_ = a_; alt_b_ = b_; alt_w_ = w_; alt_h_ = h_; alt_fmt_ = fmt_;   // the current pair becomes the alt one
+    {   // a new size: the active pair is stored, the oldest stored one goes when all slots are used
+        Set cur{ a_, b_, w_, h_, fmt_ };
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Set& s) { if (s.a) GpuReleaseTexture(dev, s.a); if (s.b) GpuReleaseTexture(dev, s.b); s = Set{}; });
+        a_ = b_ = nullptr; w_ = h_ = 0;
+    }
     SDL_GPUTextureCreateInfo ti{};
     ti.type = SDL_GPU_TEXTURETYPE_2D; ti.format = fmt; ti.width = (uint32_t)w; ti.height = (uint32_t)h; ti.layer_count_or_depth = 1; ti.num_levels = 1;
     ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;

@@ -63,7 +63,7 @@ private:
     void UpdateTiles(const float cam[3]);
     bool tile_on_[64] = {};   // ZoneMapOverlay enabled state of the 8 x 8 colour tiles
     int ListIdOf(const PatchBiomes& pb);
-    bool data_tried_ = false, data_ok_ = false, gpu_tried_ = false, gpu_ok_ = false;
+    bool data_tried_ = false, data_ok_ = false, gpu_tried_ = false, gpu_ok_ = false, warmed_ = false;
     std::string kenshi_dir_;
     GroundLivePass pass_; Kbi1 kbi_; BiomeLayerArrays arrays_;
     std::vector<std::pair<int, BiomeInfo>> biome_of_;

@@ -5,6 +5,7 @@
 #include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/render/gpu_pipeline.h>
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/size_slots.h>
 
 class Cmaa2Pass {
 public:
@@ -24,6 +25,11 @@ public:
 
 private:
     void DestroyTargets();
+    struct Set { SDL_GPUTexture *in = nullptr, *out = nullptr, *edges = nullptr, *heads = nullptr; SDL_GPUBuffer *cand = nullptr, *loc = nullptr, *item = nullptr, *ctrl = nullptr, *indirect = nullptr; SDL_GPUTransferBuffer* ones = nullptr; int w = 0, h = 0; bool zeroed = false; bool Empty() const { return !in; } };
+    Set Pack() const { return Set{ in_, out_, edges_, heads_, cand_, loc_, item_, ctrl_, indirect_, ones_, w_, h_, ctrl_zeroed_ }; }
+    void Unpack(const Set& s) { in_ = s.in; out_ = s.out; edges_ = s.edges; heads_ = s.heads; cand_ = s.cand; loc_ = s.loc; item_ = s.item; ctrl_ = s.ctrl; indirect_ = s.indirect; ones_ = s.ones; w_ = s.w; h_ = s.h; ctrl_zeroed_ = s.zeroed; }
+    void ReleaseSet(Set& s);
+    Set alt_[4]; int alt_rr_ = 0;   // DE-362: the target sets of the other dynres levels
     SDL_GPUComputePipeline* pipe_[4] = {};   // edges, dispatch args, process candidates, deferred apply
     GpuPipeline copy_pipeline_, blit_pipeline_;
     SDL_GPUSampler* sampler_ = nullptr;

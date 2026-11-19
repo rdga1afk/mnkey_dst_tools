@@ -5,6 +5,7 @@
 // acquired (same rule as the depth / G-buffer resize checks).
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_pipeline.h>
+#include <monkey_dust/render/size_slots.h>
 
 class UpscalePass {
 public:
@@ -14,7 +15,7 @@ public:
     void Ensure(int w, int h, SDL_GPUTextureFormat fmt);
     bool Ready() const { return ready_; }
     bool HasTarget(int w, int h) const { return tex_ && w == w_ && h == h_; }
-    bool Cached(int w, int h, SDL_GPUTextureFormat fmt) const { return (tex_ && w == w_ && h == h_ && fmt == fmt_) || (alt_tex_ && w == alt_w_ && h == alt_h_ && fmt == alt_fmt_); }   // #194: the previous size is kept
+    bool Cached(int w, int h, SDL_GPUTextureFormat fmt) const { if (tex_ && w == w_ && h == h_ && fmt == fmt_) return true; for (const Set& s : alt_) if (s.tex && s.w == w && s.h == h && s.fmt == fmt) return true; return false; }   // DE-362: the sets of the other dynres levels are kept
     md::GpuTextureHandle Tex() const { return tex_; }
     SDL_GPUSampler* Sampler() const { return sampler_; }
     int W() const { return w_; }
@@ -34,6 +35,7 @@ private:
     SDL_GPUSampler* sampler_ = nullptr;
     SDL_GPUTextureFormat fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
     int w_ = 0, h_ = 0;
-    md::GpuTextureHandle alt_tex_ = nullptr; SDL_GPUTextureFormat alt_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID; int alt_w_ = 0, alt_h_ = 0;
+    struct Set { md::GpuTextureHandle tex = nullptr; SDL_GPUTextureFormat fmt = SDL_GPU_TEXTUREFORMAT_INVALID; int w = 0, h = 0; bool Empty() const { return !tex; } };
+    Set alt_[4]; int alt_rr_ = 0;   // DE-362: up to 4 more sizes (5 dynres levels with the active one)
     bool ready_ = false;
 };

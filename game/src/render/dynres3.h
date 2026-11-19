@@ -26,6 +26,15 @@ struct Dynres3 {
     // dynres 0.8 (DE-362, owner 19.11): (1) one-step drop: over the band for more than `hold` frames the scale goes straight to s* of the cost model (kept at -step while the model has no spread yet);
     // (2) panic (Unreal): two frames in a row over panic_k x target drop at once, no hold; (3) motion memory: StartMotion() resumes the last scale used in motion; (4) a raise waits raise_gap_s after any change.
     // s* = sqrt((target - Fnow - margin) / K) with Fnow = mean of the frames that triggered the drop minus K * scale^2 (the model intercept corrected by what was just measured, so a step in the load is followed at once).
+    // levels (coordinator 7008783700): the scale is one of kLevels so every size has pre-warmed render targets and a change allocates nothing; s* rounds DOWN to a level, a raise goes one level up.
+    bool  levels_on = true; int nlev = 5; float levels[5] = { 0.67f, 0.75f, 0.83f, 0.92f, 1.0f };
+    float LevelDown(float x) const { float r = levels[0]; for (int i = 0; i < nlev; ++i) if (levels[i] <= x + 1e-4f) r = levels[i]; return r; }   // the highest level not above x
+    float LevelUp(float x) const { for (int i = 0; i < nlev; ++i) if (levels[i] > x + 1e-4f) return levels[i]; return levels[nlev - 1]; }
+    float LevelBelow(float x) const { float r = levels[0]; for (int i = 0; i < nlev; ++i) if (levels[i] < x - 1e-4f) r = levels[i]; return r; }
+    void SetLevelCount(int n) { // 5: .67 .75 .83 .92 1; 4: .67 .78 .89 1; 3: .67 .83 1 (fewer sets of render targets when the memory of 5 is too much)
+        static const float l5[5] = { 0.67f, 0.75f, 0.83f, 0.92f, 1.0f }, l4[4] = { 0.67f, 0.78f, 0.89f, 1.0f }, l3[3] = { 0.67f, 0.83f, 1.0f };
+        const float* src = n >= 5 ? l5 : (n == 4 ? l4 : l3); nlev = n >= 5 ? 5 : (n == 4 ? 4 : 3); for (int i = 0; i < nlev; ++i) levels[i] = src[i];
+    }
     bool  one_step = true;                                 // false = the 0.7 rule (scale - step)
     float panic_k = 1.25f, raise_gap_s = 0.5f, since_change_s = 10.f, last_dt = 1.f / 60.f, motion_scale = 1.f;
     int   panic_run = 0; float panic_sum = 0.f, above_sum = 0.f; bool fitted = false, moving = true;
@@ -84,21 +93,22 @@ struct Dynres3 {
         if (panic || above > hold) {
             const float mean = panic ? panic_sum / (float)panic_run : above_sum / (float)above;
             const float old = scale;
-            scale = one_step ? DropTo(mean, panic ? panic_run : above) : std::max(floor_scale, scale - step);
+            scale = one_step ? DropTo(mean, panic ? panic_run : above) : (levels_on ? LevelBelow(scale) : std::max(floor_scale, scale - step));
             above = panic_run = 0; panic_sum = above_sum = 0.f;
             if (scale < old) { since_change_s = 0.f; ++drops; if (panic) ++panics; }
         }
         else if (below > hold) {
             below = 0;
-            const float next = std::min(1.f, scale + step), margin = 0.3f + 1.5f * sigma;
+            const float next = levels_on ? LevelUp(scale) : std::min(1.f, scale + step), margin = 0.3f + 1.5f * sigma;
             if (since_change_s >= raise_gap_s && F + K * next * next <= target_ms - margin) { scale = next; since_change_s = 0.f; }   // raise only when the model predicts room, minus a margin that grows with the residual spread, and not right after a change
         }
     }
     float Predict(float s) const { return F + K * s * s; }
     float DropTo(float mean_ms, int) const {               // s* for a measured mean `mean_ms` at the current scale; never above scale - step, never below the floor
-        if (!fitted) return std::max(floor_scale, scale - step);
+        if (!fitted) return levels_on ? LevelBelow(scale) : std::max(floor_scale, scale - step);
         const float margin = 0.3f + 1.5f * sigma, fnow = mean_ms - K * scale * scale;
         const float sstar = std::sqrt(std::max(0.f, (target_ms - fnow - margin) / K));
+        if (levels_on) return std::min(LevelBelow(scale), LevelDown(sstar));
         return std::max(floor_scale, std::min(scale - step, sstar));
     }
     float Scale() const { return scale; }

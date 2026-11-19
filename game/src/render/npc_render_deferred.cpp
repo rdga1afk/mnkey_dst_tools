@@ -1,4 +1,6 @@
+#include <monkey_dust/render/size_slots.h>
 #include "cmaa2_pass.h"
+#include "dynres_sizes.h"
 #include "ground_live_hdr.h"
 #include "town_buildings.h"
 #include "town_foliage.h"
@@ -24,6 +26,7 @@ extern float g_grass_scale_dyn;   // grass_still.cpp: the grass scale dynres ask
 bool  g_dynres3 = !(getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '0');   // dynres v3 (DE-279, md.set_dynres3): the scale while moving comes from the cost model T = F + K s^2 fitted on the GPU time of the fence waiter; default on (DE-283), MD_DYNRES3=0 / md.set_dynres3(false) = v2
 static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static bool s_d3_gh_for[8] = {}; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
 void md_set_dynres_grass(bool on) { s_d3.gh_enable = on; if (!on) g_grass_scale_dyn = 1.f; }   // md.set_dynres_grass
+int md_dynres_target_creations() { return md::TargetCreations(); }   // md.dynres_targets
 float g_dynres3_scale() { return s_d3.Scale(); } float g_dynres3_F() { return s_d3.F; } float g_dynres3_K() { return s_d3.K; }
 static bool DynResActive() { return g_dynres_on && SceneRender::Get().resolution_scale >= 0.999f; }
 float NpcRender::EffectiveResolutionScale() {
@@ -72,6 +75,30 @@ bool NpcRender::UpscaleActive() {
     const bool forced = g_opt_force_upscale || g_opt_cmaa2 || md::HeatHazePass::Get().Needed();   // DE-338: the haze needs the intermediate; at amplitude 0 it is not forced
     if ((EffectiveResolutionScale() >= 0.999f && !forced) || !sr.upscale_pass_.Ready()) return false;
     return true;
+}
+
+// DE-362: the DRM memory of this process in MB (fdinfo drm-resident-*, i915/xe/amdgpu), -1 when the driver does not report it; logged around the warm-up of the level targets
+static int DrmResidentMB() {
+    long long kib = 0; bool any = false;
+    for (int fd = 3; fd < 64; ++fd) {
+        char p[64]; snprintf(p, sizeof p, "/proc/self/fdinfo/%d", fd); FILE* f = fopen(p, "r"); if (!f) continue;
+        char l[256]; bool drm = false; long long sum = 0;
+        while (fgets(l, sizeof l, f)) { if (!strncmp(l, "drm-driver:", 11)) drm = true; else if (!strncmp(l, "drm-resident-", 13)) { long long v = 0; const char* c = strchr(l, ':'); if (c && sscanf(c + 1, "%lld", &v) == 1) sum += v; } }
+        fclose(f); if (drm) { kib += sum; any = true; }
+    }
+    return any ? (int)(kib / 1024) : -1;
+}
+
+int md_dynres_drm_mb() { return DrmResidentMB(); }   // md.dynres_targets
+
+// DE-362: the depth target of a dynres level is kept (up to 4 more besides the active one); a stored size is swapped in, a new one drains the GPU and is created
+static void SelectDepth(GpuDepthTexture& cur, GpuDepthTexture (&alt)[4], int& rr, int w, int h, const char* why) {
+    for (auto& a : alt) if (a.SDLTexture() && a.Width() == w && a.Height() == h) { std::swap(cur, a); return; }
+    if (why) md::GpuDevice::Get().WarnIfActive(why);
+    md::GpuDevice::Get().WaitForIdle();
+    ++md::TargetCreations();
+    int v = -1; if (cur.SDLTexture()) { for (int i = 0; i < 4; ++i) if (!alt[i].SDLTexture()) { v = i; break; } if (v < 0) { v = rr; rr = (rr + 1) % 4; alt[v].Shutdown(); } std::swap(alt[v], cur); }
+    cur.Init(w, h, false);
 }
 
 void NpcRender::RenderSize(int& w, int& h) {
@@ -199,7 +226,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         static const bool input_on = !(getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '0');
         if (g_dynres3) {   // v3: the GPU ms of the frames that finished (fence waiter) with the scale each was rendered at
             md::GpuDevice& gd = md::GpuDevice::Get();
-            { static bool said = false; if (!said) { said = true; fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn; one-step drop %s, panic x%.2f, raise gap %.1f s)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms, s_d3.one_step ? "on" : "off", s_d3.panic_k, s_d3.raise_gap_s); } }
+            { static bool said = false; if (!said) { said = true; { const char* lc = getenv("MD_DYNRES_LEVELS"); if (lc && lc[0] >= '3' && lc[0] <= '5') s_d3.SetLevelCount(lc[0] - '0'); } fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn; levels %d, one-step drop %s, panic x%.2f, raise gap %.1f s)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms, s_d3.levels_on ? s_d3.nlev : 0, s_d3.one_step ? "on" : "off", s_d3.panic_k, s_d3.raise_gap_s); } }
             { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
             { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v); }
             { static const bool one_step = !(getenv("MD_DYNRES_ONESTEP") && getenv("MD_DYNRES_ONESTEP")[0] == '0'); s_d3.one_step = one_step; }   // dynres 0.8 (DE-362): one-step drop + panic, MD_DYNRES_ONESTEP=0 gives the 0.7 rule   // dynres 0.5 prediction, off by default
@@ -248,16 +275,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                     RenderSize(cur_w, cur_h); // resolution_scale: internal resolution when the upscale is active
                     if (cur_w > 0 && cur_h > 0 &&
                         (cur_w != depth.Width() || cur_h != depth.Height())) {
-                        if (depth_alt.SDLTexture() && depth_alt.Width() == cur_w && depth_alt.Height() == cur_h) std::swap(depth, depth_alt);   // #194: the previous size is kept, nothing is created or destroyed
-                        else {
-                            md::GpuDevice::Get().WarnIfActive("depth texture resize");
-                            // CPU/GPU pipelining (SubmitFrame): the previous frame may still be executing -- drain before
-                            // destroying/recreating the persistent frame targets (depth here; G-buffer/upscale target below).
-                            md::GpuDevice::Get().WaitForIdle();
-                            depth_alt.Shutdown();
-                            std::swap(depth, depth_alt);
-                            depth.Init(cur_w, cur_h, false);
-                        }
+                        SelectDepth(depth, depth_alt, depth_rr, cur_w, cur_h, "depth texture resize");
                     }
                 }
                 {   // #194: the first frame with the dynamic resolution on creates the targets of both sizes (once, here), so no later switch creates or destroys anything
@@ -268,22 +286,27 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                         const SDL_GPUTextureFormat sfmt = SDL_GetGPUSwapchainTextureFormat(md::GpuDevice::Get().SDLDevice(), _wnd::ptr());
                         const int nw = window_get_width(), nh = window_get_height();
                         int cw = 0, ch = 0; RenderSize(cw, ch);
-                        const int sizes[2][2] = { { (int)(nw * g_dynres_scale + 0.5f), (int)(nh * g_dynres_scale + 0.5f) }, { cw, ch } };
+                        const int mem0 = DrmResidentMB();
+                        int sizes[8][2]; int ns = 0;   // DE-362: one size per dynres level (the active level last), the sets are made once here
+                        { const Dynres3& lv = s_d3; const bool lvl = g_dynres3 && lv.levels_on; const int cnt = lvl ? lv.nlev : 1;
+                          for (int k = 0; k < cnt && ns < 7; ++k) { const float sc = lvl ? lv.levels[k] : g_dynres_scale; sizes[ns][0] = (int)(nw * sc + 0.5f); sizes[ns][1] = (int)(nh * sc + 0.5f); if (sizes[ns][0] != cw || sizes[ns][1] != ch) ++ns; }
+                          sizes[ns][0] = cw; sizes[ns][1] = ch; ++ns; }
+                        g_warm_n = ns; for (int k = 0; k < ns; ++k) { g_warm_w[k] = sizes[k][0]; g_warm_h[k] = sizes[k][1]; }
                         md::GpuDevice::Get().WaitForIdle();
-                        for (int k = 0; k < 2; ++k) {
+                        for (int k = 0; k < ns; ++k) {
                             const int w = sizes[k][0], h = sizes[k][1];
                             if (w < 2 || h < 2) continue;
-                            if (w != depth.Width() || h != depth.Height()) {
-                                if (depth_alt.SDLTexture() && depth_alt.Width() == w && depth_alt.Height() == h) std::swap(depth, depth_alt);
-                                else { depth_alt.Shutdown(); std::swap(depth, depth_alt); depth.Init(w, h, false); }
-                            }
+                            if (w != depth.Width() || h != depth.Height()) SelectDepth(depth, depth_alt, depth_rr, w, h, nullptr);
                             sr_w.upscale_pass_.Ensure(w, h, sfmt);
+                            if (g_hialgo) sr_w.hialgo_.Ensure(w, h, sfmt);
+                            if (md::HeatHazePass::Wanted()) md::HeatHazePass::Get().EnsureScratch(w, h);
                             if (g_opt_ground_split > 0) sr_w.ground_split_pass_.Ensure(w, h, ((g_kenshi_lighting_mode >= 4 && sr_w.ground_split_pass_.AdaptReady()) || md::GroundLiveHdr::Active()) ? SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT : sfmt, g_opt_ground_reuse && g_opt_ground_split == 1);
                             sr_w.terrain_shading_projected_.EnsureHistory(g_opt_ground_reuse && g_opt_ground_split == 1, w, h);
                             sr_w.terrain_shading_projected_.EnsureSize(md::GpuDevice::Get().SDLDevice(), w, h);
                         }
                         sr_w.gr_reset_ = true; sr_w.gr_have_ = false;
-                    }
+                        { const int mem1 = DrmResidentMB(); fprintf(stderr, "[dynres] warm-up: %d sizes, %d target sets created, DRM memory %d -> %d MB (the lazy ground-live / bloom targets follow at their first frame)\n", ns, md::TargetCreations(), mem0, mem1); }
+    }
                 }
                 // Same reasoning as the shared `depth` resize just above --
                 // MUST run before AcquireCommandBuffer, never after. This

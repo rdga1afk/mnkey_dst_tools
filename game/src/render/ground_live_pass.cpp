@@ -221,8 +221,6 @@ void GroundLivePass::Shutdown() {
     light_ = Variant(); light_vsv_ = Variant(); light_vs_ = nullptr;
     if (lit_) SDL_ReleaseGPUTexture(dev_, lit_);
     lit_ = nullptr;
-    if (rgb_) SDL_ReleaseGPUTexture(dev_, rgb_);
-    if (aux_) SDL_ReleaseGPUTexture(dev_, aux_);
     rgb_ = aux_ = nullptr;
     if (ds_) SDL_ReleaseGPUTexture(dev_, ds_);
     ds_ = nullptr;
@@ -231,26 +229,28 @@ void GroundLivePass::Shutdown() {
     for (auto*& b : biased_) { if (b) SDL_ReleaseGPUSampler(dev_, b); b = nullptr; }
     if (linear_) SDL_ReleaseGPUSampler(dev_, linear_);
     for (auto& t : t_) if (t) SDL_ReleaseGPUTexture(dev_, t);
+    for (Set& s : alt_) ReleaseSet(s);
     vs_ = nullptr; nearest_ = linear_ = nullptr; t_[0] = t_[1] = t_[2] = nullptr; ready_ = false; dev_ = nullptr;
 }
 
 bool GroundLivePass::EnsureTargets(int w, int h) {
     if (w == tw_ && h == th_ && t_[0]) return true;
-    for (auto& t : t_) if (t) { SDL_ReleaseGPUTexture(dev_, t); t = nullptr; }
+    {
+        Set cur = Pack();
+        if (md::SlotSwapIn(cur, alt_, [&](const Set& s) { return s.w == w && s.h == h; })) { Unpack(cur); return true; }   // a stored size: swap, nothing is created or destroyed
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Set& s) { ReleaseSet(s); });
+        Unpack(cur);   // empty: made below
+    }
     const SDL_GPUTextureFormat fm[3] = { SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_R32_FLOAT };
     for (int i = 0; i < 3; ++i) {
         SDL_GPUTextureCreateInfo ti = {}; ti.type = SDL_GPU_TEXTURETYPE_2D; ti.format = fm[i]; ti.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
         ti.width = w; ti.height = h; ti.layer_count_or_depth = 1; ti.num_levels = 1;
         t_[i] = SDL_CreateGPUTexture(dev_, &ti); if (!t_[i]) return false;
     }
-    if (rgb_) SDL_ReleaseGPUTexture(dev_, rgb_);
-    if (aux_) SDL_ReleaseGPUTexture(dev_, aux_);
     { SDL_GPUTextureCreateInfo ri = {}; ri.type = SDL_GPU_TEXTURETYPE_2D; ri.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT; ri.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
       ri.width = w; ri.height = h; ri.layer_count_or_depth = 1; ri.num_levels = 1; rgb_ = SDL_CreateGPUTexture(dev_, &ri); if (!rgb_) return false; aux_ = SDL_CreateGPUTexture(dev_, &ri); if (!aux_) return false; }
-    if (lit_) SDL_ReleaseGPUTexture(dev_, lit_);
     { SDL_GPUTextureCreateInfo li = {}; li.type = SDL_GPU_TEXTURETYPE_2D; li.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT; li.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
       li.width = w; li.height = h; li.layer_count_or_depth = 1; li.num_levels = 1; lit_ = SDL_CreateGPUTexture(dev_, &li); if (!lit_) return false; }
-    if (ds_) SDL_ReleaseGPUTexture(dev_, ds_);
     SDL_GPUTextureCreateInfo di = {}; di.type = SDL_GPU_TEXTURETYPE_2D; di.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT; di.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
     di.width = w; di.height = h; di.layer_count_or_depth = 1; di.num_levels = 1; ds_ = SDL_CreateGPUTexture(dev_, &di); if (!ds_) return false;
     tw_ = w; th_ = h; return true;

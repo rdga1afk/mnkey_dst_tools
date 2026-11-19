@@ -57,7 +57,7 @@ void GroundSplitPass::Shutdown() {
     sampler_ = nullptr;
     if (dev && linear_sampler_) GpuReleaseSampler(dev, linear_sampler_);
     linear_sampler_ = nullptr;
-    target_[0].Shutdown(); target_[1].Shutdown(); alt_target_[0].Shutdown(); alt_target_[1].Shutdown();
+    target_[0].Shutdown(); target_[1].Shutdown(); for (Set& s : alt_) { s.t[0].Shutdown(); s.t[1].Shutdown(); }
     for (auto& t : lum_tex_) { if (dev && t) GpuReleaseTexture(dev, t); t = nullptr; }
     if (dev && ds_tex_) GpuReleaseTexture(dev, ds_tex_);
     ds_tex_ = nullptr; ds_w_ = ds_h_ = 0;
@@ -91,15 +91,18 @@ bool GroundSplitPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt, bool histor
     }
     const SDL_GPUTextureUsageFlags u = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
     if (history && target_[1].SDLTexture() && fmt_ == fmt) xs_tex_ = target_[idx_].SDLTexture();   // #194: the last ground target of the old size is the history of this frame
-    if (alt_target_[0].SDLTexture() && alt_target_[0].Width() == w && alt_target_[0].Height() == h && alt_fmt_ == fmt) {   // #194: back to the previous size: swap, nothing is created or destroyed
-        std::swap(target_[0], alt_target_[0]); std::swap(target_[1], alt_target_[1]); std::swap(fmt_, alt_fmt_);
-        idx_ = 0;
-        if (history && !target_[1].SDLTexture()) target_[1].Init(w, h, fmt, u);
-        if (!history && target_[1].SDLTexture()) target_[1].Shutdown();
-        return xs_tex_ == nullptr;
+    {   // a stored size (DE-362: up to 4 more): swap, nothing is created or destroyed
+        Set cur; std::swap(cur.t[0], target_[0]); std::swap(cur.t[1], target_[1]); cur.fmt = fmt_;
+        const bool hit = md::SlotSwapIn(cur, alt_, [&](const Set& s) { return s.t[0].Width() == w && s.t[0].Height() == h && s.fmt == fmt; });
+        if (hit) {
+            std::swap(cur.t[0], target_[0]); std::swap(cur.t[1], target_[1]); fmt_ = cur.fmt; idx_ = 0;
+            if (history && !target_[1].SDLTexture()) target_[1].Init(w, h, fmt, u);
+            if (!history && target_[1].SDLTexture()) target_[1].Shutdown();
+            return xs_tex_ == nullptr;
+        }
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Set& s) { s.t[0].Shutdown(); s.t[1].Shutdown(); s.fmt = SDL_GPU_TEXTUREFORMAT_INVALID; });   // the active set is stored, the oldest stored one goes when all slots are used
+        std::swap(cur.t[0], target_[0]); std::swap(cur.t[1], target_[1]);   // `cur` came back empty
     }
-    alt_target_[0].Shutdown(); alt_target_[1].Shutdown();   // the oldest set goes, the current one becomes the alt one
-    std::swap(target_[0], alt_target_[0]); std::swap(target_[1], alt_target_[1]); alt_fmt_ = fmt_;
     idx_ = 0; fmt_ = fmt;
     target_[0].Init(w, h, fmt, u);
     if (history) target_[1].Init(w, h, fmt, u);

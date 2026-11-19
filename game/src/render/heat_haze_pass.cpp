@@ -78,6 +78,7 @@ void HeatHazePass::Shutdown() {
     if (point_) SDL_ReleaseGPUSampler(dev_, point_);
     if (linear_) SDL_ReleaseGPUSampler(dev_, linear_);
     if (scratch_) SDL_ReleaseGPUTexture(dev_, scratch_);
+    for (Scr& s : alt_) { if (s.t) SDL_ReleaseGPUTexture(dev_, s.t); s = Scr{}; }
     if (neutral_depth_) SDL_ReleaseGPUTexture(dev_, neutral_depth_);
     pipe_ = nullptr; vs_ = nullptr; fs_ = nullptr; point_ = linear_ = nullptr; scratch_ = nullptr; neutral_depth_ = nullptr; sw_ = sh_ = 0; ready_ = false; dev_ = nullptr;   // the DDS textures belong to the asset cache
 }
@@ -95,7 +96,12 @@ void HeatHazePass::Tick(float haze_scaled, float sun_y, double game_hours) {
 
 void HeatHazePass::EnsureScratch(int w, int h) {
     if (!ready_ || w <= 0 || h <= 0 || (scratch_ && w == sw_ && h == sh_)) return;
-    if (scratch_) SDL_ReleaseGPUTexture(dev_, scratch_);
+    {
+        Scr cur{ scratch_, sw_, sh_ };
+        if (md::SlotSwapIn(cur, alt_, [&](const Scr& s) { return s.w == w && s.h == h; })) { scratch_ = cur.t; sw_ = cur.w; sh_ = cur.h; return; }
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Scr& s) { if (s.t) SDL_ReleaseGPUTexture(dev_, s.t); s = Scr{}; });
+        scratch_ = nullptr; sw_ = sh_ = 0;
+    }
     scratch_ = Make(dev_, w, h, fmt_, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     sw_ = scratch_ ? w : 0; sh_ = scratch_ ? h : 0;
 }

@@ -1,3 +1,4 @@
+#include "dynres_sizes.h"
 #include "ground_live_hdr.h"
 #include "kenshi_hlsl.h"
 #include "spirv_combine.h"
@@ -111,6 +112,7 @@ void GroundLiveHdr::Shutdown() {
     if (vs_) SDL_ReleaseGPUShader(dev_, vs_);
     for (auto& t : lum_) { if (t) SDL_ReleaseGPUTexture(dev_, t); t = nullptr; }
     for (SDL_GPUTexture** t : { &adapted_, &last_, &bright_, &bloom_ }) { if (*t) SDL_ReleaseGPUTexture(dev_, *t); *t = nullptr; }
+    for (Bloom& b : alt_) { if (b.bright) SDL_ReleaseGPUTexture(dev_, b.bright); if (b.bloom) SDL_ReleaseGPUTexture(dev_, b.bloom); b = Bloom{}; }
     if (point_) SDL_ReleaseGPUSampler(dev_, point_);
     if (linear_) SDL_ReleaseGPUSampler(dev_, linear_);
     vs_ = nullptr; point_ = linear_ = nullptr; hdr_ = nullptr; bw_ = bh_ = 0; ready_ = false; dev_ = nullptr;
@@ -119,8 +121,12 @@ void GroundLiveHdr::Shutdown() {
 bool GroundLiveHdr::EnsureSized(int w, int h) {
     const int bw = w / 4 > 0 ? w / 4 : 1, bh = h / 4 > 0 ? h / 4 : 1;   // target_width_scaled 0.25
     if (bright_ && bw == bw_ && bh == bh_) return true;
-    if (bright_) SDL_ReleaseGPUTexture(dev_, bright_);
-    if (bloom_) SDL_ReleaseGPUTexture(dev_, bloom_);
+    {
+        Bloom cur{ bright_, bloom_, bw_, bh_ };
+        if (md::SlotSwapIn(cur, alt_, [&](const Bloom& s) { return s.w == bw && s.h == bh; })) { bright_ = cur.bright; bloom_ = cur.bloom; bw_ = cur.w; bh_ = cur.h; return true; }   // a stored size: swap
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Bloom& s) { if (s.bright) SDL_ReleaseGPUTexture(dev_, s.bright); if (s.bloom) SDL_ReleaseGPUTexture(dev_, s.bloom); s = Bloom{}; });
+        bright_ = bloom_ = nullptr; bw_ = bh_ = 0;
+    }
     bright_ = MakeTex(dev_, bw, bh, bloom_fmt_); bloom_ = MakeTex(dev_, bw, bh, bloom_fmt_);
     bw_ = bw; bh_ = bh;
     if (!bright_ || !bloom_) { MD_LOG(MD_LOG_WARNING, "ground live hdr: bloom targets %dx%d create failed", bw, bh); return false; }
@@ -144,6 +150,7 @@ void GroundLiveHdr::Quad(SDL_GPUCommandBuffer* cmd, Prog& p, SDL_GPUTexture* tar
 
 bool GroundLiveHdr::Run(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* hdr, int w, int h, float dt, const GroundLiveHdrParams& prm) {
     if (!ready_ || !cmd || !hdr || w < 4 || h < 4) return false;
+    if (!warmed_) { warmed_ = true; for (int i = 0; i < g_warm_n; ++i) EnsureSized(g_warm_w[i], g_warm_h[i]); }   // DE-362: every dynres level once
     if (!EnsureSized(w, h)) return false;
     hdr_ = hdr;
     if (!last_cleared_) {   // rt_lastLum before the first frame: 0 = log(1) (the exe's initial content is UNKNOWN)

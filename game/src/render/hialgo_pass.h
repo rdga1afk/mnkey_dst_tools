@@ -6,6 +6,7 @@
 #include <monkey_dust/render/gpu_pipeline.h>
 #include "heat_haze_pass.h"
 #include "cmaa2_pass.h"
+#include <monkey_dust/render/size_slots.h>
 
 class HialgoPass {
 public:
@@ -22,7 +23,8 @@ public:
 private:
     Cmaa2Pass cmaa_; GpuPipeline blur_, up_;
     SDL_GPUTexture* a_ = nullptr; SDL_GPUTexture* b_ = nullptr; int w_ = 0, h_ = 0; SDL_GPUTextureFormat fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
-    SDL_GPUTexture* alt_a_ = nullptr; SDL_GPUTexture* alt_b_ = nullptr; int alt_w_ = 0, alt_h_ = 0; SDL_GPUTextureFormat alt_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;   // the previous size (dynres 1.0 <-> floor): swapped back, nothing is created
+    struct Set { SDL_GPUTexture* a = nullptr; SDL_GPUTexture* b = nullptr; int w = 0, h = 0; SDL_GPUTextureFormat fmt = SDL_GPU_TEXTUREFORMAT_INVALID; bool Empty() const { return !a || !b; } };
+    Set alt_[4]; int alt_rr_ = 0;   // DE-362: the sets of the other dynres levels
     SDL_GPUSampler* linear_ = nullptr; SDL_GPUSampler* nearest_ = nullptr;
     bool ready_ = false;
 };

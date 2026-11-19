@@ -126,7 +126,7 @@ void NpcRender::Shutdown() {
     dead_mask_buf.Shutdown();
     dissolve_vis_buf.Shutdown();
     body_color_buf.Shutdown();
-    depth.Shutdown(); depth_alt.Shutdown();
+    depth.Shutdown(); for (auto& d : depth_alt) d.Shutdown();
 
     for (auto& cs : s_player_cloth) {
         cs.vbo.Shutdown();

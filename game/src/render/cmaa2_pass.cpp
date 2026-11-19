@@ -80,9 +80,19 @@ void Cmaa2Pass::DestroyTargets() {
     w_ = h_ = 0; ctrl_zeroed_ = false;
 }
 
+void Cmaa2Pass::ReleaseSet(Set& s) {
+    SDL_GPUDevice* dev = dev_;
+    if (dev) {
+        if (s.ones) SDL_ReleaseGPUTransferBuffer(dev, s.ones);
+        for (SDL_GPUTexture* t : { s.in, s.out, s.edges, s.heads }) if (t) SDL_ReleaseGPUTexture(dev, t);
+        for (SDL_GPUBuffer* b : { s.cand, s.loc, s.item, s.ctrl, s.indirect }) if (b) SDL_ReleaseGPUBuffer(dev, b);
+    }
+    s = Set{};
+}
+
 void Cmaa2Pass::Shutdown() {
     SDL_GPUDevice* dev = dev_;
-    DestroyTargets();
+    DestroyTargets(); for (Set& s : alt_) ReleaseSet(s);
     if (dev) for (SDL_GPUComputePipeline*& p : pipe_) { if (p) SDL_ReleaseGPUComputePipeline(dev, p); p = nullptr; }
     copy_pipeline_.Destroy(); blit_pipeline_.Destroy();
     if (dev && sampler_) GpuReleaseSampler(dev, sampler_);
@@ -92,7 +102,12 @@ void Cmaa2Pass::Shutdown() {
 bool Cmaa2Pass::EnsureTargets(int w, int h) {
     if (in_ && w == w_ && h == h_) return true;
     SDL_GPUDevice* dev = dev_;
-    DestroyTargets();
+    {
+        Set cur = Pack();
+        if (md::SlotSwapIn(cur, alt_, [&](const Set& s) { return s.w == w && s.h == h; })) { Unpack(cur); return true; }   // a stored size: swap, nothing is created or destroyed
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Set& s) { ReleaseSet(s); });   // the active set is stored, the oldest goes when all slots are used
+        Unpack(cur);   // empty
+    }
     const SDL_GPUBufferUsageFlags rw = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
     const Uint32 px = (Uint32)w * (Uint32)h;
     in_ = MakeTexture(dev, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ);

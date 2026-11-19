@@ -1,3 +1,4 @@
+#include "dynres_sizes.h"
 #include "monkey_dust/render/ground_slot.h"
 #include "ground_live_driver.h"
 #include "inverse_check.h"
@@ -264,6 +265,7 @@ void GroundLiveDriver::Frame(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd, SDL_
     if (!data_ok_) return;
     if (!gpu_tried_) { gpu_tried_ = true; for (int& k : tier_k_) k = -1; gpu_ok_ = InitGpu(dev); }
     if (!gpu_ok_ || !depth || !packed || !slot || w < 16 || h < 16) return;
+    if (!warmed_) { warmed_ = true; for (int i = 0; i < g_warm_n; ++i) pass_.EnsureTargets(g_warm_w[i], g_warm_h[i]); }   // DE-362: every dynres level once
     if (!pass_.EnsureTargets(w, h)) return;
     // pixel angle from the inverse view-projection: two neighbouring pixels at the same depth
     // double: the world position of a pixel is ~1e3-1e4 m and two neighbouring pixels at the depth 0.5 (~1 m from the camera) lie ~1e-3 m apart, below the float resolution of the position, so the float

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <random>
+#include <monkey_dust/render/size_slots.h>
 static int fails = 0;
 #define CHECK(c, ...) do { if (!(c)) { ++fails; printf("FAIL %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
@@ -87,9 +88,16 @@ int main() {
             Dynres3 d = fitted(); int i = 0; for (; i < 20 && d.Scale() >= 0.999f; ++i) d.Sample(1.f, 28.f);
             const float sstar = std::sqrt((d.target_ms - 4.f - (0.3f + 1.5f * d.sigma)) / 24.f);
             CHECK(i <= d.hold + 1, "step load: first drop after %d frames", i);
-            CHECK(std::fabs(d.Scale() - std::max(d.floor_scale, sstar)) < 0.06f && d.Scale() < 0.8f, "step load: scale %.3f, s* %.3f", d.Scale(), sstar);
-            Dynres3 o = fitted(); o.one_step = false; for (int k = 0; k <= o.hold; ++k) o.Sample(1.f, 28.f);
+            CHECK(d.Scale() == d.LevelDown(std::max(d.floor_scale, sstar)) && d.Scale() < 0.8f, "step load: scale %.3f, s* %.3f", d.Scale(), sstar);
+            Dynres3 o = fitted(); o.one_step = false; o.levels_on = false; for (int k = 0; k <= o.hold; ++k) o.Sample(1.f, 28.f);
             CHECK(o.Scale() > 0.95f, "0.7 rule drops one step only: %.2f", o.Scale());
+        }
+        { // levels: every scale the controller ever outputs is one of the 5 levels (no other render size exists), s* rounds down, a raise goes one level up
+            Dynres3 d; Sim sim{ 4.f, 24.f, 0.5f, 0.05f, 0.f }; bool ok = true; int distinct_mask = 0;
+            for (int i = 0; i < 20000; ++i) { const float F = 3.f + 6.f * (0.5f + 0.5f * std::sin(i * 0.002f)); const float sc = d.Scale(); d.Sample(sc, std::max(0.5f, F + 24.f * sc * sc + sim.T(sc, 99.f) - sim.F - sim.K * sc * sc)); if (i % 7 == 0) d.StopMotion(); if (i % 7 == 3) d.StartMotion();
+                bool lv = false; for (int k = 0; k < 5; ++k) if (d.Scale() == d.levels[k]) { lv = true; distinct_mask |= 1 << k; } ok = ok && lv; }
+            CHECK(ok, "the scale left the level set"); CHECK(d.LevelDown(0.80f) == 0.75f && d.LevelDown(0.66f) == 0.67f && d.LevelUp(0.75f) == 0.83f && d.LevelUp(1.f) == 1.f, "level rounding");
+            printf("levels visited mask %d\n", distinct_mask);
         }
         { // panic: two frames over 1.25 x target drop at once, below the hold
             Dynres3 d = fitted(); d.Sample(1.f, 30.f); CHECK(d.Scale() >= 0.999f, "one bad frame must not drop");
@@ -110,6 +118,32 @@ int main() {
             CHECK(ch <= 6, "constant load: %d changes in the last minute", ch);
             printf("0.8 constant load: scale %.2f T %.2f changes/min %d\n", d.Scale(), tt, ch);
         }
+    }
+    { // 9. DE-362: after the warm-up a change of scale creates no target set. A fake pass with the same slot cache as the real ones (md::SlotSwapIn / SlotPushCur) is driven by the controller over
+      // a step load, a panic, stop / start of motion and a ramp; the creation counter must stay 0 after the warm-up (and not be 0 before it: the check can fail)
+        struct Fake { int w = 0, h = 0; bool Empty() const { return w == 0; } };
+        auto size_of = [](float s) { return (int)(1920 * s + 0.5f); };
+        Fake cur, alt[4]; int rr = 0;
+        auto ensure = [&](int w) { if (cur.w == w) return; if (md::SlotSwapIn(cur, alt, [&](const Fake& f) { return f.w == w; })) return; md::SlotPushCur(cur, alt, rr, [](Fake& f) { f = Fake{}; }); cur.w = w; };
+        Dynres3 d; const int before = md::TargetCreations();
+        for (int k = 0; k < d.nlev; ++k) ensure(size_of(d.levels[k]));
+        ensure(size_of(1.f));
+        const int warm = md::TargetCreations() - before;
+        CHECK(warm == d.nlev, "warm-up created %d sets, expected %d", warm, d.nlev);
+        Sim sim{ 4.f, 24.f, 0.4f, 0.05f, 0.f }; int changes = 0; float last = 1.f;
+        for (int i = 0; i < 30000; ++i) {
+            const float F = 3.f + 7.f * (0.5f + 0.5f * std::sin(i * 0.003f)) + ((i / 2500) % 2 ? 6.f : 0.f);   // ramp + steps
+            const float sc = d.Scale(); d.Sample(sc, std::max(0.5f, F + 24.f * sc * sc + (sim.T(sc, 99.f) - sim.F - sim.K * sc * sc)));
+            if ((i / 900) % 3 == 1) d.StopMotion(); else d.StartMotion();
+            const float shown = d.moving ? d.Scale() : 1.f; if (shown != last) { ++changes; last = shown; ensure(size_of(shown)); }
+        }
+        CHECK(md::TargetCreations() - before == warm, "%d target sets created after the warm-up over %d scale changes", md::TargetCreations() - before - warm, changes);
+        CHECK(changes > 20, "the scenario made only %d scale changes", changes);
+        Fake c2, a2[4]; int r2 = 0; int cr0 = md::TargetCreations();   // the control: without the warm-up every level is a creation
+        auto ens2 = [&](int w) { if (c2.w == w) return; if (md::SlotSwapIn(c2, a2, [&](const Fake& f) { return f.w == w; })) return; md::SlotPushCur(c2, a2, r2, [](Fake& f) { f = Fake{}; }); c2.w = w; };
+        for (int k = 0; k < d.nlev; ++k) ens2(size_of(d.levels[k]));
+        CHECK(md::TargetCreations() - cr0 == d.nlev, "control: %d creations without a warm-up", md::TargetCreations() - cr0);
+        printf("0.8 levels: %d scale changes, %d sets created at warm-up, 0 after\n", changes, warm);
     }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;

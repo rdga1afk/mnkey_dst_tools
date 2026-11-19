@@ -7,6 +7,7 @@
 //   final <- HDR/Composite(hdr, bloom, adaptedLum)
 // Run() does everything up to rt_bloom outside any render pass; Composite() draws the final quad inside the caller's pass.
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/size_slots.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -70,7 +71,9 @@ private:
     SDL_GPUTexture* bloom_ = nullptr;
     SDL_GPUTextureFormat bloom_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
     SDL_GPUTexture* hdr_ = nullptr;   // the last Run's input, read by Composite
-    int bw_ = 0, bh_ = 0;
+    int bw_ = 0, bh_ = 0; bool warmed_ = false;
+    struct Bloom { SDL_GPUTexture* bright = nullptr; SDL_GPUTexture* bloom = nullptr; int w = 0, h = 0; bool Empty() const { return !bright || !bloom; } };
+    Bloom alt_[4]; int alt_rr_ = 0;   // DE-362: the bloom targets of the other dynres levels
     int settle_ = 60;   // the first frames adapt at once: the world streams in after the first Run, the exposure must not start from the empty frame
     bool reset_ = true, last_cleared_ = false, ready_ = false;
 };

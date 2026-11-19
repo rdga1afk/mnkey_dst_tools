@@ -342,6 +342,8 @@ extern float g_dynres_ema; extern int g_dynres_hold; extern long g_dynres_change
 static int l_md_set_horizon_cull(lua_State* L) { md::HorizonCullSet(lua_toboolean(L, 1) != 0); return 0; }   // md.set_horizon_cull(on): CPU horizon map drops terrain nodes hidden behind terrain (#207); default off
 static int l_md_horizon_cull_stats(lua_State* L) { const md::HorizonCullStats s = md::HorizonCullGetStats(); lua_pushinteger(L, s.kept); lua_pushinteger(L, s.dropped); lua_pushnumber(L, s.filter_ms); lua_pushnumber(L, s.build_ms); return 4; }   // md.horizon_cull_stats() -> kept, dropped, render-thread filter ms, worker table build ms (last frame)
 static int l_md_set_dyn_res_damping(lua_State* L) { g_dynres_ema = std::max(0.f, std::min(0.99f, (float)luaL_optnumber(L, 1, 0.0))); g_dynres_hold = std::max(0, (int)luaL_optinteger(L, 2, 0)); return 0; }   // md.set_dyn_res_damping(ema, hold_frames): EMA factor of the camera speed / turn signals (0 = off) and the frames a level change holds (0 = off); defaults off
+extern float g_dynres_cur; int md_dynres_target_creations(); int md_dynres_drm_mb();
+static int l_md_dynres_targets(lua_State* L) { lua_pushinteger(L, md_dynres_target_creations()); lua_pushnumber(L, g_dynres_cur); lua_pushinteger(L, md_dynres_drm_mb()); return 3; }   // md.dynres_targets() -> number of render-target sets created since the start (DE-362), the scale in use
 static int l_md_dyn_res_changes(lua_State* L) { lua_pushinteger(L, (lua_Integer)g_dynres_changes); if (lua_toboolean(L, 1)) g_dynres_changes = 0; return 1; }   // md.dyn_res_changes([reset]) -> number of level changes since the start (or the last reset)
 static int l_md_set_gpu_frames_in_flight(lua_State* L) { lua_pushboolean(L, SDL_SetGPUAllowedFramesInFlight(md::GpuDevice::Get().SDLDevice(), (Uint32)luaL_checkinteger(L, 1))); return 1; }   // experiment: 1 / 2 / 3
 static int l_md_set_opt_ground_reuse_cr(lua_State* L) { g_opt_ground_reuse_cr = lua_isboolean(L, 1) ? (lua_toboolean(L, 1) ? 1 : 0) : (int)luaL_checkinteger(L, 1); return 0; }   // #163 reopened: false/0 nearest, true/1 Catmull-Rom, 2 + live-only history
@@ -594,6 +596,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_horizon_cull", l_md_set_horizon_cull);
     sys.RegisterNamespaceFunction("horizon_cull_stats", l_md_horizon_cull_stats);
     sys.RegisterNamespaceFunction("dyn_res_changes", l_md_dyn_res_changes);
+    sys.RegisterNamespaceFunction("dynres_targets", l_md_dynres_targets);
     sys.RegisterNamespaceFunction("wall_ms", l_md_wall_ms);
     sys.RegisterNamespaceFunction("gpu_live_resources", l_md_gpu_live_resources);
     sys.RegisterNamespaceFunction("travel_zone", l_md_travel_zone);

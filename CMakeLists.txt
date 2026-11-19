@@ -40,6 +40,7 @@ set_target_properties(md_fcs_def PROPERTIES CXX_STANDARD 17)
 add_executable(md_fcs_def_test tests/fcs_def_test.cpp ${MD_ROOT}/engine/src/vendor/stb_image_impl.cpp ${MD_ROOT}/engine/src/render/cgltf_impl.cpp)
 # Dynres v3 controller (docs/research/DYNRES3_DESIGN_2026-11-15.md): CPU only, header-only
 add_executable(md_dynres3_test tests/dynres3_test.cpp)
+target_include_directories(md_dynres3_test PRIVATE ${MD_ROOT}/engine/include)
 set_target_properties(md_dynres3_test PROPERTIES CXX_STANDARD 17)
 add_test(NAME dynres3 COMMAND md_dynres3_test)
 # Restricted terrain LOD quadtree (neighbour rule of the plugin): CPU only

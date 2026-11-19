@@ -44,8 +44,7 @@ void UpscalePass::DestroyTarget() {
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev && tex_) GpuReleaseTexture(dev, tex_);
     tex_ = nullptr; w_ = h_ = 0;
-    if (dev && alt_tex_) GpuReleaseTexture(dev, alt_tex_);
-    alt_tex_ = nullptr; alt_w_ = alt_h_ = 0;
+    for (Set& s : alt_) { if (dev && s.tex) GpuReleaseTexture(dev, s.tex); s = Set{}; }
 }
 
 void UpscalePass::Shutdown() {
@@ -60,15 +59,15 @@ void UpscalePass::Shutdown() {
 void UpscalePass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
     if (!ready_ || w <= 0 || h <= 0) return;
     if (tex_ && w == w_ && h == h_ && fmt == fmt_) return;
-    if (alt_tex_ && w == alt_w_ && h == alt_h_ && fmt == alt_fmt_) {   // #194: back to the previous size: swap, nothing is created or destroyed
-        std::swap(tex_, alt_tex_); std::swap(w_, alt_w_); std::swap(h_, alt_h_); std::swap(fmt_, alt_fmt_);
-        return;
+    {
+        Set cur{ tex_, fmt_, w_, h_ };
+        if (md::SlotSwapIn(cur, alt_, [&](const Set& s) { return s.w == w && s.h == h && s.fmt == fmt; })) { tex_ = cur.tex; fmt_ = cur.fmt; w_ = cur.w; h_ = cur.h; return; }   // a stored size: swap, nothing is created or destroyed
     }
     md::GpuDevice::Get().WarnIfActive("UpscalePass::Ensure");
-    {   // the oldest target goes, the current one becomes the alt one
+    {   // a new size: the active set is stored (the oldest stored one goes when all slots are used)
         md::GpuDeviceHandle d0 = md::GpuDevice::Get().SDLDevice();
-        if (d0 && alt_tex_) GpuReleaseTexture(d0, alt_tex_);
-        alt_tex_ = tex_; alt_w_ = w_; alt_h_ = h_; alt_fmt_ = fmt_;
+        Set cur{ tex_, fmt_, w_, h_ };
+        md::SlotPushCur(cur, alt_, alt_rr_, [&](Set& s) { if (d0 && s.tex) GpuReleaseTexture(d0, s.tex); s = Set{}; });
         tex_ = nullptr; w_ = h_ = 0;
     }
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();

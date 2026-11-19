@@ -4,6 +4,7 @@
 // (game/src/render/ground_live_glue.hlsl wraps the original files). One draw per biome list (1..4 biomes); the caller supplies the per-biome layer arrays. Default off.
 #include <monkey_dust/world/ground_pack.h>
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/size_slots.h>
 #include <string>
 #include <vector>
 
@@ -116,6 +117,11 @@ private:
     };
     SDL_GPUDevice* dev_ = nullptr; SDL_GPUShader* vs_ = nullptr; Variant var_[4]; Variant far_;
     SDL_GPUSampler* nearest_ = nullptr; SDL_GPUSampler* linear_ = nullptr; SDL_GPUSampler* biased_[2] = {};
+    struct Set { SDL_GPUTexture* t[3] = {}; SDL_GPUTexture *ds = nullptr, *lit = nullptr, *rgb = nullptr, *aux = nullptr; int w = 0, h = 0; bool Empty() const { return !t[0]; } };
+    Set Pack() const { Set s; for (int i = 0; i < 3; ++i) s.t[i] = t_[i]; s.ds = ds_; s.lit = lit_; s.rgb = rgb_; s.aux = aux_; s.w = tw_; s.h = th_; return s; }
+    void Unpack(const Set& s) { for (int i = 0; i < 3; ++i) t_[i] = s.t[i]; ds_ = s.ds; lit_ = s.lit; rgb_ = s.rgb; aux_ = s.aux; tw_ = s.w; th_ = s.h; }
+    void ReleaseSet(Set& s) { for (SDL_GPUTexture* x : { s.t[0], s.t[1], s.t[2], s.ds, s.lit, s.rgb, s.aux }) if (x) SDL_ReleaseGPUTexture(dev_, x); s = Set{}; }
+    Set alt_[4]; int alt_rr_ = 0;   // DE-362: the target sets of the other dynres levels (made once, swapped in on a change)
     SDL_GPUTexture* t_[3] = {}; SDL_GPUTexture* ds_ = nullptr; Variant dec_, bits_[5], light_, dbg_; SDL_GPUShader* light_vs_ = nullptr; Variant light_vsv_; SDL_GPUTexture* lit_ = nullptr; SDL_GPUTexture* rgb_ = nullptr; SDL_GPUTexture* aux_ = nullptr; SDL_GPUShader* cls_fs_ = nullptr; int tw_ = 0, th_ = 0, phase_ = -1; bool ready_ = false;
     Variant bake_[4]; bool bake_ok_ = false; Variant fetch_; SDL_GPUSampler* repeat_ = nullptr; const GroundLiveCacheView* cache_view_ = nullptr;
     static void SetIn(Variant& v, const std::string& name, const float* val, int count, int idx = 0);

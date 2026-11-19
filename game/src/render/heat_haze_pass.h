@@ -3,6 +3,7 @@
 // Inputs as materials/compositors/post.compositor: flow map, perturbation, the G-buffer depth (the live ground's R32F target) and the frame. On by default, MD_HEATHAZE=0 turns it off.
 // The pass is skipped while the amplitude is exactly 0: the program then samples the same coordinate twice and blends them 50/50, i.e. returns its input (ctest HeatHazeZeroIsIdentity).
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/size_slots.h>
 #include <monkey_dust/render/gpu_sampler_texture.h>
 #include <cstdlib>
 #include <string>
@@ -34,6 +35,8 @@ private:
     SDL_GPUSampler* point_ = nullptr; SDL_GPUSampler* linear_ = nullptr;
     SDL_GPUTexture* flow_ = nullptr; SDL_GPUTexture* perturb_ = nullptr; SDL_GPUSampler* flow_smp_ = nullptr; SDL_GPUSampler* perturb_smp_ = nullptr;
     SDL_GPUTexture* scratch_ = nullptr; SDL_GPUTexture* neutral_depth_ = nullptr; int sw_ = 0, sh_ = 0;
+    struct Scr { SDL_GPUTexture* t = nullptr; int w = 0, h = 0; bool Empty() const { return !t; } };
+    Scr alt_[4]; int alt_rr_ = 0;   // DE-362: the scratch targets of the other dynres levels
     std::vector<unsigned char> ub_; int off_time_ = -1, off_haze_ = -1;
     float amp_ = 0.f, time_ = 0.f; double last_s_ = -1.0, start_hours_ = 0.0; bool have_start_ = false; bool ready_ = false;
 };

@@ -2,6 +2,7 @@
 // GroundSplitPass -- #163 5b-2: the ground resolve in its own render pass (before the main pass) into a colour target of the scene format (alpha 1 = written), and the draw
 // that copies it into the main pass (shaders/ground_composite.frag). Without it the ground colour is mixed with NPCs and water in the scene colour (no history possible).
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/size_slots.h>
 #include <monkey_dust/render/gpu_pipeline.h>
 #include <monkey_dust/render/gpu_compute.h>
 #include <monkey_dust/render/gpu_sampler_texture.h>
@@ -14,7 +15,7 @@ public:
     // (Re)create the ground target(s) at w x h in `fmt` (the scene colour format); history = a second one for the ping-pong of the ground reuse. Call before the frame's command
     // buffer is acquired. True when something was (re)created: the history is then gone.
     bool Ensure(int w, int h, SDL_GPUTextureFormat fmt, bool history);
-    bool Cached(int w, int h, SDL_GPUTextureFormat fmt) const { return (target_[0].SDLTexture() && target_[0].Width() == w && target_[0].Height() == h && fmt_ == fmt) || (alt_target_[0].SDLTexture() && alt_target_[0].Width() == w && alt_target_[0].Height() == h && alt_fmt_ == fmt); }   // #194: the previous size is kept
+    bool Cached(int w, int h, SDL_GPUTextureFormat fmt) const { if (target_[0].SDLTexture() && target_[0].Width() == w && target_[0].Height() == h && fmt_ == fmt) return true; for (const Set& s : alt_) if (s.t[0].SDLTexture() && s.t[0].Width() == w && s.t[0].Height() == h && s.fmt == fmt) return true; return false; }
     bool HasTarget(int w, int h) const { return target_[0].SDLTexture() && w == target_[0].Width() && h == target_[0].Height(); }
     // this frame's target / the previous frame's (after Flip); Composite reads this frame's
     SDL_GPUTexture* Tex() const { return target_[idx_].SDLTexture(); }
@@ -45,8 +46,9 @@ private:
     SDL_GPUTexture* ds_tex_ = nullptr; int ds_w_ = 0, ds_h_ = 0;   // #207
     int lum_idx_ = 0;
     bool lum_valid_ = false, adapt_ready_ = false;
-    GpuColorTexture target_[2], alt_target_[2];
-    SDL_GPUTextureFormat alt_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
+    GpuColorTexture target_[2];
+    struct Set { GpuColorTexture t[2]; SDL_GPUTextureFormat fmt = SDL_GPU_TEXTUREFORMAT_INVALID; bool Empty() const { return !t[0].SDLTexture(); } };
+    Set alt_[4]; int alt_rr_ = 0;   // DE-362: the sets of the other dynres levels
     int idx_ = 0;
     SDL_GPUTexture* xs_tex_ = nullptr;
     SDL_GPUSampler* sampler_ = nullptr;

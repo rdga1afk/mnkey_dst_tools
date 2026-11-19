@@ -101,7 +101,7 @@ struct NpcRender {
     bool               skin_live_ = false, skin_drawn_ = false;   // skin_drawn_: the install skin pass drew this frame, the forward NPC pass is skipped
     void RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, const MdCamera& cam, SDL_GPUTexture* terrain_depth, const MdCamera& abs_cam);
     GpuStaticBuffer    ibuf;
-    GpuDepthTexture    depth, depth_alt;   // #194: depth_alt keeps the other size of the dynamic resolution
+    GpuDepthTexture    depth, depth_alt[4]; int depth_rr = 0;   // #194 / DE-362: depth_alt keeps the other sizes of the dynamic resolution (5 levels with the active one)
     uint32_t           index_count = 0;
     SDL_GPUIndexElementSize idx_elem = SDL_GPU_INDEXELEMENTSIZE_16BIT;
 
