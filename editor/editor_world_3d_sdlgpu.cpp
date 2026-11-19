@@ -1,3 +1,4 @@
+#include <chrono>
 #include <monkey_dust/io/kenshi_dir.h>
 #include "editor_world_3d_sdlgpu.h"
 
@@ -367,7 +368,8 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
     // Real per-biome data lives in a private data file, not compiled into
     // the public engine/tools repos — see docs/ENGINE_AUDIT.md /
     // TERRAIN_FIX_PROMPT.md. Must load before any TerrainGen_Build call.
-    BiomeRegistry::Get().LoadPreferFcs("game/data/biome_table.txt", "tmp_/kenshi_re/terrain_textures");
+    const std::string ground_tex_dir = md::KenshiDir().empty() ? std::string("tmp_/kenshi_re/terrain_textures") : md::KenshiDir() + "/data/newland/land/textures";   // same as scene_render.cpp: same texture files, same ground_baked cache key
+    BiomeRegistry::Get().LoadPreferFcs("game/data/biome_table.txt", ground_tex_dir.c_str());
 
     // Sky pipeline — same shaders as game (sky.vert/frag, SkyUBO)
     {
@@ -438,30 +440,46 @@ static void EnsureLoader() {
     if (s_loader_started.exchange(true)) return;
     const char* op = s_overlay_path.c_str();
     s_loader_thread = std::thread([op]() {
+        auto t_prev = std::chrono::steady_clock::now();
+        auto T = [&](const char* what) {
+            auto t = std::chrono::steady_clock::now();
+            fprintf(stderr, "[W3D-LOAD] %-28s %8.1f ms\n", what,
+                    std::chrono::duration<double, std::milli>(t - t_prev).count());
+            t_prev = t;
+        };
         if (!s_terrain.Init()) {
             fprintf(stderr, "[W3D-SDLGPU] TerrainRenderer init failed\n"); return;
         }
+        T("s_terrain.Init");
         // One-time pipeline+mesh init for the quadtree renderer (replaces
         // the old backdrop pipeline above) -- doesn't depend on terrain
         // data, never needs rebuilding, unlike the heightmap texture
         // (s_rebuild_granite_hmap).
         s_quadtree_renderer.Init(md::GpuDevice::Get().SDLDevice());
+        T("s_quadtree_renderer.Init");
         // task БОРГ-VISUAL-3 follow-up (2026-09-06): batched instanced
         // draw path -- see RenderFrame's own comment for why the per-node
         // DrawNode loop this viewport used before was a real 6 FPS
         // regression once the aerial view's true (tens-of-thousands) tile
         // count stopped being silently truncated.
         s_quadtree_renderer.InitBatched(md::GpuDevice::Get().SDLDevice());
+        T("s_quadtree_renderer.InitBatched");
         // Wireframe-only 3D World tab (owner decision, 2026-09-17, see
         // s_wire_visible_nodes' own doc comment): batched path first (must
         // run after InitBatched -- reuses its node_data_tex_/sampler), the
         // per-node path as fallback for the rare case batched init fails.
         s_quadtree_renderer.InitBatchedWireframe(md::GpuDevice::Get().SDLDevice());
+        T("s_quadtree_renderer.InitBatchedWireframe");
         s_quadtree_renderer.InitWireframe(md::GpuDevice::Get().SDLDevice());
+        T("s_quadtree_renderer.InitWireframe");
         s_props.Init("game/data/props/rock_01.glb", 0.f); // no-op if missing; 0=rock diffuse
+        T("s_props.Init");
         s_terrain.InitKenshiOverlay(op);
+        T("s_terrain.InitKenshiOverlay");
         s_terrain.InitGroundTextureArray();
+        T("s_terrain.InitGroundTextureArray");
         s_terrain.InitDetailArray("game/data/terrain_detail_baked", 1); // a 1-layer stub, as in the game: no shader reads the array (#138)
+        T("s_terrain.InitDetailArray");
         // task #158c: editor's 3D World viewport never called these three —
         // scene_render.cpp (game) does, so terrain_pom.slang's tex_overlay_
         // mask/tex_biome_blend samplers (and, via BakeAlbedo below, the baked
@@ -473,14 +491,20 @@ static void EnsureLoader() {
         // InitBiomeBlend/InitAlbedoBake call sites (~line 264-291) this
         // mirrors.
         s_terrain.InitGroundBaked("game/data/textures/md_ground_baked.dds");
+        T("s_terrain.InitGroundBaked");
         s_terrain.InitSteepnessSmoothed("game/data/textures/md_ground_steepness_smoothed.png");
+        T("s_terrain.InitSteepnessSmoothed");
         s_terrain.InitBiomeBlend(md::KenshiLandFile("blendmap.png", "game/data/textures/md_biome_blend.png").c_str());
+        T("s_terrain.InitBiomeBlend");
         // task-terrain-kenshi-parity (2026-09-26): same mirror pattern as
         // this file's other Init* call sites -- see scene_render.cpp's own
         // InitKbi1BlendLookup/UploadBiomeLayersTex call sites' doc comment.
         s_terrain.InitKbi1BlendLookup("game/data/textures/md_kbi1_blend_lookup.png");
+        T("s_terrain.InitKbi1BlendLookup");
         s_terrain.UploadBiomeLayersTex();
+        T("s_terrain.UploadBiomeLayersTex");
         s_terrain.InitOverlayMask("game/data/textures/md_overlay_mask.png");
+        T("s_terrain.InitOverlayMask");
         // Zone-layer LUT + the static world heightmap are atlas-sourced
         // (TerrainAtlas is already loaded by main.cpp before Init() is
         // called — see this file's header comment) and build
@@ -488,7 +512,9 @@ static void EnsureLoader() {
         // at all for the heightmap (see s_rebuild_granite_hmap's doc
         // comment).
         s_build_zone_ground_layers();
+        T("s_build_zone_ground_layers");
         s_rebuild_granite_hmap();
+        T("s_rebuild_granite_hmap");
         s_master_ready = true;
         s_build_prop_positions();
     });
