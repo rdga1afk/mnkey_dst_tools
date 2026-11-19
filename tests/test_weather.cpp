@@ -187,3 +187,16 @@ TEST(Weather, WetnessStepMatchesExeEmulatorVectors) {
     ASSERT_EQ(rows.size(), 17u);
     for (const auto& f : rows) EXPECT_EQ(WxBits(WetnessStep(WxFl(f[0]), WxFl(f[1]), WxFl(f[2]))), WxBits(WxFl(f[3]))) << "cur " << f[0] << " target " << f[1] << " dt " << f[2];
 }
+
+// Rain and wind blocks of the exe (52 rows: Unicorn, re-run in Ghidra P-code): the values ours computes must be bit-equal.
+TEST(Weather, RainAndWindStepMatchExeEmulatorVectors) {
+    const auto rows = WxRows("tools/tests/data/exe_weather_rainwind.tsv");
+    ASSERT_EQ(rows.size(), 52u);
+    for (const auto& f : rows) {
+        const float rr = WxFl(f[2]), rw = WxFl(f[3]), st = WxFl(f[4]), wv = WxFl(f[5]);
+        unsigned rain = 0, wind = 0, flag = 0; std::sscanf(f[6].c_str(), "%x,%x,%u", &rain, &wind, &flag);
+        // the exe stores the rain only on its own path; the value written is RainStep(...) in every row, and the wind WindStep(...)
+        EXPECT_EQ(WxBits(RainStep(rr, st)), rain) << "rain " << rr << " * " << st;
+        EXPECT_EQ(WxBits(WindStep(rw, wv)), wind) << "wind " << rw << " * " << wv;
+    }
+}
