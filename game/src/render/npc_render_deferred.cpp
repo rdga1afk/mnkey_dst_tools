@@ -199,9 +199,10 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         static const bool input_on = !(getenv("MD_DYNRES_INPUT") && getenv("MD_DYNRES_INPUT")[0] == '0');
         if (g_dynres3) {   // v3: the GPU ms of the frames that finished (fence waiter) with the scale each was rendered at
             md::GpuDevice& gd = md::GpuDevice::Get();
-            { static bool said = false; if (!said) { said = true; fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms); } }
+            { static bool said = false; if (!said) { said = true; fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn; one-step drop %s, panic x%.2f, raise gap %.1f s)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms, s_d3.one_step ? "on" : "off", s_d3.panic_k, s_d3.raise_gap_s); } }
             { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
-            { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v); }   // dynres 0.5 prediction, off by default
+            { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v); }
+            { static const bool one_step = !(getenv("MD_DYNRES_ONESTEP") && getenv("MD_DYNRES_ONESTEP")[0] == '0'); s_d3.one_step = one_step; }   // dynres 0.8 (DE-362): one-step drop + panic, MD_DYNRES_ONESTEP=0 gives the 0.7 rule   // dynres 0.5 prediction, off by default
             const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs() + (s_d3_gh_for[(ws - 1) % 8] ? s_d3.gh_saving : 0.f)); }
             s_d3.GrassStep(dt); g_grass_scale_dyn = s_d3.GrassScale();
         }
@@ -212,7 +213,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         if (g_dynres_hold_left > 0) { --g_dynres_hold_left; g_dynres_cnt = 0; }   // settling: no switch for g_dynres_hold frames after a change
         else if (want_low == low) g_dynres_cnt = 0;
         else if (++g_dynres_cnt >= (want_low ? g_dynres_down : g_dynres_up)) { if (g_dynres3) s_d3_mov = want_low; else g_dynres_cur = want_low ? g_dynres_scale : 1.f; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
-        if (g_dynres3) g_dynres_cur = s_d3_mov ? s_d3.Scale() : 1.f;
+        if (g_dynres3) { if (s_d3_mov) s_d3.StartMotion(); else s_d3.StopMotion(); g_dynres_cur = s_d3_mov ? s_d3.Scale() : 1.f; }
         else if (low && want_low && g_dynres_cur != g_dynres_scale) g_dynres_cur = g_dynres_scale;   // a new low level (md.set_dyn_res) while already low took effect only after a stop: apply it at once
     } else g_dynres_cur = 1.f;
     if (g_dynres3) s_d3_scale_for[md::GpuDevice::Get().FrameSerial() % 8] = g_dynres_cur;

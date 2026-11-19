@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-inline constexpr const char* kDynresVersion = "dynres 0.7";
+inline constexpr const char* kDynresVersion = "dynres 0.8";
 
 struct Dynres3 {
     static constexpr int kN = 240;                         // samples kept (4 s at 60 fps)
@@ -23,6 +23,15 @@ struct Dynres3 {
     bool  predict = false;
     float speed_mps = 0.f;
     float ema_fast = 0.f, ema_slow = 0.f, projected = 0.f;
+    // dynres 0.8 (DE-362, owner 19.11): (1) one-step drop: over the band for more than `hold` frames the scale goes straight to s* of the cost model (kept at -step while the model has no spread yet);
+    // (2) panic (Unreal): two frames in a row over panic_k x target drop at once, no hold; (3) motion memory: StartMotion() resumes the last scale used in motion; (4) a raise waits raise_gap_s after any change.
+    // s* = sqrt((target - Fnow - margin) / K) with Fnow = mean of the frames that triggered the drop minus K * scale^2 (the model intercept corrected by what was just measured, so a step in the load is followed at once).
+    bool  one_step = true;                                 // false = the 0.7 rule (scale - step)
+    float panic_k = 1.25f, raise_gap_s = 0.5f, since_change_s = 10.f, last_dt = 1.f / 60.f, motion_scale = 1.f;
+    int   panic_run = 0; float panic_sum = 0.f, above_sum = 0.f; bool fitted = false, moving = true;
+    int   drops = 0, panics = 0;
+    void StopMotion() { if (moving) { moving = false; motion_scale = scale; } }      // the caller: the camera came to rest (native resolution while standing)
+    void StartMotion() { if (!moving) { moving = true; scale = std::min(1.f, std::max(floor_scale, motion_scale)); above = below = panic_run = 0; since_change_s = 0.f; } }
     // state
     float F = 6.5f, K = 20.f;                              // prior from docs/research/DYNRES_V2_2026-11-12.md (street / top40 / high150: F 5.2-7.4, K 19-23)
     float sigma = 1.0f;                                    // residual scale (ms), Huber
@@ -44,6 +53,7 @@ struct Dynres3 {
     }
 
     void Scene(bool heavy_now, float dt) {                 // once per frame: the scene signal (data: grass blades in range) and the frame time
+        last_dt = dt;
         if (heavy_now == heavy) { held_s = 0.f; return; }
         held_s += dt;
         if (held_s >= switch_s) { heavy = heavy_now; held_s = 0.f; target_ms = heavy ? heavy_ms : light_ms; above = below = 0; }
@@ -54,7 +64,7 @@ struct Dynres3 {
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
         last_full_ms = gpu_ms;
         if (gpu_ms > fit_min_frac * light_ms) { xs[head] = s * s; ys[head] = gpu_ms; head = (head + 1) % kN; if (n < kN) ++n; Fit(); }
-        if (std::fabs(s - scale) > 0.005f) return;            // a frame at another scale (standing = native) feeds the model only; the band is about the controlled scale
+        if (!moving || std::fabs(s - scale) > 0.005f) return;            // a frame at another scale (standing = native) feeds the model only; the band is about the controlled scale
         const float hi = 0.95f * target_ms, lo = 0.85f * target_ms;
         float seen = gpu_ms;
         if (predict) {
@@ -65,15 +75,32 @@ struct Dynres3 {
             const float horizon = 6.f + 0.5f * std::min(speed_mps, 24.f);          // frames ahead: 6 standing, up to 18 at 24 m/s
             projected = ema_fast + slope * horizon; seen = std::max(gpu_ms, projected);
         }
+        since_change_s += last_dt;
         above = seen > hi ? above + 1 : 0; below = (gpu_ms < lo && (!predict || projected < lo)) ? below + 1 : 0;
-        if (above > hold) { above = 0; scale = std::max(floor_scale, scale - step); }
+        above_sum = above > 0 ? above_sum + seen : 0.f;
+        const bool over = gpu_ms > panic_k * target_ms;
+        panic_run = over ? panic_run + 1 : 0; panic_sum = over ? panic_sum + gpu_ms : 0.f;
+        const bool panic = one_step && panic_run >= 2;
+        if (panic || above > hold) {
+            const float mean = panic ? panic_sum / (float)panic_run : above_sum / (float)above;
+            const float old = scale;
+            scale = one_step ? DropTo(mean, panic ? panic_run : above) : std::max(floor_scale, scale - step);
+            above = panic_run = 0; panic_sum = above_sum = 0.f;
+            if (scale < old) { since_change_s = 0.f; ++drops; if (panic) ++panics; }
+        }
         else if (below > hold) {
             below = 0;
             const float next = std::min(1.f, scale + step), margin = 0.3f + 1.5f * sigma;
-            if (F + K * next * next <= target_ms - margin) scale = next;   // raise only when the model predicts room, minus a margin that grows with the residual spread
+            if (since_change_s >= raise_gap_s && F + K * next * next <= target_ms - margin) { scale = next; since_change_s = 0.f; }   // raise only when the model predicts room, minus a margin that grows with the residual spread, and not right after a change
         }
     }
     float Predict(float s) const { return F + K * s * s; }
+    float DropTo(float mean_ms, int) const {               // s* for a measured mean `mean_ms` at the current scale; never above scale - step, never below the floor
+        if (!fitted) return std::max(floor_scale, scale - step);
+        const float margin = 0.3f + 1.5f * sigma, fnow = mean_ms - K * scale * scale;
+        const float sstar = std::sqrt(std::max(0.f, (target_ms - fnow - margin) / K));
+        return std::max(floor_scale, std::min(scale - step, sstar));
+    }
     float Scale() const { return scale; }
 
 private:
@@ -93,7 +120,7 @@ private:
             if (det < 1e-3 * Sw * Sw) return;                // the samples do not span two scales yet: keep the previous (F, K)
             k = (Sw * Sxy - Sx * Sy) / det; f = (Sy - k * Sx) / Sw;
         }
-        if (k > 0.5 && k < 200.0 && f > -5.0 && f < 40.0) { K = (float)k; F = (float)f; }
+        if (k > 0.5 && k < 200.0 && f > -5.0 && f < 40.0) { K = (float)k; F = (float)f; fitted = true; }
         double a = 0, m = 0; for (int i = 1; i <= std::min(n, 60); ++i) { const int j = (head - i + kN) % kN; a += std::fabs(ys[j] - (F + K * xs[j])); ++m; }
         if (m > 0) sigma = std::max(0.15f, std::min(2.0f, 0.9f * sigma + 0.1f * (float)(1.4826 * a / m)));
     }

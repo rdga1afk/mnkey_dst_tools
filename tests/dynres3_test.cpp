@@ -27,7 +27,7 @@ int main() {
         printf("heavy: F %.2f K %.2f sigma %.2f scale %.2f T %.2f changes/min %d\n", d.F, d.K, d.sigma, d.Scale(), tt, ch);
     }
     { // 2. a light scene (T(1) = 14): native stays native, zero changes
-        Dynres3 d; Sim sim{ 4.f, 10.f, 0.3f, 0.05f, 0.f }; int ch; float tt; Run(d, sim, 7200, &ch, &tt);
+        Dynres3 d; Sim sim{ 4.f, 10.f, 0.3f, 0.f, 0.f }; int ch; float tt; Run(d, sim, 7200, &ch, &tt);   // no spikes: two spikes in a row are a panic by design (0.8)
         CHECK(d.Scale() == 1.f && ch == 0, "light scene: scale %.2f changes %d", d.Scale(), ch);
     }
     { // 3. the floor: an unreachable load (T(0.67) = 24) stops at the floor, never below
@@ -78,8 +78,38 @@ int main() {
         CHECK(o1 < o0, "frames over the band top: %d with prediction, %d without", o1, o0);
         CHECK(f1 >= 0.f && f0 >= 0.f && f1 < f0, "first scale drop at frame %.0f with prediction, %.0f without", f1, f0);
         printf("prediction: frames over the band top %d -> %d, first drop %.0f -> %.0f\n", o0, o1, f0, f1);
-        Dynres3 st; st.predict = true; Sim ss{ 4.f, 10.f, 0.3f, 0.05f, 0.f }; int ch; float tt; Run(st, ss, 7200, &ch, &tt);
+        Dynres3 st; st.predict = true; Sim ss{ 4.f, 10.f, 0.3f, 0.f, 0.f }; int ch; float tt; Run(st, ss, 7200, &ch, &tt);
         CHECK(st.Scale() == 1.f && ch == 0, "prediction on a light steady scene: scale %.2f, %d changes", st.Scale(), ch);
+    }
+    { // 8. dynres 0.8: one-step drop, panic, motion memory, noisy model, no oscillation
+        auto fitted = []() { Dynres3 d; Sim sim{ 4.f, 24.f, 0.f, 0.f, 0.f }; for (int i = 0; i < 400; ++i) { const float s = 0.67f + 0.33f * (0.5f + 0.5f * std::sin(i * 0.05f)); d.Sample(s, sim.T(s, d.target_ms)); } d.scale = 1.f; d.since_change_s = 10.f; d.above = d.below = d.panic_run = 0; d.panic_sum = d.above_sum = 0.f; d.drops = d.panics = 0; return d; };
+        { // a step load at native (T(1) = 28): the scale reaches s* within hold + 1 frames (old rule: 0.97 after the same frames)
+            Dynres3 d = fitted(); int i = 0; for (; i < 20 && d.Scale() >= 0.999f; ++i) d.Sample(1.f, 28.f);
+            const float sstar = std::sqrt((d.target_ms - 4.f - (0.3f + 1.5f * d.sigma)) / 24.f);
+            CHECK(i <= d.hold + 1, "step load: first drop after %d frames", i);
+            CHECK(std::fabs(d.Scale() - std::max(d.floor_scale, sstar)) < 0.06f && d.Scale() < 0.8f, "step load: scale %.3f, s* %.3f", d.Scale(), sstar);
+            Dynres3 o = fitted(); o.one_step = false; for (int k = 0; k <= o.hold; ++k) o.Sample(1.f, 28.f);
+            CHECK(o.Scale() > 0.95f, "0.7 rule drops one step only: %.2f", o.Scale());
+        }
+        { // panic: two frames over 1.25 x target drop at once, below the hold
+            Dynres3 d = fitted(); d.Sample(1.f, 30.f); CHECK(d.Scale() >= 0.999f, "one bad frame must not drop");
+            d.Sample(1.f, 30.f); CHECK(d.Scale() < 0.9f && d.panics == 1, "panic: scale %.2f panics %d", d.Scale(), d.panics);
+        }
+        { // motion memory: standing keeps the model and the last motion scale; the start of motion resumes it, and standing frames at native never change it
+            Dynres3 d = fitted(); for (int i = 0; i < 10; ++i) d.Sample(1.f, 28.f); const float sm = d.Scale();
+            d.StopMotion(); for (int i = 0; i < 300; ++i) d.Sample(1.f, 12.f);
+            CHECK(d.Scale() == sm, "standing changed the scale: %.2f -> %.2f", sm, d.Scale());
+            d.StartMotion(); CHECK(d.Scale() == sm, "motion start scale %.2f, last in motion %.2f", d.Scale(), sm);
+        }
+        { // a noisy model: every sample is 3 ms noise and 15 %% outliers, the drop still lands at or above the floor and under the target
+            Dynres3 d; Sim sim{ 4.f, 24.f, 3.f, 0.15f, 0.f }; int ch; float tt; Run(d, sim, 7200, &ch, &tt);
+            CHECK(d.Scale() >= d.floor_scale && d.Scale() <= 1.f && tt <= 16.7f + 1.5f, "noisy: scale %.2f true T %.2f", d.Scale(), tt);
+        }
+        { // constant load: no oscillation (changes in the last minute)
+            Dynres3 d; Sim sim{ 4.f, 24.f, 0.3f, 0.02f, 0.f }; int ch; float tt; Run(d, sim, 7200, &ch, &tt);
+            CHECK(ch <= 6, "constant load: %d changes in the last minute", ch);
+            printf("0.8 constant load: scale %.2f T %.2f changes/min %d\n", d.Scale(), tt, ch);
+        }
     }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
