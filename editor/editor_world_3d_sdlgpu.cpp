@@ -33,6 +33,7 @@
 #include <SDL3/SDL_gpu.h>
 #include <algorithm>
 #include <atomic>
+#include <string>
 #include <memory>
 #include <thread>
 #include <cstring>
@@ -205,6 +206,8 @@ static bool           s_props_built = false;
 // Async loading state
 static std::atomic<bool>  s_master_ready{false};
 static std::thread        s_loader_thread;
+static std::atomic<bool>  s_loader_started{false};   // the loader thread (terrain bake, texture arrays) runs only once the viewport is used
+static std::string        s_overlay_path;
 static constexpr int      s_zone_ox_saved = 0;  // whole-world prop scatter, unrelated to s_qt_* window below
 static constexpr int      s_zone_oz_saved = 0;
 
@@ -427,7 +430,13 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
     // that was confirmed and fixed. Re-verify with the same GATE 5
     // criterion (5 consecutive F5 reloads, no crash/leak) before trusting
     // this long-term.
-    const char* op = overlay_path;
+    s_overlay_path = overlay_path;   // the loader thread starts at the first use of the 3D World viewport (EnsureLoader), not at editor start
+    return true;
+}
+
+static void EnsureLoader() {
+    if (s_loader_started.exchange(true)) return;
+    const char* op = s_overlay_path.c_str();
     s_loader_thread = std::thread([op]() {
         if (!s_terrain.Init()) {
             fprintf(stderr, "[W3D-SDLGPU] TerrainRenderer init failed\n"); return;
@@ -483,7 +492,6 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
         s_master_ready = true;
         s_build_prop_positions();
     });
-    return true;
 }
 
 // ── Shutdown ────────────────────────────────────────────────────────────────
@@ -516,6 +524,7 @@ void Shutdown() {
     s_master_ready = false;
 
     if (s_loader_thread.joinable()) s_loader_thread.join();
+    s_loader_started = false;
 
     // audit S2 (2026-08-27, Phase 2 sanitizer follow-up): this used to only
     // join the loader thread -- none of the GPU-resource-owning statics
@@ -846,6 +855,7 @@ void RenderFrame(md::GpuCommandBufferHandle cmd, float dt, bool tab_active) {
 
 // ── ImGui draw (call inside "3D World" tab) ────────────────────────────────────
 void DrawImGui(float W, float H, float dt) {
+    EnsureLoader();
     s_last_w = (int)W > 4 ? (int)W : s_last_w;
     s_last_h = (int)H > 4 ? (int)H : s_last_h;
 
@@ -931,6 +941,7 @@ float GetZoomIn()       { return s_zoom_in; }
 float GetZoomOut()      { return s_zoom_out; }
 
 void TeleportToZone(int zone_x, int zone_z) {
+    EnsureLoader();
     static constexpr float ATLAS_MAX = 63.f * CHUNK_SIZE;
     s_cx = ((float)zone_x + 0.5f) * CHUNK_SIZE;
     s_cz = ((float)zone_z + 0.5f) * CHUNK_SIZE;
@@ -942,10 +953,11 @@ void TeleportToZone(int zone_x, int zone_z) {
 // ("chunks_loaded")): no more literal 4096-chunk sweep to report progress
 // on (see s_build_synth_hmap's doc comment) — both values collapse to a
 // simple ready/not-ready pair now that both tiers build synchronously.
-int GetChunksLoaded() { return s_master_ready.load() ? 1 : 0; }
+int GetChunksLoaded() { EnsureLoader(); return s_master_ready.load() ? 1 : 0; }
 int GetChunksTotal()  { return 1; }
 
 void SetCameraPos(float x, float y, float z, float yaw, float pitch) {
+    EnsureLoader();
     s_cx = x; s_cy = y; s_cz = z;
     s_yaw = yaw; s_pitch = pitch;
 }
