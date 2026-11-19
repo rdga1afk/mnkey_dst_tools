@@ -124,3 +124,36 @@ TEST(KenshiSave, FormatFollowsTheExeWriter) {
     KenshiSave back; ASSERT_TRUE(ReadKenshiSave(d.string(), back, err)) << err;
     ASSERT_EQ(back.squads.size(), 1u); EXPECT_EQ(back.squads[0].characters.size(), 3u);
 }
+
+// Facts of the exe's load side (STATS loader 0x14064b6a0, save-info loader 0x14047e390; ksdp/functions/exe_save.yml).
+TEST(KenshiSave, StatKeysAreTheExeWriterList) {
+    const auto& k = StatKeys();
+    ASSERT_EQ(k.size(), 44u);
+    EXPECT_EQ(k.front(), "strength"); EXPECT_EQ(k[4], "toughness2"); EXPECT_EQ(k[9], "ff"); EXPECT_EQ(k[40], "bow"); EXPECT_EQ(k[42], "xp"); EXPECT_EQ(k.back(), "free attribute points");
+}
+
+TEST(KenshiSave, MissingStatReadsZeroAndUnknownIsIgnored) {
+    KChar c; c.stats = { {"strength", 30.f}, {"no such stat", 9.f} };
+    EXPECT_FLOAT_EQ(StatValue(c, "strength"), 30.f);
+    EXPECT_FLOAT_EQ(StatValue(c, "attack"), 0.f);          // absent key: the exe's map lookup inserts 0
+    EXPECT_FLOAT_EQ(StatValue(c, "farming"), 0.f);
+}
+
+TEST(KenshiSave, ToughnessAndLockpickingFallBacks) {
+    KChar c; c.stats = { {"defence", 41.f}, {"thievery", 30.f} };
+    EXPECT_FLOAT_EQ(StatValue(c, "toughness2"), 41.f);     // absent: the defence value
+    EXPECT_FLOAT_EQ(StatValue(c, "lockpicking"), 15.f);    // absent: thievery * 0.5
+    c.stats.push_back({"toughness2", 7.f}); c.stats.push_back({"lockpicking", 3.f});
+    EXPECT_FLOAT_EQ(StatValue(c, "toughness2"), 7.f); EXPECT_FLOAT_EQ(StatValue(c, "lockpicking"), 3.f);
+}
+
+TEST(KenshiSave, MissingCameraIntsReadZero) {
+    const fs::path d = Tmp("camzero"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "quick.save").string(), f, e));
+    auto& ints = f.records[0].ints;
+    for (auto it = ints.begin(); it != ints.end();) { if (it->first == "time day" || it->first == "player money") it = ints.erase(it); else ++it; }
+    ASSERT_TRUE(md::fcs::WriteFile((d / "quick.save").string(), f, e));
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_EQ(r.day, 0); EXPECT_EQ(r.money, 0); EXPECT_EQ(r.hour, 7);
+}
