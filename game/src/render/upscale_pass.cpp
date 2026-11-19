@@ -2,7 +2,6 @@
 #include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/render/gpu_hal_free_functions.h>
 #include <cstdio>
-extern int g_fxaa_profile;   // md.set_fxaa_profile: 0 Kenshi (subpix 0.75, edge threshold 0.166), 1 HiAlgo (0.15, 0.20), DE-312
 
 bool UpscalePass::Init() {
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
@@ -24,9 +23,6 @@ bool UpscalePass::Init() {
     }
     {
         GpuPipeline::Desc fd = pd;
-        fd.frag_path = "shaders/fxaa.frag";
-        fxaa_ready_ = fxaa_pipeline_.Create(fd);
-        if (!fxaa_ready_) fprintf(stderr, "[UpscalePass] FXAA pipeline create failed\n");
         fd.frag_path = "shaders/upscale_light.frag";   // #207: «Sharpening while moving» = Light
         light_ready_ = light_pipeline_.Create(fd);
         if (!light_ready_) fprintf(stderr, "[UpscalePass] light pipeline create failed\n");
@@ -57,7 +53,7 @@ void UpscalePass::Shutdown() {
     DestroyTarget();
     if (dev && sampler_) GpuReleaseSampler(dev, sampler_);
     sampler_ = nullptr;
-    pipeline_.Destroy(); fxaa_pipeline_.Destroy(); fxaa_ready_ = false; sgsr1_pipeline_.Destroy(); sgsr1_ready_ = false;
+    pipeline_.Destroy(); sgsr1_pipeline_.Destroy(); sgsr1_ready_ = false;
     ready_ = false;
 }
 
@@ -129,18 +125,3 @@ void UpscalePass::ApplySgsr1(md::GpuCommandBufferHandle cmd, md::GpuTextureHandl
     cb.EndPass();
 }
 
-void UpscalePass::ApplyFxaa(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out_tex) {
-    if (!ready_ || !fxaa_ready_ || !tex_ || !out_tex) return;
-    GpuCommandBuffer cb;
-    GpuCommandBuffer::ColorPassDesc cpd;
-    cpd.cmd = cmd; cpd.color_tex[0] = out_tex; cpd.depth_tex = nullptr; cpd.load_color = false;
-    cb.BeginColorPass(cpd);
-    cb.BindPipeline(&fxaa_pipeline_);
-    SDL_GPUTextureSamplerBinding tsb{ tex_, sampler_ };
-    cb.BindFragmentSamplers(0, &tsb, 1);
-    const bool hi = g_fxaa_profile == 1;
-    float u[8] = { 1.f / (float)w_, 1.f / (float)h_, 0.f, 0.f, hi ? 0.15f : 0.75f, hi ? 0.20f : 0.166f, 0.0833f, 0.f };
-    cb.PushFragmentUniforms(0, u, sizeof(u));
-    cb.Draw(3, 0);
-    cb.EndPass();
-}

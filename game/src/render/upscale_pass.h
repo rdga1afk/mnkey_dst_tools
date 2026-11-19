@@ -22,16 +22,14 @@ public:
     // Upscale the scene target into `out_tex` (the real swapchain) in its own render pass.
     // `sharp_mode` (#207, owner 31.10): 0 Full = 5 taps + adaptive sharpen, 1 Light = 3 taps unsharp mask (upscale_light.frag), 2 Off = one bilinear tap
     void Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out_tex, float sharpness, int sharp_mode = 0);
-    // #180 FXAA 3.11 (Kenshi's own setup, shaders/fxaa.frag): the scene target (same size as the swapchain) onto `out_tex`
-    void ApplyFxaa(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out_tex);
     // #198 S1: Snapdragon GSR 1 (shaders/sgsr1.frag) instead of the bilinear + sharpen of Apply(): the scene target (internal size) onto `out_tex`
     void ApplySgsr1(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle out_tex);
     bool Sgsr1Ready() const { return sgsr1_ready_; }
 
 private:
     void DestroyTarget();
-    GpuPipeline pipeline_, light_pipeline_, fxaa_pipeline_, sgsr1_pipeline_;
-    bool fxaa_ready_ = false, sgsr1_ready_ = false, light_ready_ = false;
+    GpuPipeline pipeline_, light_pipeline_, sgsr1_pipeline_;
+    bool sgsr1_ready_ = false, light_ready_ = false;
     md::GpuTextureHandle tex_ = nullptr;
     SDL_GPUSampler* sampler_ = nullptr;
     SDL_GPUTextureFormat fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;

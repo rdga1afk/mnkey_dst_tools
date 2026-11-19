@@ -19,7 +19,7 @@
 #include <thread>
 #include <vector>
 
-extern bool g_opt_fxaa, g_opt_ground_reuse, g_opt_force_upscale, g_dynres_on;
+extern bool g_opt_cmaa2, g_opt_ground_reuse, g_opt_force_upscale, g_dynres_on;
 extern int g_opt_ground_reuse_period, g_opt_ground_reuse_cr, g_opt_ground_split, g_dynres_down, g_dynres_up;
 extern float g_dynres_scale, g_dynres_cur;
 extern int g_kenshi_lighting_mode;
@@ -142,7 +142,7 @@ void Harvest(Slot& s) {
 void WriteSettings(const std::string& dir) {
     if (FILE* f = fopen((dir + "/settings.txt").c_str(), "w")) {
         fprintf(f, "build=%s\n", md_build_title);
-        fprintf(f, "ground_reuse_period=%d\nground_reuse=%d\nground_reuse_cr=%d\nground_split=%d\nfxaa=%d\nforce_upscale=%d\n", g_opt_ground_reuse_period, (int)g_opt_ground_reuse, g_opt_ground_reuse_cr, g_opt_ground_split, (int)g_opt_fxaa, (int)g_opt_force_upscale);
+        fprintf(f, "ground_reuse_period=%d\nground_reuse=%d\nground_reuse_cr=%d\nground_split=%d\ncmaa2=%d\nforce_upscale=%d\n", g_opt_ground_reuse_period, (int)g_opt_ground_reuse, g_opt_ground_reuse_cr, g_opt_ground_split, (int)g_opt_cmaa2, (int)g_opt_force_upscale);
         fprintf(f, "dynres_on=%d\ndynres_scale=%.3f\ndynres_down_frames=%d\ndynres_up_frames=%d\nresolution_scale=%.3f\nlighting_mode=%d\ntime_override=%d\ntime_hours=%.3f\nwindow=%dx%d\n",
                 (int)g_dynres_on, g_dynres_scale, g_dynres_down, g_dynres_up, md_settings_get_resolution_scale(), g_kenshi_lighting_mode, (int)LightSystem::Get().time_override_enabled, LightSystem::Get().time_override_hours, window_get_width(), window_get_height());
         fclose(f);

@@ -295,7 +295,6 @@ static int l_md_frame_counters(lua_State* L) {   // G3: md.frame_counters() -> {
 static int l_md_hub_spike_stats(lua_State* L) { HubSpike::Stats s = HubSpike::Slot((int)luaL_checkinteger(L, 1)).stats(); lua_newtable(L); lua_pushinteger(L, s.instances); lua_setfield(L, -2, "instances"); lua_pushinteger(L, s.draws); lua_setfield(L, -2, "draws"); lua_pushinteger(L, s.batches); lua_setfield(L, -2, "batches"); lua_pushinteger(L, (lua_Integer)s.triangles); lua_setfield(L, -2, "triangles"); lua_pushinteger(L, s.occluded); lua_setfield(L, -2, "occluded"); return 1; }
 float g_feature_terrain_radius = 1500.f;
 static int l_md_set_feature_terrain(lua_State* L) { FeatureScatterSystem::Get().SetTerrainInGbuffer(lua_toboolean(L, 1) != 0); g_feature_terrain_radius = (float)luaL_optnumber(L, 2, 1500.0); return 0; }   // #176: TERRAIN-mode map features into the terrain G-buffer (default off), draw radius m
-extern bool g_opt_fxaa;
 extern bool g_opt_sgsr1;
 extern bool g_opt_sgsr2; extern float g_sgsr2_rcas; extern bool g_sgsr2_fsr2;
 extern bool g_dynres3; extern float g_dynres3_scale(); extern float g_dynres3_F(); extern float g_dynres3_K();
@@ -311,8 +310,7 @@ static int l_md_set_dynres_grass(lua_State* L) { md_set_dynres_grass(lua_toboole
 extern float g_grass_scale_dyn;
 static int l_md_dyn_grass_scale(lua_State* L) { lua_pushnumber(L, g_grass_scale_dyn); return 1; }   // dynres 0.7: the grass scale dynres asks for now
 static int l_md_set_grass_scale(lua_State* L) { g_grass_scale = (float)luaL_checknumber(L, 1); return 0; }   // dynres 0.7: grass overlay at this fraction of the ground resolution (1 = off, default)
-extern int g_fxaa_profile, g_stair_taps; extern bool g_hialgo_catmull;
-static int l_md_set_fxaa_profile(lua_State* L) { g_fxaa_profile = std::string(luaL_checkstring(L, 1)) == "hialgo" ? 1 : 0; return 0; }   // DE-312: "kenshi" (default) | "hialgo"
+extern int g_stair_taps; extern bool g_hialgo_catmull;
 static int l_md_set_stair_blur(lua_State* L) { g_stair_taps = lua_toboolean(L, 1) ? (int)luaL_optinteger(L, 2, 8) : 0; return 0; }   // DE-312: stair-only blur on the internal frame, taps per side (default 8, cap 31), off by default
 static int l_md_set_hialgo_catmull(lua_State* L) { g_hialgo_catmull = lua_toboolean(L, 1) != 0; return 0; }   // DE-312: 4x4 Catmull-Rom (default) or 4-tap bilinear inside the neighbour clamp
 static int l_md_set_upscaler(lua_State* L) {   // "sgsr1" (off here) | "sgsr2" | "fsr2lite" (variant 5, RCAS 0.4 unless md.set_sgsr2_rcas was called later)
@@ -327,8 +325,7 @@ static int l_md_set_sgsr2_rcas(lua_State* L) { g_sgsr2_rcas = (float)luaL_checkn
 static int l_md_set_sgsr2_fsr2(lua_State* L) { g_sgsr2_fsr2 = lua_toboolean(L, 1) != 0; return 0; }   // DE-311: the FSR 2 parts of the SGSR 2 shader on / off (default on; off = cost measurement)
 static int l_md_set_sgsr1(lua_State* L) { g_opt_sgsr1 = lua_toboolean(L, 1) != 0; if (lua_toboolean(L, 1)) { extern bool g_hialgo; g_hialgo = false; } return 0; }   // #198 S1: Snapdragon GSR 1 upscale instead of bilinear + sharpen (scene below native only), default off
 extern void md_set_aa_mode(const char*);
-static int l_md_set_aa(lua_State* L) { const char* m = luaL_checkstring(L, 1); if (strcmp(m, "cmaa2") && strcmp(m, "fxaa") && strcmp(m, "off")) return luaL_error(L, "set_aa: cmaa2 | fxaa | off"); md_set_aa_mode(m); return 0; }   // DE-358
-static int l_md_set_fxaa(lua_State* L) { g_opt_fxaa = lua_toboolean(L, 1) != 0; return 0; }   // #180: FXAA 3.11 (Kenshi's parameters) as the last pass, default off
+static int l_md_set_aa(lua_State* L) { const char* m = luaL_checkstring(L, 1); if (strcmp(m, "cmaa2") && strcmp(m, "off")) return luaL_error(L, "set_aa: cmaa2 | off"); md_set_aa_mode(m); return 0; }   // DE-358
 extern bool g_dynres_on; extern float g_dynres_scale, g_dynres_cur, g_dynres_v_move, g_dynres_w_move, g_dynres_v_stop, g_dynres_w_stop; extern int g_dynres_down, g_dynres_up;
 // md.set_dyn_res(on, scale[, down_frames, up_frames]) -- #182, default on (owner 17.10); md.dyn_res_state() -> current scale
 static int l_md_set_dyn_res(lua_State* L) {
@@ -576,14 +573,12 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("ground_reuse_reset", l_md_ground_reuse_reset);
     sys.RegisterNamespaceFunction("set_opt_force_upscale", l_md_set_opt_force_upscale);
     sys.RegisterNamespaceFunction("set_speed", l_md_set_speed);
-    sys.RegisterNamespaceFunction("set_fxaa", l_md_set_fxaa);
     sys.RegisterNamespaceFunction("set_aa", l_md_set_aa);
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_sgsr2", l_md_set_sgsr2);
     sys.RegisterNamespaceFunction("set_dynres_grass", l_md_set_dynres_grass);
     sys.RegisterNamespaceFunction("dyn_grass_scale", l_md_dyn_grass_scale);
     sys.RegisterNamespaceFunction("set_grass_scale", l_md_set_grass_scale);
-    sys.RegisterNamespaceFunction("set_fxaa_profile", l_md_set_fxaa_profile);
     sys.RegisterNamespaceFunction("set_stair_blur", l_md_set_stair_blur);
     sys.RegisterNamespaceFunction("set_hialgo_catmull", l_md_set_hialgo_catmull);
     sys.RegisterNamespaceFunction("set_upscaler", l_md_set_upscaler);

@@ -11,7 +11,7 @@ bool HialgoPass::Init() {
     pd.vert_path = "shaders/upscale.vert"; pd.layout.count = 0; pd.layout.stride = 0;
     pd.raster.depth_test = false; pd.raster.depth_write = false; pd.raster.cull_back = false; pd.has_depth_target = false;
     pd.frag_uniform_bufs = 1; pd.frag_samplers = 1;
-    pd.frag_path = "shaders/fxaa.frag";        if (!fxaa_.Create(pd)) { fprintf(stderr, "[HialgoPass] FXAA pipeline failed\n"); return false; }
+    if (!cmaa_.Init()) { fprintf(stderr, "[HialgoPass] CMAA 2 init failed\n"); return false; }   // DE-360: the AA of this path (no CMAA 2 = this path stays off)
     pd.frag_path = "shaders/hialgo_blur.frag"; if (!blur_.Create(pd)) { fprintf(stderr, "[HialgoPass] blur pipeline failed\n"); return false; }
     pd.frag_path = "shaders/hialgo_up.frag";   if (!up_.Create(pd))   { fprintf(stderr, "[HialgoPass] upscale pipeline failed\n"); return false; }
     SDL_GPUSamplerCreateInfo si{};
@@ -34,7 +34,7 @@ void HialgoPass::Shutdown() {
         if (nearest_) GpuReleaseSampler(dev, nearest_);
     }
     a_ = b_ = alt_a_ = alt_b_ = nullptr; linear_ = nearest_ = nullptr; w_ = h_ = alt_w_ = alt_h_ = 0;
-    fxaa_.Destroy(); blur_.Destroy(); up_.Destroy(); ready_ = false;
+    cmaa_.Shutdown(); blur_.Destroy(); up_.Destroy(); ready_ = false;
 }
 
 void HialgoPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
@@ -57,16 +57,11 @@ void HialgoPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
 }
 
 void HialgoPass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle src, int src_w, int src_h, md::GpuTextureHandle out, int out_w, int out_h,
-                       int fxaa_profile, int stair_taps, bool align_x2, bool catmull, SDL_GPUTexture* haze_depth) {
+                       int stair_taps, bool align_x2, bool catmull, SDL_GPUTexture* haze_depth) {
     if (!ready_ || !a_ || !b_ || w_ != src_w || h_ != src_h || !src || !out) return;
     GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd; cpd.cmd = cmd; cpd.depth_tex = nullptr; cpd.load_color = false;
-    {   // 1. FXAA on the internal frame (gamma: the frame is the tonemapped LDR composite)
-        cpd.color_tex[0] = a_; cb.BeginColorPass(cpd); cb.BindPipeline(&fxaa_);
-        SDL_GPUTextureSamplerBinding t{ src, linear_ }; cb.BindFragmentSamplers(0, &t, 1);
-        const float u[8] = { 1.f / (float)src_w, 1.f / (float)src_h, 0.f, 0.f,
-                             fxaa_profile == 1 ? 0.15f : 0.75f, fxaa_profile == 1 ? 0.20f : 0.166f, 0.0833f, 0.f };
-        cb.PushFragmentUniforms(0, u, sizeof(u)); cb.Draw(3, 0); cb.EndPass();
-    }
+    // 1. CMAA 2 on the internal frame (gamma: the frame is the tonemapped LDR composite): src -> a_
+    if (!cmaa_.Apply(cmd, src, src_w, src_h, a_)) return;
     SDL_GPUTexture* last = a_; SDL_GPUTexture* spare = b_;
     if (md::HeatHazePass::Get().Needed()) { md::HeatHazePass::Get().Run(cmd, last, spare, haze_depth, src_w, src_h); std::swap(last, spare); }
     if (stair_taps > 0) {   // 2. stair-only blur
