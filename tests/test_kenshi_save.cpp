@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <cstring>
 
 using namespace md::save;
 namespace fs = std::filesystem;
@@ -92,4 +93,26 @@ TEST(KenshiSave, DamagedFilesGiveReadableErrors) {
     auto pb = Slurp(d / "platoon" / "Nameless_0.platoon"); pb.resize(pb.size() - 7);
     { std::ofstream o(d / "platoon" / "Nameless_0.platoon", std::ios::binary); o.write(pb.data(), (std::streamsize)pb.size()); }
     EXPECT_FALSE(ReadKenshiSave(d.string(), r, err)); EXPECT_NE(err.find("Nameless_0.platoon"), std::string::npos) << err;
+}
+
+// Facts of the exe writer (save_manager_save_game 0x140375360, record_store_write_file 0x1406bd570; ksdp/functions/exe_save.yml): the file is FCS v15, the first record is the camera record
+// (kind 56) with the ints "squads" and "members", zones are references (x, z, 1), platoon records are kind 34 with "platoon stringID".
+TEST(KenshiSave, FormatFollowsTheExeWriter) {
+    const fs::path d = Tmp("exefacts"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    auto bytes = Slurp(d / "quick.save");
+    ASSERT_GE(bytes.size(), 12u);
+    int32_t head[3]; memcpy(head, bytes.data(), 12);
+    EXPECT_EQ(head[0], 15);                      // filetype, written first
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "quick.save").string(), f, e)) << e.Message();
+    EXPECT_EQ(head[2], (int32_t)f.records.size());   // the record count follows the id counter
+    ASSERT_FALSE(f.records.empty());
+    const md::fcs::Record& cam = f.records[0];
+    EXPECT_EQ(cam.kind, 56);
+    auto getint = [&](const char* k) { for (auto& kv : cam.ints) if (kv.first == k) return kv.second; return -1; };
+    EXPECT_EQ(getint("squads"), 1); EXPECT_EQ(getint("members"), 3);
+    ASSERT_EQ(cam.references.size(), 1u); EXPECT_EQ(cam.references[0].first, "zones");
+    for (const auto& z : cam.references[0].second) EXPECT_EQ(z.values[2], 1);
+    int platoons = 0; for (const auto& r : f.records) if (r.kind == 34) { ++platoons; bool has = false; for (auto& kv : r.strings) if (kv.first == "platoon stringID") has = true; EXPECT_TRUE(has); }
+    EXPECT_EQ(platoons, 1);
 }
