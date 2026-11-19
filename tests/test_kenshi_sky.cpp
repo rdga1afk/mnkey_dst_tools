@@ -216,3 +216,12 @@ TEST(KenshiSky, AtmosphereDefaultsMatchTheExeOptionsBlock) {
     }
     EXPECT_EQ(rows, 11); EXPECT_EQ(a.samples, 4);
 }
+
+// The water map bounds of the exe (data 0x141693efc and 0x1416c9fb0, float32 bits read from the exe) against ours.
+#include <monkey_dust/render/kenshi_water.h>
+TEST(KenshiWater, MapBoundsMatchTheExeConstants) {
+    const uint32_t hi = 0x48100000u, lo = 0xc8100000u;   // 147456.0 and -147456.0
+    float fhi, flo; std::memcpy(&fhi, &hi, 4); std::memcpy(&flo, &lo, 4);
+    EXPECT_EQ(md::kWaterMapBoundsUnits, fhi); EXPECT_EQ(-md::kWaterMapBoundsUnits, flo);
+    EXPECT_FLOAT_EQ(md::WaterMapSpanMetres(), 29491.2f);   // 294912 units of 0.1 m
+}
