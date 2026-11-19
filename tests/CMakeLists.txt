@@ -78,6 +78,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_reflect_camera.cpp
     ${MD_UTEST_DIR}/test_csm_splits.cpp
     ${MD_UTEST_DIR}/test_grass_placement.cpp
+    ${MD_UTEST_DIR}/test_grass_pages.cpp
     ${MD_UTEST_DIR}/test_pu_script.cpp
     ${MD_UTEST_DIR}/test_pu_system.cpp
     ${MD_UTEST_DIR}/test_lod_state.cpp
