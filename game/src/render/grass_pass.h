@@ -14,13 +14,13 @@ struct Vertex { float x, y, z; uint8_t rgba[4]; float u, v; };   // metres in th
 
 struct Run { int grass = 0; uint32_t first_index = 0, index_count = 0; };
 
-struct Page { int run = 0; uint32_t first_index = 0, index_count = 0; md::world::PageBox box; };   // the blades of one grass page inside one run: one contiguous index range
+struct Page { int run = 0; uint32_t blades = 0; uint32_t first_index = 0, index_count = 0; md::world::PageBox box; };   // the blades of one grass cell (1/64 of a page) inside one run: one contiguous index range
 
 struct Mesh {   // built on a worker, uploaded by SetMesh on the render thread
     std::vector<Vertex> verts;
     std::vector<uint32_t> idx;
     std::vector<Run> runs;       // one per GRASS record, in `sprites` order
-    std::vector<Page> pages;     // inside every run, in index order: the unit of the visibility test
+    std::vector<Page> pages;     // inside every run, in index order: the unit of the visibility test (cells)
     std::vector<std::string> sprites;   // install-relative file of each run's GRASS record
     size_t blades = 0;
 };

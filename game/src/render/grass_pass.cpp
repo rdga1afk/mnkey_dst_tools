@@ -79,8 +79,8 @@ void Build(const std::vector<md::world::Blade>& blades, const md::world::Foliage
     out = Mesh{};
     std::vector<size_t> order(blades.size());
     for (size_t i = 0; i < order.size(); ++i) order[i] = i;
-    auto pk = [&](size_t i) { return md::world::GrassPageKey(blades[i].x, blades[i].z); };
-    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return blades[a].grass != blades[b].grass ? blades[a].grass < blades[b].grass : pk(a) < pk(b); });   // by record, then by page
+    auto pk = [&](size_t i) { return md::world::GrassCellKey(blades[i].x, blades[i].z); };
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return blades[a].grass != blades[b].grass ? blades[a].grass < blades[b].grass : pk(a) < pk(b); });   // by record, then by page and cell inside it
     out.verts.reserve(blades.size() * 8); out.idx.reserve(blades.size() * 12);
     int cur = -1; int64_t curpage = 0; bool open = false;
     auto close_page = [&]() { if (open) out.pages.back().index_count = (uint32_t)out.idx.size() - out.pages.back().first_index; open = false; };
@@ -97,7 +97,7 @@ void Build(const std::vector<md::world::Blade>& blades, const md::world::Foliage
         const int64_t key = pk(k);
         if (!open || key != curpage) {
             close_page(); curpage = key; open = true;
-            Page pg; pg.run = (int)out.runs.size() - 1; pg.first_index = (uint32_t)out.idx.size();
+            Page pg; pg.blades = 0; pg.run = (int)out.runs.size() - 1; pg.first_index = (uint32_t)out.idx.size();
             for (int i = 0; i < 3; ++i) { pg.box.lo[i] = 1e30f; pg.box.hi[i] = -1e30f; }
             out.pages.push_back(pg);
         }
@@ -114,6 +114,7 @@ void Build(const std::vector<md::world::Blade>& blades, const md::world::Foliage
             const uint32_t i6[6] = { v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2 };
             out.idx.insert(out.idx.end(), i6, i6 + 6);
         };
+        ++out.pages.back().blades;
         quad(ca, sa);
         if (g.cross_quads) quad(-sa, ca);
         md::world::PageBox& bx = out.pages.back().box;   // the blade box plus the sway margin of the vertex program (direction 0.3 m, a metre to be safe)
@@ -207,7 +208,7 @@ void Record(const Frame& f) {
     SDL_PushGPUVertexUniformData(f.cmd, 0, vu.b.data(), (Uint32)vu.b.size());
     SDL_PushGPUFragmentUniformData(f.cmd, 0, fu.b.data(), (Uint32)fu.b.size());
     SDL_GPUViewport vp = { 0.f, 0.f, (float)f.w, (float)f.h, 0.f, 1.f }; SDL_SetGPUViewport(rp, &vp);
-    int drawn = 0, pages_seen = 0, pages_vis = 0;
+    int drawn = 0, pages_seen = 0, pages_vis = 0; size_t blades_vis = 0;
     static const bool cull = !getenv("MD_GRASS_CULL") || getenv("MD_GRASS_CULL")[0] != '0';   // page culling is on; MD_GRASS_CULL=0 draws every page as before
     size_t pg = 0;
     for (size_t i = 0; i < S.mesh.runs.size() && i < S.tex.size(); ++i) {
@@ -217,19 +218,19 @@ void Record(const Frame& f) {
         if (!r.index_count || !S.tex[i]->SDLTexture()) continue;
         SDL_GPUTextureSamplerBinding tb[4] = { { S.none.SDLTexture(), S.none.SDLSampler() }, { S.tex[i]->SDLTexture(), S.smp }, { S.tex[i]->SDLTexture(), S.smp }, { f.terrain_depth, S.none.SDLSampler() } };
         SDL_BindGPUFragmentSamplers(rp, 0, tb, 4);
-        if (!cull) { SDL_DrawGPUIndexedPrimitives(rp, r.index_count, 1, r.first_index, 0, 0); ++drawn; pages_seen += (int)(pg - pg0); pages_vis += (int)(pg - pg0); continue; }
+        if (!cull) { SDL_DrawGPUIndexedPrimitives(rp, r.index_count, 1, r.first_index, 0, 0); ++drawn; pages_seen += (int)(pg - pg0); pages_vis += (int)(pg - pg0); for (size_t j = pg0; j < pg; ++j) blades_vis += S.mesh.pages[j].blades; continue; }
         uint32_t first = 0, count = 0;    // consecutive visible pages are one draw
         for (size_t j = pg0; j < pg; ++j) {
             const md::grasspass::Page& P = S.mesh.pages[j]; ++pages_seen;
             if (!md::world::PageVisible(f.view_proj, P.box)) continue;
-            ++pages_vis;
+            ++pages_vis; blades_vis += P.blades;
             if (count && first + count == P.first_index) count += P.index_count;
             else { if (count) { SDL_DrawGPUIndexedPrimitives(rp, count, 1, first, 0, 0); ++drawn; } first = P.first_index; count = P.index_count; }
         }
         if (count) { SDL_DrawGPUIndexedPrimitives(rp, count, 1, first, 0, 0); ++drawn; }
     }
     SDL_EndGPURenderPass(rp);
-    static int logged = 0, last_vis = -1; if (logged++ % 600 == 0 || pages_vis != last_vis) fprintf(stderr, "[Grass] pass drew %d draws for %zu runs, pages visible %d of %d, %zu blades\n", drawn, S.mesh.runs.size(), pages_vis, pages_seen, S.mesh.blades);
+    static int logged = 0, last_vis = -1; if (logged++ % 600 == 0 || pages_vis != last_vis) fprintf(stderr, "[Grass] pass drew %d draws for %zu runs, cells visible %d of %d, blades drawn %zu of %zu\n", drawn, S.mesh.runs.size(), pages_vis, pages_seen, blades_vis, S.mesh.blades);
     last_vis = pages_vis;
 }
 

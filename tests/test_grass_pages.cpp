@@ -50,3 +50,26 @@ TEST(GrassPages, VisiblePageSetForFixedCameras) {
         if (w > 0.f && std::fabs(cx) < w && std::fabs(cy) < w && cz > 0.f && cz < w) EXPECT_TRUE(PageVisible(m, Box(x, z))) << i << " " << j;
     }
 }
+
+TEST(GrassPages, CellKeyIsPageThenEightByEightCell) {
+    const double o = -147456.0;
+    EXPECT_EQ(GrassCellKey(o, o), 0);
+    EXPECT_EQ(GrassCellKey(o + 287.9, o), 0);
+    EXPECT_EQ(GrassCellKey(o + 288.0, o), 8);                    // next cell along x inside the page
+    EXPECT_EQ(GrassCellKey(o, o + 288.0), 1);                    // next cell along z
+    EXPECT_EQ(GrassCellKey(o + 2303.9, o + 2303.9), 63);         // last cell of page 0
+    EXPECT_EQ(GrassCellKey(o + 2304.0, o), 4096 * 64);           // first cell of the next page along x
+    EXPECT_EQ(GrassCellKey(o + 3000.0, o + 100.0) / 64, GrassPageKey(o + 3000.0, o + 100.0));
+}
+
+TEST(GrassPages, VisibleCellSetForFixedCameras) {
+    const float eye[3] = { 0.f, 1.7f, 0.f };
+    // a 28.8 m cell grid 20 x 20 around the camera (576 m square): the visible set for two views is fixed (regression guard) and smaller than the page set it replaces
+    auto count = [&](float yaw, float side, int n) { float m[16]; Vp(eye, yaw, m); int v = 0; for (int i = -n; i < n; ++i) for (int j = -n; j < n; ++j) v += PageVisible(m, Box((i + 0.5f) * side, (j + 0.5f) * side, side * 0.5f)) ? 1 : 0; return v; };
+    const int cells = count(0.f, 28.8f, 10), turned = count(1.5707963f, 28.8f, 10);
+    EXPECT_EQ(cells, 128); EXPECT_EQ(turned, 128);   // of 400 cells
+    EXPECT_LT(cells, 400);
+    float m[16]; Vp(eye, 0.f, m);
+    EXPECT_FALSE(PageVisible(m, Box(0.f, -100.f, 14.4f)));       // a cell behind the camera
+    EXPECT_TRUE(PageVisible(m, Box(0.f, 100.f, 14.4f)));
+}
