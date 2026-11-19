@@ -55,6 +55,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_toroidal_update.cpp
     ${MD_UTEST_DIR}/test_gpu_pipeline_safety_check.cpp
     ${MD_UTEST_DIR}/test_fcs.cpp
+    ${MD_UTEST_DIR}/test_kenshi_save.cpp
     ${MD_UTEST_DIR}/test_zone_buildings.cpp
     ${MD_UTEST_DIR}/test_foliage_scatter.cpp
     ${MD_UTEST_DIR}/test_gbuf_normal.cpp

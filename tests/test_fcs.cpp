@@ -117,8 +117,15 @@ TEST(Fcs, SerializeRoundTripsSynthetic) {
         ASSERT_TRUE(Serialize(f, out, e)) << e.Message();
         EXPECT_EQ(in, out) << "filetype " << ft;
     }
-    File f15; f15.header.filetype = 15; std::vector<uint8_t> out; Error e;
-    EXPECT_FALSE(Serialize(f15, out, e));
+    File f14; f14.header.filetype = 14; std::vector<uint8_t> out; Error e;
+    EXPECT_FALSE(Serialize(f14, out, e));
+    // v15 (save / zone files): written and parsed back, trailers included
+    File f15; f15.header.filetype = 15; f15.header.id_counter = 9; f15.has_trailer = true; f15.trailer = { 1, 2, 3 }; f15.trailers = { { 4 }, {} };
+    Record r; r.kind = 4; r.id = 1; r.name = "n"; r.string_id = "1-x"; f15.records.push_back(r);
+    ASSERT_TRUE(Serialize(f15, out, e)) << e.Message();
+    File back; ASSERT_TRUE(Parse(out.data(), out.size(), back, e)) << e.Message();
+    EXPECT_EQ(back.header.id_counter, 9); EXPECT_EQ(back.records.size(), 1u); EXPECT_EQ(back.trailer, f15.trailer); EXPECT_EQ(back.trailers, f15.trailers);
+    std::vector<uint8_t> out2; ASSERT_TRUE(Serialize(back, out2, e)); EXPECT_EQ(out, out2);
 }
 
 TEST(FcsData, InstalledFilesRoundTripByteForByte) {
