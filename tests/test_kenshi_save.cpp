@@ -115,4 +115,11 @@ TEST(KenshiSave, FormatFollowsTheExeWriter) {
     for (const auto& z : cam.references[0].second) EXPECT_EQ(z.values[2], 1);
     int platoons = 0; for (const auto& r : f.records) if (r.kind == 34) { ++platoons; bool has = false; for (auto& kv : r.strings) if (kv.first == "platoon stringID") has = true; EXPECT_TRUE(has); }
     EXPECT_EQ(platoons, 1);
+    // the platoon record names its file ("content file" = platoon/<name>.platoon) and the reader follows that name
+    for (auto& r : f.records) if (r.kind == 34) { ASSERT_EQ(r.files.size(), 1u); EXPECT_EQ(r.files[0].first, "content file"); EXPECT_EQ(r.files[0].second, "platoon/Nameless_0.platoon"); }
+    fs::rename(d / "platoon" / "Nameless_0.platoon", d / "platoon" / "moved.platoon");
+    for (auto& r : f.records) if (r.kind == 34) r.files[0].second = "platoon/moved.platoon";
+    ASSERT_TRUE(md::fcs::WriteFile((d / "quick.save").string(), f, e));
+    KenshiSave back; ASSERT_TRUE(ReadKenshiSave(d.string(), back, err)) << err;
+    ASSERT_EQ(back.squads.size(), 1u); EXPECT_EQ(back.squads[0].characters.size(), 3u);
 }
