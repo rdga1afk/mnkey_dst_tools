@@ -21,7 +21,7 @@ KenshiSave Sample() {
         c.position[0] = 100.f + i; c.position[1] = 5.f; c.position[2] = 200.f - i;
         c.rotation[0] = 1.f; c.rotation[2] = 0.25f * i;
         c.stats = { {"strength", 20.f + i}, {"attack", 15.5f} };
-        c.dead = i == 2; c.unconscious = i == 1; c.blood = 100.f - 10 * i; c.hunger = 2.f + i; c.fed = 0.5f * i;
+        c.dead = i == 2; c.unconscious = i == 1; c.coma = i == 1; c.ko = 3.5f * i; c.bleeding = 0.25f * i; c.blood = 100.f - 10 * i; c.hunger = 2.f + i; c.fed = 0.5f * i;
         sq.characters.push_back(c);
     }
     s.squads.push_back(sq);
@@ -45,6 +45,7 @@ TEST(KenshiSave, RoundTripValues) {
     EXPECT_EQ(c.template_id, "char2"); EXPECT_EQ(c.name, "Guy 2"); EXPECT_FLOAT_EQ(c.position[2], 198.f); EXPECT_FLOAT_EQ(c.rotation[2], 0.5f);
     ASSERT_EQ(c.stats.size(), 2u); EXPECT_EQ(c.stats[0].first, "strength"); EXPECT_FLOAT_EQ(c.stats[0].second, 22.f);
     EXPECT_TRUE(c.dead); EXPECT_FALSE(c.unconscious); EXPECT_TRUE(r.squads[0].characters[1].unconscious);
+    EXPECT_FLOAT_EQ(r.squads[0].characters[1].ko, 3.5f); EXPECT_FLOAT_EQ(r.squads[0].characters[2].bleeding, 0.5f); EXPECT_TRUE(r.squads[0].characters[1].coma);
     EXPECT_FLOAT_EQ(c.blood, 80.f); EXPECT_FLOAT_EQ(c.hunger, 4.f); EXPECT_FLOAT_EQ(c.fed, 1.f);
 }
 
