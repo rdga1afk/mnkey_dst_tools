@@ -71,7 +71,7 @@ static int   s_set_hf        = 0;      // "hf": history filter of the ground whi
 static int   s_set_pvt       = 0;      // "pvt": ground cache (PVT) in pass A (#207, owner 01.11): 0 Off (default), 1 On
 static int   s_set_ush       = 0;      // "ush": sharpening of the upscale while the camera moves (#207, owner 31.10): 0 Quality (default, 5 taps + adaptive), 1 Fast (3 taps), 2 Off (1 tap)
 static int   s_set_chunk     = 16;
-static bool  s_set_cmaa2     = true;   // "cmaa2": CMAA 2 (DE-360, owner 19.11), on by default
+static bool  s_set_cmaa2     = true;   // "aa": CMAA 2 (DE-360, owner 19.11), on by default; a new key, so a layout saved while CMAA 2 was off by default does not pin it off
 // Kenshi's graphics sliders (#175, docs/research/KENSHI_GRAPHICS_OPTIONS.md): names, ranges and defaults of settings.cfg
 static float s_set_tdetail   = 1.f;    // "td": terrain detail 0..1, Kenshi 1.0
 static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.0
@@ -158,7 +158,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
         if (strstr(buf, "\"grp\"")) { s_set_reuse_period = (int)f3_parse_f(buf, "\"grp\""); if (s_set_reuse_period != 4 && s_set_reuse_period != 8) s_set_reuse_period = 16; }
         if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
-        if (strstr(buf, "\"cmaa2\"")) s_set_cmaa2 = f3_parse_f(buf, "\"cmaa2\"") != 0.f;
+        if (strstr(buf, "\"aa\"")) s_set_cmaa2 = f3_parse_f(buf, "\"aa\"") != 0.f;
         if (strstr(buf, "\"fxaa\"")) { static bool warned = false; if (!warned) { warned = true; fprintf(stderr, "[F3] layout key \"fxaa\" ignored: FXAA was removed (DE-360)\n"); } }
         if (strstr(buf, "\"td\"")) { s_set_tdetail = f3_parse_f(buf, "\"td\""); if (s_set_tdetail < 0.f || s_set_tdetail > 1.f) s_set_tdetail = 1.f; }
         if (strstr(buf, "\"tdi\"")) { s_set_tdistant = f3_parse_f(buf, "\"tdi\""); if (s_set_tdistant < 0.f || s_set_tdistant > 1.f) s_set_tdistant = 0.f; }
@@ -202,7 +202,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d,\"cmaa2\":%d}\n",
+        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d,\"aa\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,

@@ -57,12 +57,12 @@ void HialgoPass::Ensure(int w, int h, SDL_GPUTextureFormat fmt) {
 }
 
 void HialgoPass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle src, int src_w, int src_h, md::GpuTextureHandle out, int out_w, int out_h,
-                       int stair_taps, bool align_x2, bool catmull, SDL_GPUTexture* haze_depth) {
+                       int stair_taps, bool align_x2, bool catmull, SDL_GPUTexture* haze_depth, bool aa) {
     if (!ready_ || !a_ || !b_ || w_ != src_w || h_ != src_h || !src || !out) return;
     GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd; cpd.cmd = cmd; cpd.depth_tex = nullptr; cpd.load_color = false;
     // 1. CMAA 2 on the internal frame (gamma: the frame is the tonemapped LDR composite): src -> a_
-    if (!cmaa_.Apply(cmd, src, src_w, src_h, a_)) return;
-    SDL_GPUTexture* last = a_; SDL_GPUTexture* spare = b_;
+    if (aa && !cmaa_.Apply(cmd, src, src_w, src_h, a_)) return;
+    SDL_GPUTexture* last = aa ? a_ : src; SDL_GPUTexture* spare = aa ? b_ : a_;   // md.set_aa("off"): the stages after it read the source directly
     if (md::HeatHazePass::Get().Needed()) { md::HeatHazePass::Get().Run(cmd, last, spare, haze_depth, src_w, src_h); std::swap(last, spare); }
     if (stair_taps > 0) {   // 2. stair-only blur
         cpd.color_tex[0] = spare; cb.BeginColorPass(cpd); cb.BindPipeline(&blur_);

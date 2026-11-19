@@ -551,7 +551,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                                 GpuPopDebugGroup(fc.cmd);
                             }
                             if (g_hialgo && sr_up.hialgo_.Ready() && EffectiveResolutionScale() < 0.999f) {   // DE-312: CMAA 2 (DE-360) -> (stair blur) -> neighbour-clamped upscale + clamped sharpening
-                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth, g_opt_cmaa2); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
                             if (!upscaled && g_opt_sgsr2 && sr_up.sgsr2_.Ready() && EffectiveResolutionScale() < 0.999f) {   // dynres 0.6: SGSR 2, depth of the G-buffer (terrain + NPC prepass) and the inverse view-projection of this frame
                                 auto& tsp_up = sr_up.terrain_shading_projected_;

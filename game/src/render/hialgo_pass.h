@@ -18,7 +18,7 @@ public:
     // stair_taps 0 = no stair blur; align_x2 = corner-aligned parity grid; catmull = 4x4 Catmull-Rom (else bilinear)
     void Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle src, int src_w, int src_h, md::GpuTextureHandle out, int out_w, int out_h,
                int stair_taps, bool align_x2, bool catmull,
-               SDL_GPUTexture* haze_depth = nullptr);   // haze_depth: the live ground's R32F target; the heat haze (when Needed) runs between the CMAA 2 and the stair blur (compositors.cfg: FXAA, HeatHaze)
+               SDL_GPUTexture* haze_depth = nullptr, bool aa = true);   // haze_depth: the live ground's R32F target; the heat haze (when Needed) runs between the CMAA 2 and the stair blur (compositors.cfg: FXAA, HeatHaze)
 private:
     Cmaa2Pass cmaa_; GpuPipeline blur_, up_;
     SDL_GPUTexture* a_ = nullptr; SDL_GPUTexture* b_ = nullptr; int w_ = 0, h_ = 0; SDL_GPUTextureFormat fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;
