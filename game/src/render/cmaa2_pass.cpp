@@ -105,14 +105,20 @@ bool Cmaa2Pass::EnsureTargets(int w, int h) {
 bool Cmaa2Pass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle scene, int w, int h, md::GpuTextureHandle out_tex) {
     if (!ready_ || !scene || !out_tex || w <= 0 || h <= 0 || !EnsureTargets(w, h)) return false;
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
-    if (!ctrl_zeroed_) {   // the counters start at 0 and the second dispatch-arguments pass clears them for the next frame
-        SDL_GPUTransferBufferCreateInfo ti{}; ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD; ti.size = 64;
+    if (!ctrl_zeroed_) {   // D3D resources start zeroed and the original relies on it (counters, edges, list heads): SDL_GPU memory is not, so zero everything once
+        const Uint32 ew = (Uint32)(w + 1) / 2, hh = (Uint32)(h + 1) / 2, px = (Uint32)w * (Uint32)h;
+        const Uint32 sizes[] = { 64, px / 4 * 4, (px + 3) / 6 * 4, px / 2 * 8, ew * (Uint32)h * 4, ew * hh * 4 };
+        Uint32 big = 0; for (Uint32 z : sizes) big = z > big ? z : big;
+        SDL_GPUTransferBufferCreateInfo ti{}; ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD; ti.size = big;
         SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &ti);
         if (!tb) return false;
-        void* p = SDL_MapGPUTransferBuffer(dev, tb, false); memset(p, 0, 64); SDL_UnmapGPUTransferBuffer(dev, tb);
+        void* p = SDL_MapGPUTransferBuffer(dev, tb, false); memset(p, 0, big); SDL_UnmapGPUTransferBuffer(dev, tb);
         SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
-        SDL_GPUTransferBufferLocation src{ tb, 0 }; SDL_GPUBufferRegion dst{ ctrl_, 0, 64 };
-        SDL_UploadToGPUBuffer(cp, &src, &dst, false);
+        SDL_GPUBuffer* bufs[] = { ctrl_, cand_, loc_, item_ };
+        for (int i = 0; i < 4; ++i) { SDL_GPUTransferBufferLocation src{ tb, 0 }; SDL_GPUBufferRegion dst{ bufs[i], 0, sizes[i] }; SDL_UploadToGPUBuffer(cp, &src, &dst, false); }
+        SDL_GPUTextureTransferInfo e{ tb, 0, ew, (Uint32)h }, hd{ tb, 0, ew, hh };
+        SDL_GPUTextureRegion er{ edges_, 0, 0, 0, 0, 0, ew, (Uint32)h, 1 }, hr{ heads_, 0, 0, 0, 0, 0, ew, hh, 1 };
+        SDL_UploadToGPUTexture(cp, &e, &er, false); SDL_UploadToGPUTexture(cp, &hd, &hr, false);
         SDL_EndGPUCopyPass(cp);
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         ctrl_zeroed_ = true;
