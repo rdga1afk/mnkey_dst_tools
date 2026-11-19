@@ -18,7 +18,7 @@ std::vector<float> Floats(const std::string& s) {
 }  // namespace
 
 TEST(Steer, MatchesExeEmulatorVectors) {
-    std::ifstream in("tools/tests/data/exe_steer.tsv"); std::string line; int rows = 0, blocks = 0; double worst = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/exe_steer.tsv"); std::string line; int rows = 0, blocks = 0; double worst = 0;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#' || line.rfind("mode", 0) == 0) continue;
         std::istringstream ss(line); std::string f[9]; for (auto& x : f) std::getline(ss, x, '\t');

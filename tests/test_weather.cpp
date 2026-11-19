@@ -174,7 +174,7 @@ std::vector<std::vector<std::string>> WxRows(const char* path) {
 }   // namespace
 
 TEST(Weather, DustStepMatchesExeEmulatorVectors) {
-    const auto rows = WxRows("tools/tests/data/exe_weather_dust.tsv");
+    const auto rows = WxRows(MD_TOOLS_TEST_DATA "/exe_weather_dust.tsv");
     ASSERT_GE(rows.size(), 50u);
     for (const auto& f : rows) {
         const float cur = WxFl(f[0]), rec = WxFl(f[1]), st = WxFl(f[2]), dt = WxFl(f[3]); uint32_t want = (uint32_t)std::stoul(f[4], nullptr, 16);
@@ -183,14 +183,14 @@ TEST(Weather, DustStepMatchesExeEmulatorVectors) {
 }
 
 TEST(Weather, WetnessStepMatchesExeEmulatorVectors) {
-    const auto rows = WxRows("tools/tests/data/exe_weather_wetness.tsv");
+    const auto rows = WxRows(MD_TOOLS_TEST_DATA "/exe_weather_wetness.tsv");
     ASSERT_EQ(rows.size(), 17u);
     for (const auto& f : rows) EXPECT_EQ(WxBits(WetnessStep(WxFl(f[0]), WxFl(f[1]), WxFl(f[2]))), WxBits(WxFl(f[3]))) << "cur " << f[0] << " target " << f[1] << " dt " << f[2];
 }
 
 // Rain and wind blocks of the exe (52 rows: Unicorn, re-run in Ghidra P-code): the values ours computes must be bit-equal.
 TEST(Weather, RainAndWindStepMatchExeEmulatorVectors) {
-    const auto rows = WxRows("tools/tests/data/exe_weather_rainwind.tsv");
+    const auto rows = WxRows(MD_TOOLS_TEST_DATA "/exe_weather_rainwind.tsv");
     ASSERT_EQ(rows.size(), 52u);
     for (const auto& f : rows) {
         const float rr = WxFl(f[2]), rw = WxFl(f[3]), st = WxFl(f[4]), wv = WxFl(f[5]);

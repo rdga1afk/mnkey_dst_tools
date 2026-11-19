@@ -18,7 +18,7 @@ std::vector<float> Floats(const std::string& s) {
 }  // namespace
 
 TEST(NeighbourAvoid, MatchesExeEmulatorVectors) {
-    std::ifstream in("tools/tests/data/exe_neighbour.tsv"); std::string line; int rows = 0, pushed = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/exe_neighbour.tsv"); std::string line; int rows = 0, pushed = 0;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#' || line.rfind("char_pos", 0) == 0) continue;
         std::istringstream ss(line); std::string f[11]; for (auto& x : f) std::getline(ss, x, '\t');

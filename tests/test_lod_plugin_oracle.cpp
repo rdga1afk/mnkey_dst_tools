@@ -18,7 +18,7 @@ namespace {
 struct Row { float d, f8, fc, ramp, flat; };
 float Bits(const std::string& h) { uint32_t u = (uint32_t)std::stoul(h, nullptr, 16); float f; std::memcpy(&f, &u, 4); return f; }
 std::vector<Row> Load() {
-    std::vector<Row> v; std::ifstream in("tools/tests/data/plugin_node_value.tsv"); std::string line;
+    std::vector<Row> v; std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_node_value.tsv"); std::string line;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#' || line[0] == 'd') continue;
         std::istringstream ss(line); std::string d, f8, fc, rb, fb; std::getline(ss, d, '\t'); std::getline(ss, f8, '\t'); std::getline(ss, fc, '\t'); std::getline(ss, rb, '\t'); std::getline(ss, fb, '\t');
@@ -49,7 +49,7 @@ TEST(LodPluginOracle, FarRampEqualsThePluginsFunction) {
 // Border snap (FUN_180005e10): the plugin's index entries for every side, 16- and 64-cell patches, level difference 0..3; sides 0 / 2 are the x min / z min
 // borders, 1 / 3 the x max / z max ones.
 TEST(LodPluginOracle, EdgeSnapEqualsThePluginsFunction) {
-    std::ifstream in("tools/tests/data/plugin_edge_snap.tsv"); std::string line; int rows = 0, bad = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_edge_snap.tsv"); std::string line; int rows = 0, bad = 0;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream ss(line); std::string f[4];
@@ -104,7 +104,7 @@ TEST(LodPluginOracle, FogParamsXIsTheViewDistanceTimesTen) {
 
 // setPatchSize (FUN_1800016c0): vertices per side N + 1 and the neighbour limit log2(N) - 1, N = 2..128.
 TEST(LodPluginOracle, NeighbourLimitEqualsThePluginsSetPatchSize) {
-    std::ifstream in("tools/tests/data/plugin_patch_size.tsv"); std::string line; int rows = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_patch_size.tsv"); std::string line; int rows = 0;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#') continue;
         int n, verts, f0; std::istringstream ss(line); ss >> n >> verts >> f0;
@@ -116,7 +116,7 @@ TEST(LodPluginOracle, NeighbourLimitEqualsThePluginsSetPatchSize) {
 
 // The sun's direction (exe SkyXController::update, FUN_14066d400, run in the emulator): rows hour / sunrise / sunset / tilt -> x, y, z (float bits).
 TEST(LodPluginOracle, SunDirectionEqualsTheExesUpdate) {
-    std::ifstream in("tools/tests/data/exe_sun_direction.tsv"); std::string line; int rows = 0; double worst = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/exe_sun_direction.tsv"); std::string line; int rows = 0; double worst = 0;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream ss(line); std::string f[7]; for (int k = 0; k < 7; ++k) std::getline(ss, f[k], '\t');
@@ -150,7 +150,7 @@ TEST(LodPluginOracle, FogSkydomeRadiusIsTheInstallsDefault) {
 // at the vector's level (a finer one is the same level, ours only looks for the same or a coarser cell). One split adds three nodes, so the count is 2 + 3 * splits; only sides with at most one split are compared.
 // FUN_180003d80 (opposite side) and FUN_180003da0 (link neighbours) have no counterpart in ours (flat grid).
 TEST(LodPluginOracle, RestrictNeighboursSplitCountEqualsThePlugins) {
-    std::ifstream in("tools/tests/data/plugin_neighbours.tsv"); std::string line; int rows = 0, sides = 0, bad = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_neighbours.tsv"); std::string line; int rows = 0, sides = 0, bad = 0;
     const int di[4] = {0, 0, -1, 1}, dj[4] = {-1, 1, 0, 0};
     while (std::getline(in, line)) {
         if (line.rfind("restrict\t", 0) != 0) continue;

@@ -111,6 +111,7 @@ target_link_libraries(md_tests PRIVATE
     GTest::gtest_main
 )
 target_include_directories(md_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_definitions(md_tests PRIVATE MD_TOOLS_TEST_DATA="${MD_UTEST_DIR}/data")   # the emulator vectors: same path in main and standalone mode
 
 md_gaia_pch(md_tests)
 

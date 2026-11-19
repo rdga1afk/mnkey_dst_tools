@@ -62,7 +62,13 @@ jobs:
           git -C ws/engine checkout -q "$E"
           git -C ws/engine submodule update --init --depth 1 third_party/recastnavigation   # navtile_probe compiles the Detour sources direct (tools/CMakeLists.txt)
           mkdir -p pkg
-          curl -fsSL -o engine.tar.zst "https://github.com/${ENGINE_REPO}/releases/download/build-${E12}/engine-${E12}-release.tar.zst"
+          # the engine Package job (about 4 min) may still be running when this one starts: wait for its release, bounded
+          URL="https://github.com/${ENGINE_REPO}/releases/download/build-${E12}/engine-${E12}-release.tar.zst"
+          for i in $(seq 1 30); do
+            curl -fsSL -o engine.tar.zst "$URL" && break
+            [ "$i" = 30 ] && { echo "::error::engine release build-${E12} not published"; exit 1; }
+            echo "engine release build-${E12} not there yet (try $i of 30), waiting 60 s"; sleep 60
+          done
           tar --zstd -xf engine.tar.zst -C pkg
           cp ws/tools/ci/CMakeLists.txt ws/CMakeLists.txt
 

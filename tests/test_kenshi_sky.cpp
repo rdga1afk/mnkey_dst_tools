@@ -183,7 +183,7 @@ TEST(KenshiHdr, AdaptLuminance) {
 // SkyX_x64.dll AtmosphereManager::_scale (0x180003860) run in the Unicorn emulator (tools_private/research/skyx_leaf_oracle.py -> tools/tests/data/skyx_scale.tsv): ours (KenshiSkySettings::Scale)
 // agrees within 1e-4 relative; the DLL evaluates the polynomial in double and calls the C library's exp.
 TEST(KenshiSky, ScaleMatchesSkyXDllEmulatorVectors) {
-    std::ifstream in("tools/tests/data/skyx_scale.tsv"); std::string line; int rows = 0, inf = 0; double worst = 0;
+    std::ifstream in(MD_TOOLS_TEST_DATA "/skyx_scale.tsv"); std::string line; int rows = 0, inf = 0; double worst = 0;
     while (std::getline(in, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream ss(line); std::string x, d, b; std::getline(ss, x, '\t'); std::getline(ss, d, '\t'); std::getline(ss, b, '\t');
@@ -201,7 +201,7 @@ TEST(KenshiSky, ScaleMatchesSkyXDllEmulatorVectors) {
 
 // The atmosphere options block of sky_controller_create (0x14066e380), floats as read from the exe data addresses (tools/tests/data/exe_sky_create_atmosphere.tsv): our defaults must be bit-equal.
 TEST(KenshiSky, AtmosphereDefaultsMatchTheExeOptionsBlock) {
-    std::ifstream in("tools/tests/data/exe_sky_create_atmosphere.tsv"); ASSERT_TRUE(in.good());
+    std::ifstream in(MD_TOOLS_TEST_DATA "/exe_sky_create_atmosphere.tsv"); ASSERT_TRUE(in.good());
     const md::KenshiAtmosphere a;
     const std::pair<const char*, float> ours[] = { { "inner_radius", a.inner_radius }, { "outer_radius", a.outer_radius }, { "height_position", a.height_position }, { "rayleigh", a.rayleigh }, { "mie", a.mie },
         { "sun_intensity", a.sun_intensity }, { "wavelength_x", a.wavelength.x }, { "wavelength_y", a.wavelength.y }, { "wavelength_z", a.wavelength.z }, { "g", a.g }, { "exposure", a.exposure } };
