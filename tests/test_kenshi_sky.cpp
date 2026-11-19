@@ -227,6 +227,15 @@ TEST(KenshiWater, MapBoundsMatchTheExeConstants) {
 }
 
 // Moon rotation: the exe takes integer hour and minute, so seconds inside a minute do not change the angle (0x140670ed0 / 0x14066ff60).
+TEST(KenshiSky, TimeMultiplierIsTheExeConstantPerGameSpeed) {
+    const unsigned bits = 0x3c162fc9u;   // exe data 0x1416fd928
+    float exe; std::memcpy(&exe, &bits, 4);
+    EXPECT_FLOAT_EQ(md::KenshiSkyHoursPerSecond(1.f), exe);
+    EXPECT_NEAR(md::KenshiSkyHoursPerSecond(1.f), 11.f / 1200.f, 1e-6f);
+    EXPECT_NEAR(24.f / md::KenshiSkyHoursPerSecond(1.f), 2618.18f, 0.1f);   // a 24 h day at speed 1
+    EXPECT_FLOAT_EQ(md::KenshiSkyHoursPerSecond(5.f), 5.f * exe);
+}
+
 TEST(KenshiSky, MoonAngleStepsByWholeMinutes) {
     const float speed = 4.7233f, per_min = speed / 1440.f;
     EXPECT_FLOAT_EQ(md::KenshiMoonAngle(13.f, 0, speed), 13.f * 60.f * per_min);
