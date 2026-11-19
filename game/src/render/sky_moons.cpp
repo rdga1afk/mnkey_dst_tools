@@ -121,13 +121,13 @@ void Draw(GpuPassView& pv, const MdCamera& cam, const float sun[3], float hours)
     const md::KenshiAtmosphere A;
     const float PI = 3.14159265f, thick = A.outer_radius - A.inner_radius, scale = 1.f / thick, depth = thick * 0.5f;
     const float asp = (float)window_get_width() / (float)window_get_height();
-    const float d = 0.5f * md::ViewFarClipM();   // only the direction and the angular size matter: the vertex function forces the depth to the far plane
-    const float tan_s = std::tan(0.01f * PI / 180.f);
+    const float d = md::KenshiMoonDistance(0.5f, md::ViewFarClipM());   // exe: half of near + far clip less its tangent share (0x140670ed0); our camera near is 0.5 (md_camera.h); the vertex function forces the depth to the far plane, so only the direction and the angular size matter
+    const float tan_s = md::KenshiMoonTan();
     pv.BindPipeline(&g.pipe);
     for (int i = 0; i < 2; ++i) {
         Moon& m = g.moon[i];
         const float s = m.size * d * tan_s;
-        const float ang = ((hours + 24.f * (float)g_day) * 60.f) * m.speed / 1440.f;   // minutes since day 0 x speed per minute
+        const float ang = md::KenshiMoonAngle(hours, g_day, m.speed);   // whole minutes since day 0 x speed / 1440, as the exe
         Mat4 world = mat4_mul(mat4_translate(cam.pos.x + m.dir[0] * d, cam.pos.y + m.dir[1] * d, cam.pos.z + m.dir[2] * d), mat4_mul(mat4_rotate_y(ang), mat4_scale(s, s, s)));
         Mat4 wvp = mat4_mul(cam.ViewProjMatrix(asp), world);
         struct { float world[16], wvp[16], cam[4], sun[4], iw[4], k0[4], k1[4]; } u;

@@ -225,3 +225,21 @@ TEST(KenshiWater, MapBoundsMatchTheExeConstants) {
     EXPECT_EQ(md::kWaterMapBoundsUnits, fhi); EXPECT_EQ(-md::kWaterMapBoundsUnits, flo);
     EXPECT_FLOAT_EQ(md::WaterMapSpanMetres(), 29491.2f);   // 294912 units of 0.1 m
 }
+
+// Moon rotation: the exe takes integer hour and minute, so seconds inside a minute do not change the angle (0x140670ed0 / 0x14066ff60).
+TEST(KenshiSky, MoonAngleStepsByWholeMinutes) {
+    const float speed = 4.7233f, per_min = speed / 1440.f;
+    EXPECT_FLOAT_EQ(md::KenshiMoonAngle(13.f, 0, speed), 13.f * 60.f * per_min);
+    EXPECT_FLOAT_EQ(md::KenshiMoonAngle(13.f + 30.f / 3600.f, 0, speed), md::KenshiMoonAngle(13.f, 0, speed));   // 13:00:30 = 13:00
+    EXPECT_FLOAT_EQ(md::KenshiMoonAngle(13.f + 61.f / 3600.f, 0, speed), (13.f * 60.f + 1.f) * per_min);        // 13:01:01 = 13:01
+    EXPECT_FLOAT_EQ(md::KenshiMoonAngle(0.f, 2, speed), 2.f * 24.f * 60.f * per_min);                           // day counter
+    EXPECT_FLOAT_EQ(md::KenshiMoonAngle(23.99f, 0, 1.f), (23.f * 60.f + 59.f) / 1440.f);
+}
+
+TEST(KenshiSky, MoonDistanceAndAngularSizeFollowTheExe) {
+    const float tan_s = md::KenshiMoonTan();
+    EXPECT_NEAR(tan_s, 1.7453e-4f, 1e-8f);                                        // tan(0.01 degrees)
+    EXPECT_FLOAT_EQ(md::KenshiMoonDistance(0.5f, 4000.f), 2000.25f * (1.f - tan_s));
+    const float d1 = md::KenshiMoonDistance(0.5f, 1000.f), d2 = md::KenshiMoonDistance(0.5f, 4000.f);
+    EXPECT_NEAR((35.f * d1 * tan_s) / d1, (35.f * d2 * tan_s) / d2, 1e-6f);        // the node scale over the distance: the angular size does not depend on it
+}
