@@ -229,7 +229,8 @@ void Record(const Frame& f) {
         if (count) { SDL_DrawGPUIndexedPrimitives(rp, count, 1, first, 0, 0); ++drawn; }
     }
     SDL_EndGPURenderPass(rp);
-    static int logged = 0; if (logged++ % 600 == 0) fprintf(stderr, "[Grass] pass drew %d draws for %zu runs, pages visible %d of %d, %zu blades\n", drawn, S.mesh.runs.size(), pages_vis, pages_seen, S.mesh.blades);
+    static int logged = 0, last_vis = -1; if (logged++ % 600 == 0 || pages_vis != last_vis) fprintf(stderr, "[Grass] pass drew %d draws for %zu runs, pages visible %d of %d, %zu blades\n", drawn, S.mesh.runs.size(), pages_vis, pages_seen, S.mesh.blades);
+    last_vis = pages_vis;
 }
 
 void Shutdown() {
