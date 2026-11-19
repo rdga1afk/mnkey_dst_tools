@@ -3,7 +3,9 @@
 #include "cmaa2_pass.h"
 #include "kenshi_hlsl.h"
 #include <monkey_dust/render/gpu_hal_free_functions.h>
+#include <climits>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -17,7 +19,8 @@ const Uint32 kThreads[4][3] = { { 16, 16, 1 }, { 1, 1, 1 }, { 128, 1, 1 }, { 4, 
 
 std::string ShaderPath() {
     const char* e = getenv("MD_CMAA2_HLSL");
-    return e ? e : MD_CMAA2_HLSL;
+    char abs[4096];
+    return realpath(e ? e : MD_CMAA2_HLSL, abs) ? std::string(abs) : std::string(e ? e : MD_CMAA2_HLSL);   // the include must be an absolute path
 }
 
 SDL_GPUBuffer* MakeBuffer(SDL_GPUDevice* dev, Uint32 bytes, SDL_GPUBufferUsageFlags usage) {
