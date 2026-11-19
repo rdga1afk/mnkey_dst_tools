@@ -33,9 +33,9 @@ SDL_GPUTexture* MakeTexture(SDL_GPUDevice* dev, SDL_GPUTextureFormat fmt, int w,
 }
 }
 
-bool Cmaa2Pass::Init() {
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+bool Cmaa2Pass::InitCompute(SDL_GPUDevice* dev) {
     if (!dev) return false;
+    dev_ = dev;
     const std::string src = ShaderPath();
     for (int i = 0; i < 4; ++i) {
         const std::string glue = "#define CMAA2_UAV_STORE_TYPED 1\n#define CMAA2_UAV_STORE_CONVERT_TO_SRGB 0\n#define CMAA2_UAV_STORE_TYPED_UNORM_FLOAT 1\n#define CMAA2_EDGE_DETECTION_LUMA_PATH 1\n#define " + std::string(kEntry[i]) + " main\n#include \"" + src + "\"\n";
@@ -48,17 +48,23 @@ bool Cmaa2Pass::Init() {
         pipe_[i] = SDL_CreateGPUComputePipeline(dev, &ci);
         if (!pipe_[i]) { fprintf(stderr, "[Cmaa2] pipeline %s: %s\n", kEntry[i], SDL_GetError()); Shutdown(); return false; }
     }
+    return true;
+}
+
+bool Cmaa2Pass::Init() {
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!InitCompute(dev)) return false;
     GpuPipeline::Desc pd;
-    pd.vert_path = "shaders/upscale.vert"; pd.frag_path = "shaders/upscale.frag";
+    pd.vert_path = "shaders/upscale.vert"; pd.frag_path = "shaders/cmaa2_copy.frag";
     pd.layout.count = 0; pd.layout.stride = 0;
     pd.raster.depth_test = false; pd.raster.depth_write = false; pd.raster.cull_back = false;
-    pd.has_depth_target = false; pd.frag_uniform_bufs = 1; pd.frag_samplers = 1;
+    pd.has_depth_target = false; pd.frag_uniform_bufs = 0; pd.frag_samplers = 1;
     pd.color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     if (!copy_pipeline_.Create(pd)) { Shutdown(); return false; }
-    pd.color_format = SDL_GPU_TEXTUREFORMAT_INVALID;
+    pd.color_format = SDL_GPU_TEXTUREFORMAT_INVALID;   // the swapchain format
     if (!blit_pipeline_.Create(pd)) { Shutdown(); return false; }
     SDL_GPUSamplerCreateInfo si{};
-    si.min_filter = si.mag_filter = SDL_GPU_FILTER_LINEAR; si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    si.min_filter = si.mag_filter = SDL_GPU_FILTER_NEAREST; si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler_ = GpuCreateSampler(dev, &si);
     ready_ = sampler_ != nullptr;
@@ -66,15 +72,16 @@ bool Cmaa2Pass::Init() {
 }
 
 void Cmaa2Pass::DestroyTargets() {
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    SDL_GPUDevice* dev = dev_;
     if (!dev) return;
+    if (ones_) { SDL_ReleaseGPUTransferBuffer(dev, ones_); ones_ = nullptr; }
     for (SDL_GPUTexture** t : { &in_, &out_, &edges_, &heads_ }) { if (*t) SDL_ReleaseGPUTexture(dev, *t); *t = nullptr; }
     for (SDL_GPUBuffer** b : { &cand_, &loc_, &item_, &ctrl_, &indirect_ }) { if (*b) SDL_ReleaseGPUBuffer(dev, *b); *b = nullptr; }
     w_ = h_ = 0; ctrl_zeroed_ = false;
 }
 
 void Cmaa2Pass::Shutdown() {
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    SDL_GPUDevice* dev = dev_;
     DestroyTargets();
     if (dev) for (SDL_GPUComputePipeline*& p : pipe_) { if (p) SDL_ReleaseGPUComputePipeline(dev, p); p = nullptr; }
     copy_pipeline_.Destroy(); blit_pipeline_.Destroy();
@@ -84,7 +91,7 @@ void Cmaa2Pass::Shutdown() {
 
 bool Cmaa2Pass::EnsureTargets(int w, int h) {
     if (in_ && w == w_ && h == h_) return true;
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    SDL_GPUDevice* dev = dev_;
     DestroyTargets();
     const SDL_GPUBufferUsageFlags rw = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
     const Uint32 px = (Uint32)w * (Uint32)h;
@@ -102,9 +109,9 @@ bool Cmaa2Pass::EnsureTargets(int w, int h) {
     return true;
 }
 
-bool Cmaa2Pass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle scene, int w, int h, md::GpuTextureHandle out_tex) {
-    if (!ready_ || !scene || !out_tex || w <= 0 || h <= 0 || !EnsureTargets(w, h)) return false;
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+bool Cmaa2Pass::Dispatch(md::GpuCommandBufferHandle cmd, int w, int h) {
+    if (!dev_ || !EnsureTargets(w, h)) return false;
+    SDL_GPUDevice* dev = dev_;
     if (!ctrl_zeroed_) {   // D3D resources start zeroed and the original relies on it (counters, edges, list heads): SDL_GPU memory is not, so zero everything once
         const Uint32 ew = (Uint32)(w + 1) / 2, hh = (Uint32)(h + 1) / 2, px = (Uint32)w * (Uint32)h;
         const Uint32 sizes[] = { 64, px / 4 * 4, (px + 3) / 6 * 4, px / 2 * 8, ew * (Uint32)h * 4, ew * hh * 4 };
@@ -123,13 +130,18 @@ bool Cmaa2Pass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle scene
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         ctrl_zeroed_ = true;
     }
-    {   // scene (swapchain format) -> RGBA8 input image, one bilinear tap at the texel centres = a copy
-        GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd;
-        cpd.cmd = cmd; cpd.color_tex[0] = in_; cpd.depth_tex = nullptr; cpd.load_color = false; cpd.color_dont_care = true;
-        cb.BeginColorPass(cpd); cb.BindPipeline(&copy_pipeline_);
-        SDL_GPUTextureSamplerBinding tsb{ scene, sampler_ }; cb.BindFragmentSamplers(0, &tsb, 1);
-        const float u[4] = { 1.f / (float)w, 1.f / (float)h, 0.f, 0.f }; cb.PushFragmentUniforms(0, u, sizeof(u));
-        cb.Draw(3, 0); cb.EndPass();
+    {   // list heads = 0xFFFFFFFF («no item») every frame, as the shader clears them only for quads it found edges in
+        const Uint32 ew = (Uint32)(w + 1) / 2, hh = (Uint32)(h + 1) / 2;
+        if (!ones_) {
+            SDL_GPUTransferBufferCreateInfo ti{}; ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD; ti.size = ew * hh * 4;
+            ones_ = SDL_CreateGPUTransferBuffer(dev, &ti);
+            if (!ones_) return false;
+            void* p = SDL_MapGPUTransferBuffer(dev, ones_, false); memset(p, 0xFF, ew * hh * 4); SDL_UnmapGPUTransferBuffer(dev, ones_);
+        }
+        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUTextureTransferInfo hd{ ones_, 0, ew, hh }; SDL_GPUTextureRegion hr{ heads_, 0, 0, 0, 0, 0, ew, hh, 1 };
+        SDL_UploadToGPUTexture(cp, &hd, &hr, false);
+        SDL_EndGPUCopyPass(cp);
     }
     {   // the output starts as the input: only the blended pixels are written on top
         SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
@@ -151,12 +163,24 @@ bool Cmaa2Pass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle scene
     pass(2, 0, 0, true);
     pass(1, 1, 2, false);
     pass(3, 0, 0, true);
+    return true;
+}
+
+bool Cmaa2Pass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle scene, int w, int h, md::GpuTextureHandle out_tex) {
+    if (!ready_ || !scene || !out_tex || w <= 0 || h <= 0 || !EnsureTargets(w, h)) return false;
+    {   // scene (swapchain format) -> RGBA8 input image, texel-exact copy (cmaa2_copy.frag)
+        GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd;
+        cpd.cmd = cmd; cpd.color_tex[0] = in_; cpd.depth_tex = nullptr; cpd.load_color = false; cpd.color_dont_care = true;
+        cb.BeginColorPass(cpd); cb.BindPipeline(&copy_pipeline_);
+        SDL_GPUTextureSamplerBinding tsb{ scene, sampler_ }; cb.BindFragmentSamplers(0, &tsb, 1);
+        cb.Draw(3, 0); cb.EndPass();
+    }
+    if (!Dispatch(cmd, w, h)) return false;
     {   // the result onto the swapchain
         GpuCommandBuffer cb; GpuCommandBuffer::ColorPassDesc cpd;
         cpd.cmd = cmd; cpd.color_tex[0] = out_tex; cpd.depth_tex = nullptr; cpd.load_color = false; cpd.color_dont_care = true;
         cb.BeginColorPass(cpd); cb.BindPipeline(&blit_pipeline_);
         SDL_GPUTextureSamplerBinding tsb{ out_, sampler_ }; cb.BindFragmentSamplers(0, &tsb, 1);
-        const float u[4] = { 1.f / (float)w, 1.f / (float)h, 0.f, 0.f }; cb.PushFragmentUniforms(0, u, sizeof(u));
         cb.Draw(3, 0); cb.EndPass();
     }
     return true;

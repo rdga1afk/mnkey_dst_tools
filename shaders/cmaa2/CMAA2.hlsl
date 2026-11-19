@@ -15,7 +15,7 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // MODIFIED for monkey_dust (Apache-2.0 section 4(b)): the resource declarations carry [[vk::binding(binding, set)]] for the SDL_GPU compute sets (set 0 read-only
-// storage texture, set 1 read-write storage textures 0..2 then buffers 3..7) instead of D3D registers; the input colour is a storage image read with [] (separate from
+// storage texture, set 1 read-write storage textures 0..2 then buffers 3..7) instead of D3D registers; the input colour is SDL_GPU's read-only storage texture, a sampled image read with Load and an explicit coordinate add (a non-constant Load offset needs the ImageGatherExtended capability, which Vulkan does not guarantee; separate from
 // the output image, which the host initialises with a copy of the input); the edges and the item-list heads are R32_UINT images. The algorithm is unchanged.
 //
 // Conservative Morphological Anti-Aliasing, version: 2.3
@@ -165,7 +165,7 @@ SamplerState                    g_gather_point_clamp_Sampler        : register( 
 // Is the output UAV format R32_UINT for manual shader packing, or a supported UAV store format?
 #if CMAA2_UAV_STORE_TYPED
 #if CMAA2_UAV_STORE_TYPED_UNORM_FLOAT
-[[vk::binding(0,1)]] [[vk::image_format("rgba8")]] RWTexture2D<unorm float4> g_inoutColorWriteonly;       // final output color
+[[vk::binding(0,1)]] [[spv::format_rgba8]] RWTexture2D<unorm float4> g_inoutColorWriteonly;       // final output color
 #else
 [[vk::binding(0,1)]] RWTexture2D<lpfloat4> g_inoutColorWriteonly;       // final output color
 #endif
@@ -190,7 +190,7 @@ SamplerState                    g_gather_point_clamp_Sampler        : register( 
 Texture2DArray<lpfloat4>        g_inColorMSReadonly                 : register( t2 );       // input MS color
 Texture2D<lpfloat>              g_inColorMSComplexityMaskReadonly   : register( t1 );       // input MS color control surface
 #else
-[[vk::binding(0,0)]] [[vk::image_format("rgba8")]] RWTexture2D<lpfloat4> g_inoutColorReadonly;       // input color
+[[vk::binding(0,0)]] Texture2D<lpfloat4> g_inoutColorReadonly;       // input color
 #endif
 
 #if CMAA2_EDGE_DETECTION_LUMA_PATH == 2
@@ -244,7 +244,7 @@ lpfloat3 LoadSourceColor( uint2 pixelPos, int2 offset, int sampleIndex )
 #if CMAA_MSAA_SAMPLE_COUNT > 1
     lpfloat3 color = g_inColorMSReadonly.Load( int4( pixelPos, sampleIndex, 0 ), offset ).rgb;
 #else
-    lpfloat3 color = g_inoutColorReadonly[ int2( pixelPos ) + offset ].rgb;
+    lpfloat3 color = g_inoutColorReadonly.Load( int3( int2( pixelPos ) + offset, 0 ) ).rgb;
 #endif
     return color;
 }
