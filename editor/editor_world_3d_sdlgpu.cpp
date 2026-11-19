@@ -362,6 +362,7 @@ static void DrawTerrainGBuffer(md::GpuCommandBufferHandle cmd, const World3DFram
 static void DrawSkyAndResolve(md::GpuCommandBufferHandle cmd, const World3DFrameCtx& ctx);
 
 // ── Init — background: renderer thread does the heavy chunk build ───────────
+static void EnsureLoader();
 bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
     s_cx = 11750.f;
     s_cy = 8000.f;   // start high to see whole world
@@ -435,7 +436,8 @@ bool Init(const char* overlay_path, int /*zone_ox*/, int /*zone_oz*/) {
     // that was confirmed and fixed. Re-verify with the same GATE 5
     // criterion (5 consecutive F5 reloads, no crash/leak) before trusting
     // this long-term.
-    s_overlay_path = overlay_path;   // the loader thread starts at the first use of the 3D World viewport (EnsureLoader), not at editor start
+    s_overlay_path = overlay_path;
+    EnsureLoader();   // background at nice 10, so the tab is ready at the first click
     return true;
 }
 
