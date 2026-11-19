@@ -1,4 +1,7 @@
 #include <chrono>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <monkey_dust/io/kenshi_dir.h>
 #include "editor_world_3d_sdlgpu.h"
 
@@ -440,6 +443,7 @@ static void EnsureLoader() {
     if (s_loader_started.exchange(true)) return;
     const char* op = s_overlay_path.c_str();
     s_loader_thread = std::thread([op]() {
+        setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 10);   // the loader must not starve the UI thread
         auto t_prev = std::chrono::steady_clock::now();
         auto T = [&](const char* what) {
             auto t = std::chrono::steady_clock::now();
