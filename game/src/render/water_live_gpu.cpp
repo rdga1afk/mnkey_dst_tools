@@ -149,7 +149,7 @@ void WaterLivePass::Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const
     for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r) { float s = 0.f; for (int k = 0; k < 4; ++k) s += f.vp[k * 4 + r] * world[c * 4 + k]; wvp[c * 4 + r] = s; }
     const float cam_obj[4] = { 0.f, f.cam[1] - f.water_y, 0.f, 1.f };   // camera in object space: x,z are 0 because the plane is centred on the camera
     const float scale[4] = { 0.004f, 0.004f, 0.f, 0.f };                 // material water: scale 0.004 (the translated port uses the same)
-    const float bounds[4] = { 0.f, 0.f, md::WaterMapSpanMetres(), md::WaterMapSpanMetres() };   // flowmap / watercolourmap cover the whole world: the exe mapBounds (-147456 .. 147456 units) in our corner-origin metres (0x1409d70f0)
+    const float bounds[4] = { 0.f, 0.f, md::WaterMapSpanMetres(), md::WaterMapSpanMetres() };   // flowmap / watercolourmap cover the whole world: the exe mapBounds (-147456 .. 147456 units) in our corner-origin metres ([KSDP])
     const float off[3] = { f.abs_x, 0.f, f.abs_z }, fog0[4] = { 0.f, 0.f, 0.f, 0.f };
     SetNamed(sh_.vmem, vub_, "scale", scale, 4); SetNamed(sh_.vmem, vub_, "mapBounds", bounds, 4); SetNamed(sh_.vmem, vub_, "pCameraPos", cam_obj, 4); SetNamed(sh_.vmem, vub_, "pFogParams", fog0, 4);
     SetNamed(sh_.vmem, vub_, "worldOffset", off, 3); SetNamed(sh_.vmem, vub_, "sunDirection", f.to_sun, 3);

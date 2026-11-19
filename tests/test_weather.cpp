@@ -140,7 +140,7 @@ TEST(Weather, GroundWetnessRatesAndDeterminism) {
     (void)rose;   // a dry install region may never rain; the bounds above are the check
 }
 
-// Orig: exe 1409e8f70, heat haze: target = record * strength * clamp(6 * sun y, 0, 1), approach by at most dt / 3, snap when closer. Hand-computed rows.
+// Orig: exe [KSDP], heat haze: target = record * strength * clamp(6 * sun y, 0, 1), approach by at most dt / 3, snap when closer. Hand-computed rows.
 TEST(Weather, HeatHazeStepFollowsTheExeRamp) {
     using md::weather::HeatHazeStep;
     EXPECT_FLOAT_EQ(HeatHazeStep(0.f, 0.6f, 1.0f, 0.3f), 0.1f);              // sun high: target 0.6, step 0.1
@@ -151,7 +151,7 @@ TEST(Weather, HeatHazeStepFollowsTheExeRamp) {
     EXPECT_FLOAT_EQ(HeatHazeStep(0.3f, 0.3f, 0.5f, 0.016f), 0.3f);           // at the target: unchanged
 }
 
-// Heat haze block of exe 1409e8f70 run as a slice in the Unicorn emulator (tools_private/research/exe_oracle_vectors3.tsv, heatHazeBlock rows): ours must be bit-equal.
+// Heat haze block of exe [KSDP] run as a slice in the Unicorn emulator (tools_private/research/exe_oracle_vectors3.tsv, heatHazeBlock rows): ours must be bit-equal.
 TEST(Weather, HeatHazeStepMatchesExeEmulatorVectors) {
     struct V { float cur, rec, strength, sun_y, dt, exe; };
     const V v[] = {

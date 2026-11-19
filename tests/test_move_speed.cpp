@@ -1,4 +1,4 @@
-// Movement mode cap of the exe's setMoveSpeed (0x140665150): the numbers are the Unicorn emulator results (exe_oracle_vectors3.tsv, setMoveSpeed rows).
+// Movement mode cap of the exe's setMoveSpeed ([KSDP]): the numbers are the Unicorn emulator results (exe_oracle_vectors3.tsv, setMoveSpeed rows).
 #include <gtest/gtest.h>
 #include <monkey_dust/world/move_speed.h>
 

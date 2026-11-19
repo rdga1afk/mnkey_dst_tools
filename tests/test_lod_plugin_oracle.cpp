@@ -1,4 +1,4 @@
-// The terrain LOD far ramp against the plugin's own function (Plugin_Terrain_x64.dll FUN_180003b30 run in the Unicorn emulator,
+// The terrain LOD far ramp against the plugin's own function (Plugin_Terrain_x64.dll [KSDP] run in the Unicorn emulator,
 // tools_private/research/plugin_oracle.py; the vectors hold numbers only). The plugin multiplies the node value by ramp = t * f8 + 1 - t
 // (t = clamp((d - fc) / fc, 0, 1), f8 = near / far), so a node splits when value * ramp > near: the threshold is near / ramp.
 #include <gtest/gtest.h>
@@ -46,7 +46,7 @@ TEST(LodPluginOracle, FarRampEqualsThePluginsFunction) {
     EXPECT_GT(worst_linear, 0.3) << "the linear ramp matches the plugin: the finding no longer holds";
 }
 
-// Border snap (FUN_180005e10): the plugin's index entries for every side, 16- and 64-cell patches, level difference 0..3; sides 0 / 2 are the x min / z min
+// Border snap ([KSDP]): the plugin's index entries for every side, 16- and 64-cell patches, level difference 0..3; sides 0 / 2 are the x min / z min
 // borders, 1 / 3 the x max / z max ones.
 TEST(LodPluginOracle, EdgeSnapEqualsThePluginsFunction) {
     std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_edge_snap.tsv"); std::string line; int rows = 0, bad = 0;
@@ -87,7 +87,7 @@ TEST(LodPluginOracle, ShaderEdgeSnapEqualsTheCppTwin) {
     EXPECT_EQ(bad, 0);
 }
 
-// Sky controller FUN_14066f190 (read in the exe): pFogParams = (D, D*k1, min(D, D*k2), 0), D = the `view distance` option * 10. The settings loader FUN_1403e84f0 uses the
+// Sky controller [KSDP] (read in the exe): pFogParams = (D, D*k1, min(D, D*k2), 0), D = the `view distance` option * 10. The settings loader [KSDP] uses the
 // default 0x459c4000 (5000.0) when the file has no key; the install's settings.cfg has none. k1 = 0.06 and k2 = 0.6 are not in the exe's code (runtime constants): they come
 // from MeitouClient / Okran, both agreeing.
 #include <monkey_dust/render/kenshi_sky.h>
@@ -102,7 +102,7 @@ TEST(LodPluginOracle, FogParamsXIsTheViewDistanceTimesTen) {
     EXPECT_FLOAT_EQ(fp.z, 50000.f * 0.6f);
 }
 
-// setPatchSize (FUN_1800016c0): vertices per side N + 1 and the neighbour limit log2(N) - 1, N = 2..128.
+// setPatchSize ([KSDP]): vertices per side N + 1 and the neighbour limit log2(N) - 1, N = 2..128.
 TEST(LodPluginOracle, NeighbourLimitEqualsThePluginsSetPatchSize) {
     std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_patch_size.tsv"); std::string line; int rows = 0;
     while (std::getline(in, line)) {
@@ -114,7 +114,7 @@ TEST(LodPluginOracle, NeighbourLimitEqualsThePluginsSetPatchSize) {
     EXPECT_EQ(rows, 7);
 }
 
-// The sun's direction (exe SkyXController::update, FUN_14066d400, run in the emulator): rows hour / sunrise / sunset / tilt -> x, y, z (float bits).
+// The sun's direction (exe SkyXController::update, [KSDP], run in the emulator): rows hour / sunrise / sunset / tilt -> x, y, z (float bits).
 TEST(LodPluginOracle, SunDirectionEqualsTheExesUpdate) {
     std::ifstream in(MD_TOOLS_TEST_DATA "/exe_sun_direction.tsv"); std::string line; int rows = 0; double worst = 0;
     while (std::getline(in, line)) {
@@ -145,10 +145,10 @@ TEST(LodPluginOracle, FogSkydomeRadiusIsTheInstallsDefault) {
     EXPECT_TRUE(found);
 }
 
-// Neighbour restriction (Plugin_Terrain_x64.dll FUN_1800042c0 run in the Unicorn emulator, tools/tests/data/plugin_neighbours.tsv; the node split is replaced by a counting stub):
+// Neighbour restriction (Plugin_Terrain_x64.dll [KSDP] run in the Unicorn emulator, tools/tests/data/plugin_neighbours.tsv; the node split is replaced by a counting stub):
 // per side the plugin splits the neighbour while its level < level - limit + 1. Ours works on a flat list, so each side is built alone: the node at (level, i, j), its neighbour on that side
 // at the vector's level (a finer one is the same level, ours only looks for the same or a coarser cell). One split adds three nodes, so the count is 2 + 3 * splits; only sides with at most one split are compared.
-// FUN_180003d80 (opposite side) and FUN_180003da0 (link neighbours) have no counterpart in ours (flat grid).
+// [KSDP] (opposite side) and [KSDP] (link neighbours) have no counterpart in ours (flat grid).
 TEST(LodPluginOracle, RestrictNeighboursSplitCountEqualsThePlugins) {
     std::ifstream in(MD_TOOLS_TEST_DATA "/plugin_neighbours.tsv"); std::string line; int rows = 0, sides = 0, bad = 0;
     const int di[4] = {0, 0, -1, 1}, dj[4] = {-1, 1, 0, 0};

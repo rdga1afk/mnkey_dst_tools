@@ -19,7 +19,7 @@ public:
     void Shutdown();
     bool Ready() const { return ready_; }
     // Once per frame: haze_scaled = SkyOutput.haze (record x strength), sun_y = sunDirection.y; the amplitude follows the exe ramp (HeatHazeStep).
-    void Tick(float haze_scaled, float sun_y, double game_hours);   // game_hours = the game clock in hours since day 0: the program's gameTime is that clock minus its value at the first call (exe 14066ff60 / 14066db50: day * 24 + hour minus the value at load)
+    void Tick(float haze_scaled, float sun_y, double game_hours);   // game_hours = the game clock in hours since day 0: the program's gameTime is that clock minus its value at the first call (exe [KSDP] / [KSDP]: day * 24 + hour minus the value at load)
     bool Needed() const { return ready_ && (amp_ != 0.f || Force()); }
     static bool Force() { static const bool f = getenv("MD_HEATHAZE") && getenv("MD_HEATHAZE")[0] == '2'; return f; }
     float Amplitude() const { return amp_; }

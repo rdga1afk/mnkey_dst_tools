@@ -1,4 +1,4 @@
-// Player selection rule of the exe's select / deselect core (0x1407f7f20, read level): the last selected character cannot be deselected.
+// Player selection rule of the exe's select / deselect core ([KSDP], read level): the last selected character cannot be deselected.
 #include <gtest/gtest.h>
 #include <monkey_dust/world/player_selection.h>
 

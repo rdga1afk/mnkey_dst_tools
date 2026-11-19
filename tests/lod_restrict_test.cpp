@@ -35,7 +35,7 @@ static int WorstJump(const std::vector<TerrainLodNode>& v) {
 }
 static double Area(const std::vector<TerrainLodNode>& v) { double s = 0; for (auto& n : v) s += (double)n.size * n.size; return s; }
 
-// oracle written straight from the decompiled rule (FUN_1800042c0 + FUN_180006370), brute force and independent of the hash grid: a leaf whose edge neighbour covering cell
+// oracle written straight from the decompiled rule ([KSDP] + [KSDP]), brute force and independent of the hash grid: a leaf whose edge neighbour covering cell
 // is a leaf more than max_diff levels coarser splits that neighbour, until nothing splits; returns the sorted (level, i, j) set
 struct Cell { int L, i, j; bool operator<(const Cell& o) const { return L != o.L ? L < o.L : (i != o.i ? i < o.i : j < o.j); } bool operator==(const Cell& o) const { return L == o.L && i == o.i && j == o.j; } };
 static std::vector<Cell> Oracle(const std::vector<TerrainLodNode>& in, int max_diff) {

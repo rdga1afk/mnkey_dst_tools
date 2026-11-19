@@ -121,7 +121,7 @@ void Draw(GpuPassView& pv, const MdCamera& cam, const float sun[3], float hours)
     const md::KenshiAtmosphere A;
     const float PI = 3.14159265f, thick = A.outer_radius - A.inner_radius, scale = 1.f / thick, depth = thick * 0.5f;
     const float asp = (float)window_get_width() / (float)window_get_height();
-    const float d = md::KenshiMoonDistance(0.5f, md::ViewFarClipM());   // exe: half of near + far clip less its tangent share (0x140670ed0); our camera near is 0.5 (md_camera.h); the vertex function forces the depth to the far plane, so only the direction and the angular size matter
+    const float d = md::KenshiMoonDistance(0.5f, md::ViewFarClipM());   // exe: half of near + far clip less its tangent share ([KSDP]); our camera near is 0.5 (md_camera.h); the vertex function forces the depth to the far plane, so only the direction and the angular size matter
     const float tan_s = md::KenshiMoonTan();
     pv.BindPipeline(&g.pipe);
     for (int i = 0; i < 2; ++i) {

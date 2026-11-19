@@ -1,4 +1,4 @@
-// SteerVelocity against kenshi_x64.exe character_steer_update (0x140147ca0) run in the Unicorn emulator (tools_private/research/steer_oracle.py -> tools/tests/data/exe_steer.tsv).
+// SteerVelocity against kenshi_x64.exe character_steer_update ([KSDP]) run in the Unicorn emulator (tools_private/research/steer_oracle.py -> tools/tests/data/exe_steer.tsv).
 // The exe's rsqrtps / rcpps are approximations refined once; ours uses sqrt, so rows agree within 1e-4 relative + 1e-5 absolute. Block rows hold with the two helpers stubbed (see the generator).
 #include <gtest/gtest.h>
 #include <monkey_dust/world/steer.h>

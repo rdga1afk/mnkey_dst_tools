@@ -303,7 +303,7 @@ int main(int argc, char** argv)
         static const float s_start_hour = getenv("MD_START_HOUR") ? (float)atof(getenv("MD_START_HOUR")) : 10.0f;   // the world clock starts in the morning, not at midnight
         FS_BEGIN("Logic");
         // no logic tick: the world clock runs (LightSystem::Tick(gs.game_time_hours) in RenderFrame drives day / night)
-        gs.game_time_hours = LightSystem::Get().time_override_enabled ? LightSystem::Get().time_override_hours : fmodf(now_s * md::KenshiSkyHoursPerSecond(1.f) + s_start_hour, 24.f);   // exe 0x14066f3ea: 11/1200 game hours per second at speed 1
+        gs.game_time_hours = LightSystem::Get().time_override_enabled ? LightSystem::Get().time_override_hours : fmodf(now_s * md::KenshiSkyHoursPerSecond(1.f) + s_start_hour, 24.f);   // exe [KSDP]: 11/1200 game hours per second at speed 1
         gs.now_s = now_s;
         gs.delta_time = dt;
         FS_END("Logic");

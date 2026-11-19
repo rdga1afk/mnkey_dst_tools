@@ -41,8 +41,8 @@ TEST(KenshiSky, FogAndClouds) {
     EXPECT_GT(z.z, z.x);   // the zenith is blue
 }
 
-// pFogParams slice of exe 14066f190 in the Unicorn emulator (exe_oracle_vectors3.tsv, pFogParams rows): x = D, y = D * k_y, z = min(D, D * k_z), D = view distance * 10.
-// The two factors are runtime globals in the exe (0x142133f68, 0x142133f64; their values are not read, ours uses 0.06 / 0.6); the rows with k = 0.6 / 0.06 are the ones ours must equal.
+// pFogParams slice of exe [KSDP] in the Unicorn emulator (exe_oracle_vectors3.tsv, pFogParams rows): x = D, y = D * k_y, z = min(D, D * k_z), D = view distance * 10.
+// The two factors are runtime globals in the exe ([KSDP], [KSDP]; their values are not read, ours uses 0.06 / 0.6); the rows with k = 0.6 / 0.06 are the ones ours must equal.
 TEST(KenshiSky, FogParamsMatchExeEmulatorVectors) {
     struct V { float view, x, y, z; };
     const V v[] = { {1000.f, 10000.f, 600.f, 6000.f}, {700.f, 7000.f, 420.f, 4200.f}, {12345.f, 123450.f, 7407.f, 74070.f}, {0.f, 0.f, 0.f, 0.f} };   // k_z = 0.6, k_y = 0.06
@@ -53,7 +53,7 @@ TEST(KenshiSky, FogParamsMatchExeEmulatorVectors) {
     }
 }
 
-// SkyX_x64.dll AtmosphereManager::getColorAt (0x1800038e0) run in the Unicorn emulator (tools_private/research/sky_color_oracle.py -> skyx_color_vectors.tsv; the OgreMain
+// SkyX_x64.dll AtmosphereManager::getColorAt ([KSDP]) run in the Unicorn emulator (tools_private/research/sky_color_oracle.py -> skyx_color_vectors.tsv; the OgreMain
 // Pow / Exp / length / normalisedCopy imports are float32 models): HDR path, the Kenshi options and one variant (8 samples, other wavelengths, g, exposure, sun intensity).
 // Ours (KenshiSkySettings::ColorAt) must agree within 1e-3 relative (+1e-4 absolute): the DLL works in double in places and calls the C library's pow / exp.
 TEST(KenshiSky, ColorAtMatchesSkyXDllEmulatorVectors) {
@@ -180,7 +180,7 @@ TEST(KenshiHdr, AdaptLuminance) {
     EXPECT_NEAR(md::KenshiExposureOf(1.2f), 0.55f / 1.2f, 1e-6f);
 }
 
-// SkyX_x64.dll AtmosphereManager::_scale (0x180003860) run in the Unicorn emulator (tools_private/research/skyx_leaf_oracle.py -> tools/tests/data/skyx_scale.tsv): ours (KenshiSkySettings::Scale)
+// SkyX_x64.dll AtmosphereManager::_scale ([KSDP]) run in the Unicorn emulator (tools_private/research/skyx_leaf_oracle.py -> tools/tests/data/skyx_scale.tsv): ours (KenshiSkySettings::Scale)
 // agrees within 1e-4 relative; the DLL evaluates the polynomial in double and calls the C library's exp.
 TEST(KenshiSky, ScaleMatchesSkyXDllEmulatorVectors) {
     std::ifstream in(MD_TOOLS_TEST_DATA "/skyx_scale.tsv"); std::string line; int rows = 0, inf = 0; double worst = 0;
@@ -199,7 +199,7 @@ TEST(KenshiSky, ScaleMatchesSkyXDllEmulatorVectors) {
     EXPECT_LT(worst, 1e-4);
 }
 
-// The atmosphere options block of sky_controller_create (0x14066e380), floats as read from the exe data addresses (tools/tests/data/exe_sky_create_atmosphere.tsv): our defaults must be bit-equal.
+// The atmosphere options block of sky_controller_create ([KSDP]), floats as read from the exe data addresses (tools/tests/data/exe_sky_create_atmosphere.tsv): our defaults must be bit-equal.
 TEST(KenshiSky, AtmosphereDefaultsMatchTheExeOptionsBlock) {
     std::ifstream in(MD_TOOLS_TEST_DATA "/exe_sky_create_atmosphere.tsv"); ASSERT_TRUE(in.good());
     const md::KenshiAtmosphere a;
@@ -217,7 +217,7 @@ TEST(KenshiSky, AtmosphereDefaultsMatchTheExeOptionsBlock) {
     EXPECT_EQ(rows, 11); EXPECT_EQ(a.samples, 4);
 }
 
-// The water map bounds of the exe (data 0x141693efc and 0x1416c9fb0, float32 bits read from the exe) against ours.
+// The water map bounds of the exe (data [KSDP] and [KSDP], float32 bits read from the exe) against ours.
 #include <monkey_dust/render/kenshi_water.h>
 TEST(KenshiWater, MapBoundsMatchTheExeConstants) {
     const uint32_t hi = 0x48100000u, lo = 0xc8100000u;   // 147456.0 and -147456.0
@@ -226,9 +226,9 @@ TEST(KenshiWater, MapBoundsMatchTheExeConstants) {
     EXPECT_FLOAT_EQ(md::WaterMapSpanMetres(), 29491.2f);   // 294912 units of 0.1 m
 }
 
-// Moon rotation: the exe takes integer hour and minute, so seconds inside a minute do not change the angle (0x140670ed0 / 0x14066ff60).
+// Moon rotation: the exe takes integer hour and minute, so seconds inside a minute do not change the angle ([KSDP] / [KSDP]).
 TEST(KenshiSky, TimeMultiplierIsTheExeConstantPerGameSpeed) {
-    const unsigned bits = 0x3c162fc9u;   // exe data 0x1416fd928
+    const unsigned bits = 0x3c162fc9u;   // exe data [KSDP]
     float exe; std::memcpy(&exe, &bits, 4);
     EXPECT_FLOAT_EQ(md::KenshiSkyHoursPerSecond(1.f), exe);
     EXPECT_NEAR(md::KenshiSkyHoursPerSecond(1.f), 11.f / 1200.f, 1e-6f);

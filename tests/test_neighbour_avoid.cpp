@@ -1,4 +1,4 @@
-// NeighbourAvoidance against kenshi_x64.exe character_neighbour_avoidance_query (0x1401476f0) run in the Unicorn emulator (tools_private/research/query_oracle.py -> tools/tests/data/exe_neighbour.tsv).
+// NeighbourAvoidance against kenshi_x64.exe character_neighbour_avoidance_query ([KSDP]) run in the Unicorn emulator (tools_private/research/query_oracle.py -> tools/tests/data/exe_neighbour.tsv).
 // The exe's rsqrtps / rcpps are approximations refined once, ours is exact: rows agree within 1e-4 relative + 1e-5 absolute. The coincident case (random direction) has no row.
 #include <gtest/gtest.h>
 #include <monkey_dust/world/steer.h>

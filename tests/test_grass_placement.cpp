@@ -128,8 +128,8 @@ TEST(GrassPlacement, AcceptanceRateFollowsTheDensityMap) {
     EXPECT_GE(double(got), double(cand) * p * 0.95 - 3.0 * sigma);
 }
 
-// Orig: loadPage's count (exe 140a3b6b0) = (uint)(layer density * 1.0 * width * height), and the layer builder (1406d0340) sets the layer density to
-// record density * 0.005 * the "grass density" option (settings loader 1403e84f0: 1.0 when the key is absent). Hand-computed expectations, truncation included.
+// Orig: loadPage's count (exe [KSDP]) = (uint)(layer density * 1.0 * width * height), and the layer builder ([KSDP]) sets the layer density to
+// record density * 0.005 * the "grass density" option (settings loader [KSDP]: 1.0 when the key is absent). Hand-computed expectations, truncation included.
 TEST(GrassPlacement, CandidateCountIsRecordTimes0p005TimesOptionTimesPageArea) {
     const float page_w = 2304.f;   // half of a 4608-unit zone
     struct Row { float record, option, w, h; uint32_t want; };
@@ -148,7 +148,7 @@ TEST(GrassPlacement, CandidateCountIsRecordTimes0p005TimesOptionTimesPageArea) {
     }
 }
 
-// Bilinear density sampler of exe 140a6bd10 (the whole function) run in the Unicorn emulator on a fake map (byte i = (i * 37 + 11) & 255; exe_oracle_vectors3.tsv, densityBilinear rows):
+// Bilinear density sampler of exe [KSDP] (the whole function) run in the Unicorn emulator on a fake map (byte i = (i * 37 + 11) & 255; exe_oracle_vectors3.tsv, densityBilinear rows):
 // ours (DensityBilinear, the grass page loader's sampler) must be bit-equal, inside and outside the bounds.
 TEST(GrassPlacement,DensityBilinearMatchesExeEmulatorVectors) {
     struct V { uint32_t w, h;  Rect b; float x, z, exe; };
@@ -191,7 +191,7 @@ TEST(GrassPlacement,DensityBilinearMatchesExeEmulatorVectors) {
     }
 }
 
-// loadPage count slice of exe 140a3b6b0 in the Unicorn emulator (exe_oracle_vectors3.tsv, pageCount rows; loader factor 1.0, page inside the layer bounds):
+// loadPage count slice of exe [KSDP] in the Unicorn emulator (exe_oracle_vectors3.tsv, pageCount rows; loader factor 1.0, page inside the layer bounds):
 // the exe multiplies (density * factor) by (width * height); ours must give the same integer.
 TEST(GrassPlacement, CandidateCountMatchesExeEmulatorVectors) {
     struct V { float density; Rect page; uint32_t exe; };
@@ -238,7 +238,7 @@ TEST(GrassPlacement, CandidateCountMatchesExeEmulatorVectors) {
     }
 }
 
-// The whole PopulateBilinear (exe 140a41690) run in the Unicorn emulator (exe_oracle_vectors3.tsv, populateBilinear rows): a 4000-float table (LCG), the 129 x 129 map
+// The whole PopulateBilinear (exe [KSDP]) run in the Unicorn emulator (exe_oracle_vectors3.tsv, populateBilinear rows): a 4000-float table (LCG), the 129 x 129 map
 // byte i = (i * 37 + 11) & 255 over (0, 0, 4608, 4608), slope(x, z) = x and height(x, z) = z. Ours must give the same blade count and the same output floats (FNV-1a of the bits);
 // the cases cover the slope filter (max slope below / above the page), both height limits, the no-limit path and pages partly outside the map.
 namespace {

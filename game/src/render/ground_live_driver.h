@@ -27,7 +27,7 @@ public:
     static bool Wanted();   // MD_GROUND_LIVE=1
     // NPC G-buffer pass: called after the ground Run() and before Decode() / Light() with the raw targets (set per frame by the caller, cleared by it).
     using NpcHook = void (*)(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const target[3], SDL_GPUTexture* depth, int w, int h, void* user);
-    float FarClip() const { return md::ViewDistanceUnits(); }   // D = view distance * 10 (sky controller FUN_14066f190): depth write, the light's pFogParams.x and the programs' farClip agree
+    float FarClip() const { return md::ViewDistanceUnits(); }   // D = view distance * 10 (sky controller [KSDP]): depth write, the light's pFogParams.x and the programs' farClip agree
     void SetNpcHook(NpcHook h, void* user) { npc_hook_ = h; npc_user_ = user; }
     void Shutdown() { arrays_.Stop(); }   // before GpuDevice::Shutdown(): joins the layer-array worker, whose build in flight uses the GPU device (ASan double-free at exit, PR #164 6856689259)
     static bool OrigLight();   // MD_GROUND_LIVE_ORIGLIGHT=1 (with MD_GROUND_LIVE_LIGHT): the ground is lit by the original main_fs (GroundLivePass::Light) instead of TS_KenshiLight
