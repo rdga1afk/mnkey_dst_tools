@@ -326,6 +326,8 @@ static int l_md_set_upscaler(lua_State* L) {   // "sgsr1" (off here) | "sgsr2" |
 static int l_md_set_sgsr2_rcas(lua_State* L) { g_sgsr2_rcas = (float)luaL_checknumber(L, 1); return 0; }   // DE-311: RCAS sharpness after SGSR 2, 0 = off (default)
 static int l_md_set_sgsr2_fsr2(lua_State* L) { g_sgsr2_fsr2 = lua_toboolean(L, 1) != 0; return 0; }   // DE-311: the FSR 2 parts of the SGSR 2 shader on / off (default on; off = cost measurement)
 static int l_md_set_sgsr1(lua_State* L) { g_opt_sgsr1 = lua_toboolean(L, 1) != 0; if (lua_toboolean(L, 1)) { extern bool g_hialgo; g_hialgo = false; } return 0; }   // #198 S1: Snapdragon GSR 1 upscale instead of bilinear + sharpen (scene below native only), default off
+extern void md_set_aa_mode(const char*);
+static int l_md_set_aa(lua_State* L) { const char* m = luaL_checkstring(L, 1); if (strcmp(m, "cmaa2") && strcmp(m, "fxaa") && strcmp(m, "off")) return luaL_error(L, "set_aa: cmaa2 | fxaa | off"); md_set_aa_mode(m); return 0; }   // DE-358
 static int l_md_set_fxaa(lua_State* L) { g_opt_fxaa = lua_toboolean(L, 1) != 0; return 0; }   // #180: FXAA 3.11 (Kenshi's parameters) as the last pass, default off
 extern bool g_dynres_on; extern float g_dynres_scale, g_dynres_cur, g_dynres_v_move, g_dynres_w_move, g_dynres_v_stop, g_dynres_w_stop; extern int g_dynres_down, g_dynres_up;
 // md.set_dyn_res(on, scale[, down_frames, up_frames]) -- #182, default on (owner 17.10); md.dyn_res_state() -> current scale
@@ -575,6 +577,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_opt_force_upscale", l_md_set_opt_force_upscale);
     sys.RegisterNamespaceFunction("set_speed", l_md_set_speed);
     sys.RegisterNamespaceFunction("set_fxaa", l_md_set_fxaa);
+    sys.RegisterNamespaceFunction("set_aa", l_md_set_aa);
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_sgsr2", l_md_set_sgsr2);
     sys.RegisterNamespaceFunction("set_dynres_grass", l_md_set_dynres_grass);

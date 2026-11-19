@@ -1,3 +1,4 @@
+#include "cmaa2_pass.h"
 #include "ground_live_hdr.h"
 #include "town_buildings.h"
 #include "town_foliage.h"
@@ -42,6 +43,7 @@ bool  g_hialgo = true, g_hialgo_x2 = false, g_hialgo_catmull = true; int g_fxaa_
 bool  g_upscaler_lite = false;   // md.set_upscaler("fsr2lite"): variant 5 (own temporal upscaler on the FSR 2 model) in the SGSR 2 slot
 bool  g_opt_sgsr2 = false;   // md.set_sgsr2: Snapdragon GSR 2 (temporal) instead of SGSR 1, scene below native only, default off (dynres 0.6)
 bool  g_opt_sgsr1 = true;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default on (DE-283)
+bool  g_opt_cmaa2 = false;   // DE-358 md.set_aa("cmaa2"): CMAA 2 instead of FXAA as the native-resolution AA pass
 bool  g_opt_fxaa = false;   // #180 md.set_fxaa: FXAA 3.11 with Kenshi's parameters as the last pass (the scene goes through the intermediate target)
 float g_frame_dt_s = 1.f / 60.f;   // RenderFrame's dt, read by the L4 auto-exposure
 float g_adapt_override_mean = -1.f, g_adapt_override_dt = -1.f; // md.adapt_lum_debug: >= 0 replaces the measured mean luminance (oracle)
@@ -68,7 +70,7 @@ static void ReprojViewBasis(const MdCamera& c, double rot[9], double eye[3]) {
 
 bool NpcRender::UpscaleActive() {
     const auto& sr = SceneRender::Get();
-    const bool forced = g_opt_force_upscale || g_opt_fxaa || md::HeatHazePass::Get().Needed();   // DE-338: the haze needs the intermediate; at amplitude 0 it is not forced
+    const bool forced = g_opt_force_upscale || g_opt_fxaa || g_opt_cmaa2 || md::HeatHazePass::Get().Needed();   // DE-338: the haze needs the intermediate; at amplitude 0 it is not forced
     if ((EffectiveResolutionScale() >= 0.999f && !forced) || !sr.upscale_pass_.Ready()) return false;
     return true;
 }
@@ -541,7 +543,14 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                             auto& hz = md::HeatHazePass::Get();
                             const bool haze_full = hz.Needed() && hz.Scratch() && EffectiveResolutionScale() >= 0.999f;   // strict order at scale 1.0: (FXAA) -> intermediate -> HeatHaze -> swapchain (compositors.cfg)
                             md::GpuTextureHandle first_out = haze_full ? hz.Scratch() : real_sc;
-                            if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, first_out); GpuPopDebugGroup(fc.cmd); upscaled = true; }
+                            if (g_opt_cmaa2 && EffectiveResolutionScale() >= 0.999f) {
+                                static Cmaa2Pass cmaa2; static int cmaa2_state = 0;   // 0 untried, 1 ready, -1 failed (then FXAA)
+                                if (cmaa2_state == 0) cmaa2_state = cmaa2.Init() ? 1 : -1;
+                                GpuPushDebugGroup(fc.cmd, "CMAA2");
+                                if (cmaa2_state == 1 && cmaa2.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), sr_up.upscale_pass_.W(), sr_up.upscale_pass_.H(), first_out)) upscaled = true;
+                                else { sr_up.upscale_pass_.ApplyFxaa(fc.cmd, first_out); upscaled = true; }
+                                GpuPopDebugGroup(fc.cmd);
+                            } else if (g_opt_fxaa && EffectiveResolutionScale() >= 0.999f) { GpuPushDebugGroup(fc.cmd, "FXAA"); sr_up.upscale_pass_.ApplyFxaa(fc.cmd, first_out); GpuPopDebugGroup(fc.cmd); upscaled = true; }
                             if (g_hialgo && sr_up.hialgo_.Ready() && EffectiveResolutionScale() < 0.999f) {   // DE-312: FXAA -> (stair blur) -> neighbour-clamped upscale + clamped sharpening
                                 GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_fxaa_profile, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
@@ -682,7 +691,8 @@ extern bool g_ground_pvt, g_ground_hist_fast;   // engine/src/render/terrain_sha
 void md_settings_set_ground_hist_fast(int mode) { g_ground_hist_fast = mode != 0; }   // F3 Settings (#207, owner 01.11)
 void md_settings_set_ground_pvt(int on) { g_ground_pvt = on != 0; }                    // F3 Settings (#207, owner 01.11)
 void md_settings_set_up_sharp(int mode) { g_up_sharp = mode < 0 || mode > 2 ? 0 : mode; }   // F3 Settings (#207, owner 31.10)
-void md_settings_set_fxaa(bool on) { g_opt_fxaa = on; }   // F3 Settings (#180)
+void md_settings_set_fxaa(bool on) { g_opt_fxaa = on; }
+void md_set_aa_mode(const char* m) { g_opt_cmaa2 = !strcmp(m, "cmaa2"); g_opt_fxaa = !strcmp(m, "fxaa"); }   // DE-358   // F3 Settings (#180)
 void md_settings_set_dyn_res(float scale) { g_dynres_on = scale > 0.f; if (scale > 0.f) g_dynres_scale = scale < 0.5f ? 0.5f : (scale > 1.f ? 1.f : scale); }   // F3 Settings (#182): 0 = off
 int  md_settings_get_ground_reuse_chain() { return g_opt_ground_reuse_chain; }   // F3 Settings (#207): 0 / 3 / 5
 void md_settings_set_ground_reuse_chain(int c) { g_opt_ground_reuse_chain = (c == 5) ? 5 : (c == 3) ? 3 : 0; SceneRender::Get().gr_reset_ = true; }
