@@ -26,6 +26,12 @@ summary: "Public tools README (EN + UA): editor (incl. Kenshi-style character ed
 The game itself moved into this repository (GPL-3.0-or-later): `game/` (source, CMake, our own small data), `shaders/` (our GLSL), `tests/` (unit tests), `scripts/` (shader compile and embedding). Kenshi's own shader programs are not here: the game compiles them at run time from your install. A few shaders translated from Kenshi stay in a private repository until they are replaced by the originals; a game built from this repository alone starts and loads the world from your install, and logs one line for each feature that is off for that reason.
 **This repository builds on its own** (the game, the editor and the unit tests; see Build below). Running the game needs a Kenshi install (`KENSHI_DIR`); the features that need the few private translated shaders stay off and each logs one `[GpuPipeline] missing shader` line. Status, measurements and goals: [engine README](https://github.com/rdga1afk/mnkey_dst_engine#readme) and the [docs site](https://rdga1afk.github.io/mnkey_dst_engine/).
 
+### Latest (20.11.2026)
+
+- **Dynamic resolution 0.9** (`game/src/render/dynres3.h`): the frame budget is judged on the mean of the last 8 frames; the resolution no longer drifts in heavy scenes. CMAA 2 is the anti-aliasing at native resolution.
+- **First game systems, off by default:** town residents by the game's own rule, behind `MD_TOWN_NPC=1` (`game/src/slice_game.cpp`, list and placement in the engine); saving and loading in Kenshi's save format (engine `md::save`, tests `tests/test_kenshi_save.cpp`); the melee hit rule (engine `combat_hit.h`, tests against Kenshi's functions run in an emulator).
+- **Standalone CI** (build, unit tests, decompilation-pattern scan) and the Package job are green again; the package waits for the engine release instead of failing on push order.
+
 ### What is here
 
 | Group | Tool | Purpose |
@@ -107,6 +113,12 @@ GPL-3.0-or-later, see [LICENSE](LICENSE) ("or any later version" applies). MIT f
 ### Код гри тепер тут (з 11.11.2026)
 Сама гра переїхала в цей репозиторій (GPL-3.0-or-later): `game/` (код, CMake, наші невеликі дані), `shaders/` (наш GLSL), `tests/` (модульні тести), `scripts/` (компіляція й вбудовування шейдерів). Власних шейдерних програм Kenshi тут немає: гра компілює їх під час запуску з вашої інсталяції. Кілька шейдерів, перекладених з Kenshi, лишаються в приватному репозиторії, доки їх не замінять оригінали; гра, зібрана лише з цього репозиторію, запускається й завантажує світ з вашої інсталяції, а для кожної функції, вимкненої з цієї причини, пише один рядок у журнал.
 **Цей репозиторій збирається самостійно** (гра, редактор і модульні тести; див. «Збірка»). Для запуску гри потрібна інсталяція Kenshi (`KENSHI_DIR`); можливості, що потребують кількох приватних перекладених шейдерів, вимкнені, і кожна пише один рядок `[GpuPipeline] missing shader`. Стан, заміри й цілі — у [README рушія](https://github.com/rdga1afk/mnkey_dst_engine#readme) і на [сайті документації](https://rdga1afk.github.io/mnkey_dst_engine/).
+
+### Найновіше (20.11.2026)
+
+- **Динамічна роздільність 0.9** (`game/src/render/dynres3.h`): бюджет кадру оцінюється за середнім останніх 8 кадрів; роздільність у важких сценах більше не «пливе». Згладжування на рідній роздільності — CMAA 2.
+- **Перші ігрові системи, за замовчуванням вимкнені:** жителі міст за правилом самої гри, за `MD_TOWN_NPC=1` (`game/src/slice_game.cpp`, список і розміщення — у рушії); збереження й завантаження у форматі Kenshi (рушій `md::save`, тести `tests/test_kenshi_save.cpp`); правило удару в ближньому бою (рушій `combat_hit.h`, тести проти функцій Kenshi, запущених в емуляторі).
+- **Самостійна збірка в CI** (збірка, тести, перевірка на сліди декомпіляції) і пакет знову зелені; пакет чекає на реліз рушія замість падати через порядок пушів.
 
 ### Що тут є
 
