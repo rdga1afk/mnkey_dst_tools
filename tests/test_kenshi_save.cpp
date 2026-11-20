@@ -104,7 +104,7 @@ TEST(KenshiSave, DamagedFilesGiveReadableErrors) {
     EXPECT_FALSE(ReadKenshiSave(d.string(), r, err)); EXPECT_NE(err.find("Nameless_0.platoon"), std::string::npos) << err;
 }
 
-// Facts of the exe writer (save_manager_save_game 0x140375360, record_store_write_file 0x1406bd570; ksdp/functions/exe_save.yml): the file is FCS v15, the first record is the camera record
+// Facts of the exe writer (save_manager_save_game [KSDP], record_store_write_file [KSDP]; ksdp/functions/exe_save.yml): the file is FCS v15, the first record is the camera record
 // (kind 56) with the ints "squads" and "members", zones are references (x, z, 1), platoon records are kind 34 with "platoon stringID".
 TEST(KenshiSave, FormatFollowsTheExeWriter) {
     const fs::path d = Tmp("exefacts"); std::string err;
@@ -133,7 +133,7 @@ TEST(KenshiSave, FormatFollowsTheExeWriter) {
     ASSERT_EQ(back.squads.size(), 1u); EXPECT_EQ(back.squads[0].characters.size(), 3u);
 }
 
-// Facts of the exe's load side (STATS loader 0x14064b6a0, save-info loader 0x14047e390; ksdp/functions/exe_save.yml).
+// Facts of the exe's load side (STATS loader [KSDP], save-info loader [KSDP]; ksdp/functions/exe_save.yml).
 TEST(KenshiSave, StatKeysAreTheExeWriterList) {
     const auto& k = StatKeys();
     ASSERT_EQ(k.size(), 44u);
@@ -166,7 +166,7 @@ TEST(KenshiSave, MissingCameraIntsReadZero) {
     EXPECT_EQ(r.day, 0); EXPECT_EQ(r.money, 0); EXPECT_EQ(r.hour, 7);
 }
 
-// player-order toggles and formation (exe writer 0x1403eb710, loader 0x1403ebf50)
+// player-order toggles and formation (exe writer and loader: [KSDP])
 TEST(KenshiSave, OrdersRoundTripValuesAndKeys) {
     const fs::path d = Tmp("orders"); std::string err;
     ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
@@ -193,7 +193,7 @@ TEST(KenshiSave, OrdersAbsentKeepsDefaults) {
     EXPECT_FALSE(r.orders.present); EXPECT_EQ(r.orders.formation, 0); EXPECT_FALSE(r.orders.heal);
 }
 
-// world clock and sky (exe writer 0x14066d7d0, loader 0x14066db50)
+// world clock and sky (exe writer and loader: [KSDP])
 TEST(KenshiSave, SkyRoundTripValuesAndKeys) {
     const fs::path d = Tmp("sky"); std::string err;
     ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
@@ -236,7 +236,7 @@ TEST(KenshiSave, NegativeClockClampsToZero) {
     EXPECT_EQ(r.day, 0); EXPECT_EQ(r.hour, 0); EXPECT_EQ(r.minute, 5);
 }
 
-// squad list (exe writer 0x1402deea0, loader 0x1402df0c0)
+// squad list (exe writer and loader: [KSDP])
 TEST(KenshiSave, SquadListRoundTripValuesAndKeys) {
     const fs::path d = Tmp("sqlist"); std::string err;
     ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
@@ -265,7 +265,7 @@ TEST(KenshiSave, SquadListEmptyAndNoProsperity) {
     EXPECT_TRUE(r.squad_list.entries.empty()); EXPECT_FALSE(r.squad_list.has_prosperity);
 }
 
-// per-part wounds (exe writer 0x14064d390, loader 0x14064d600)
+// per-part wounds (exe writer and loader: [KSDP])
 TEST(KenshiSave, PartWoundsRoundTripAndKeys) {
     const fs::path d = Tmp("parts"); std::string err;
     ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
@@ -283,7 +283,7 @@ TEST(KenshiSave, PartWoundsRoundTripAndKeys) {
     for (const char* k : {"hit", "hitmult", "flesh", "stun", "bandage", "rig", "wear"}) { EXPECT_TRUE(has(med->floats, std::string(k) + "0")) << k; EXPECT_TRUE(has(med->floats, std::string(k) + "1")) << k; }
 }
 
-// selection and biome text (exe 0x1407f3e60 / 0x1407f3fb0, 0x140728af0 / 0x140728c10)
+// selection and biome text (exe selection and biome text: [KSDP])
 TEST(KenshiSave, SelectionAndBiomeTextRoundTripAndKeys) {
     const fs::path d = Tmp("selection"); std::string err;
     ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
