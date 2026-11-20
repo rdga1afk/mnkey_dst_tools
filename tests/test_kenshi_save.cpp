@@ -26,6 +26,7 @@ KenshiSave Sample() {
     }
     s.squads.push_back(sq);
     s.orders.present = true; s.orders.heal = true; s.orders.rescue = true; s.orders.sleep = true; s.orders.sit = true; s.orders.shootfirst = true; s.orders.formation = 3;
+    s.sky.present = true; s.sky.current_time = 12.5f; s.sky.total_time = 600.f; s.sky.ambient[0] = 0.5f; s.sky.ambient[2] = 0.75f; s.sky.ambient_speed[1] = 0.125f; s.sky.clouds_density = 0.6f; s.sky.clouds_speed = 0.01f;
     return s;
 }
 std::vector<char> Slurp(const fs::path& p) { std::ifstream f(p, std::ios::binary); return { std::istreambuf_iterator<char>(f), {} }; }
@@ -172,7 +173,7 @@ TEST(KenshiSave, OrdersRoundTripValuesAndKeys) {
     const md::fcs::Record* cam = nullptr; for (const auto& rec : f.records) if (rec.kind == 56) cam = &rec;
     ASSERT_NE(cam, nullptr);
     const char* want[] = {"ditch", "sleep", "feed", "heal", "help", "rescue", "share", "stay", "sit", "eject", "shootfirst"};
-    ASSERT_EQ(cam->bools.size(), 11u);
+    ASSERT_EQ(cam->bools.size(), 12u);   // eleven orders + `sky updating`
     for (int i = 0; i < 11; ++i) EXPECT_EQ(cam->bools[i].first, want[i]);
     bool has_formation = false; for (const auto& kv : cam->ints) if (kv.first == "formation") has_formation = true;
     EXPECT_TRUE(has_formation);
@@ -184,4 +185,47 @@ TEST(KenshiSave, OrdersAbsentKeepsDefaults) {
     ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
     KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
     EXPECT_FALSE(r.orders.present); EXPECT_EQ(r.orders.formation, 0); EXPECT_FALSE(r.orders.heal);
+}
+
+// world clock and sky (exe writer 0x14066d7d0, loader 0x14066db50)
+TEST(KenshiSave, SkyRoundTripValuesAndKeys) {
+    const fs::path d = Tmp("sky"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.sky.present); EXPECT_TRUE(r.sky.updating);
+    EXPECT_FLOAT_EQ(r.sky.current_time, 12.5f); EXPECT_FLOAT_EQ(r.sky.total_time, 600.f); EXPECT_FLOAT_EQ(r.sky.clouds_density, 0.6f); EXPECT_FLOAT_EQ(r.sky.clouds_speed, 0.01f);
+    EXPECT_FLOAT_EQ(r.sky.ambient[0], 0.5f); EXPECT_FLOAT_EQ(r.sky.ambient[2], 0.75f); EXPECT_FLOAT_EQ(r.sky.ambient_speed[1], 0.125f);
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "quick.save").string(), f, e)) << e.Message();
+    const md::fcs::Record* cam = nullptr; for (const auto& rec : f.records) if (rec.kind == 56) cam = &rec;
+    ASSERT_NE(cam, nullptr);
+    auto has = [](const auto& tbl, const char* k) { for (const auto& kv : tbl) if (kv.first == k) return true; return false; };
+    for (const char* k : {"sky update current time", "sky update total time", "sky clouds density", "sky clouds density speed"}) EXPECT_TRUE(has(cam->floats, k)) << k;
+    for (const char* k : {"sky ambient color mult", "sky ambient color mult speed"}) EXPECT_TRUE(has(cam->vec3s, k)) << k;
+    EXPECT_TRUE(has(cam->bools, "sky updating"));
+    for (const char* k : {"time day", "time hour", "time minute"}) EXPECT_TRUE(has(cam->ints, k)) << k;
+}
+
+TEST(KenshiSave, SkyAbsentKeepsExeDefaults) {
+    const fs::path d = Tmp("sky_absent"); std::string err;
+    KenshiSave s = Sample(); s.sky = KSky{};
+    ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_FALSE(r.sky.present); EXPECT_TRUE(r.sky.updating); EXPECT_FLOAT_EQ(r.sky.clouds_density, 0.25f); EXPECT_FLOAT_EQ(r.sky.ambient[1], 1.f); EXPECT_FLOAT_EQ(r.sky.clouds_speed, 0.f);
+}
+
+TEST(KenshiSave, SkyUpdatingOffIsResetByLoader) {
+    const fs::path d = Tmp("sky_off"); std::string err;
+    KenshiSave s = Sample(); s.sky.updating = false; s.sky.ambient_speed[0] = 0.5f;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.sky.updating); EXPECT_FLOAT_EQ(r.sky.ambient_speed[0], 0.f); EXPECT_FLOAT_EQ(r.sky.clouds_speed, 0.f); EXPECT_FLOAT_EQ(r.sky.current_time, 0.f); EXPECT_FLOAT_EQ(r.sky.total_time, 0.f);
+    EXPECT_FLOAT_EQ(r.sky.clouds_density, 0.6f); EXPECT_FLOAT_EQ(r.sky.ambient[0], 0.5f);   // the values read before the check stay
+}
+
+TEST(KenshiSave, NegativeClockClampsToZero) {
+    const fs::path d = Tmp("clock_neg"); std::string err;
+    KenshiSave s = Sample(); s.day = -3; s.hour = -1; s.minute = 5;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_EQ(r.day, 0); EXPECT_EQ(r.hour, 0); EXPECT_EQ(r.minute, 5);
 }
