@@ -100,10 +100,10 @@ TEST(TownSpawnInstall, HubHasRebirthResidentsAndBrinkHasUnitedCitiesResidents) {
 }
 
 TEST(TownRadius, ExeTypeRadiiTimesMultiplier) {   // the exe radius virtual (read ok): the constants per type, the multiplier clamp of the town init
-    EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 1.f), 2500.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(3, 1.f), 937.5f);
-    EXPECT_FLOAT_EQ(md::world::TownRadiusM(4, 1.f), 875.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(9, 1.f), 437.5f);
-    EXPECT_FLOAT_EQ(md::world::TownRadiusM(1, 1.f), 1250.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(8, 1.f), 0.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(10, 3.f), 0.f);
-    EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 0.2f), 500.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 0.05f), 2500.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 9.f), 12500.f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 1.f), 250.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(3, 1.f), 93.75f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(4, 1.f), 87.5f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(9, 1.f), 43.75f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(1, 1.f), 125.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(8, 1.f), 0.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(10, 3.f), 0.f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 0.2f), 50.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 0.05f), 250.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 9.f), 1250.f);
 }
 
 TEST(TownSpawnInstall, HubRadiusFromTypeAndMultiplier) {   // what the exe radius is for the Hub record (printed: the facts the DE-027 replacement rests on)
@@ -122,8 +122,10 @@ TEST(TownSpawnInstall, HubMembershipByTypeRadius) {
     std::vector<md::world::TownSite> towns; std::string err; ASSERT_TRUE(md::world::LoadTownSites(md::KenshiDir(), data, towns, err)) << err;
     const int hub = HubIndex(towns); ASSERT_GE(hub, 0);
     std::vector<md::world::TownNode> nodes; ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, nodes, err)) << err;
+    std::vector<md::world::TownNode> again0;
     size_t t0 = 0, t1 = 0, t2 = 0; for (const auto& n : nodes) (n.node_type == 0 ? t0 : n.node_type == 1 ? t1 : t2)++;
-    std::printf("Hub: %zu towns in the list, radius %.1f m, %zu buildings with nodes, nodes type0 %zu type1 %zu type2 %zu\n", towns.size(), md::world::TownRadiusM(towns[hub].type, towns[hub].mult), md::world::TownBuildingCount(nodes), t0, t1, t2);
+    size_t total = 0; ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, again0, err, &total)) << err;
+    std::printf("Hub: %zu towns in the list, radius %.1f m, %zu buildings in all, %zu with nodes, nodes type0 %zu type1 %zu type2 %zu\n", towns.size(), md::world::TownRadiusM(towns[hub].type, towns[hub].mult), total, md::world::TownBuildingCount(nodes), t0, t1, t2);
     ASSERT_GT(t1, 0u);
     const float R = md::world::TownRadiusM(towns[hub].type, towns[hub].mult);
     for (const auto& n : nodes) {   // a node sits inside its building: the radius plus a building's half size; and the nearest holding town is the Hub
@@ -162,11 +164,12 @@ TEST(TownSpawnInstall, HubPlanIsPlacedOnNodesAndSeedStable) {
 }
 
 TEST(TownNodes, TownOfPointIsTheNearestHoldingTown) {
-    std::vector<md::world::TownSite> t = { {"a", 0.f, 0.f, 2, 1.f}, {"b", 3000.f, 0.f, 3, 1.f}, {"c", 100.f, 0.f, 8, 1.f} };   // a: 2500 m, b: 937.5 m, c: type 8 = no radius
-    EXPECT_EQ(md::world::TownOfPoint(t, 10.f, 0.f), 0);       // c is nearer but holds nothing
-    EXPECT_EQ(md::world::TownOfPoint(t, 2600.f, 0.f), 1);     // a's 2500 m ends; b holds it
-    EXPECT_EQ(md::world::TownOfPoint(t, 2400.f, 0.f), 1);     // both hold it, b is nearer
-    EXPECT_EQ(md::world::TownOfPoint(t, 2400.f, 5000.f), -1); // nobody
+    std::vector<md::world::TownSite> t = { {"a", 0.f, 0.f, 2, 1.f}, {"b", 300.f, 0.f, 3, 1.f}, {"c", 10.f, 0.f, 8, 1.f} };   // a: 250 m, b: 93.75 m, c: type 8 = no radius
+    EXPECT_EQ(md::world::TownOfPoint(t, 5.f, 0.f), 0);        // c is nearer but holds nothing
+    EXPECT_EQ(md::world::TownOfPoint(t, 200.f, 0.f), 0);      // 200 m from a: a's (b is 100 m away, beyond its 93.75 m)
+    EXPECT_EQ(md::world::TownOfPoint(t, 300.f, 0.f), 1);      // 300 m from a: not a's; b holds it
+    EXPECT_EQ(md::world::TownOfPoint(t, 240.f, 0.f), 1);      // both hold it, b is nearer
+    EXPECT_EQ(md::world::TownOfPoint(t, 0.f, 500.f), -1);     // nobody
 }
 
 TEST(TownNodes, SquadSpawnNodeOrderIsZeroTwoOneInItsOwnBuilding) {
