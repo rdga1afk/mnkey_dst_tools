@@ -27,6 +27,9 @@ KenshiSave Sample() {
     s.squads.push_back(sq);
     s.orders.present = true; s.orders.heal = true; s.orders.rescue = true; s.orders.sleep = true; s.orders.sit = true; s.orders.shootfirst = true; s.orders.formation = 3;
     s.sky.present = true; s.sky.current_time = 12.5f; s.sky.total_time = 600.f; s.sky.ambient[0] = 0.5f; s.sky.ambient[2] = 0.75f; s.sky.ambient_speed[1] = 0.125f; s.sky.clouds_density = 0.6f; s.sky.clouds_speed = 0.01f;
+    s.squad_list.has_prosperity = true; s.squad_list.prosperity = 3.5f;
+    { KSquadListEntry e; e.name = "squad_a"; e.time = 2.5f; e.refs = { {1, 2, 3, 4, 5}, {6, 7, 8, 9, 10} }; s.squad_list.entries.push_back(e); }
+    { KSquadListEntry e; e.name = "squad_b"; e.time = 0.f; s.squad_list.entries.push_back(e); }
     return s;
 }
 std::vector<char> Slurp(const fs::path& p) { std::ifstream f(p, std::ios::binary); return { std::istreambuf_iterator<char>(f), {} }; }
@@ -228,4 +231,33 @@ TEST(KenshiSave, NegativeClockClampsToZero) {
     ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
     KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
     EXPECT_EQ(r.day, 0); EXPECT_EQ(r.hour, 0); EXPECT_EQ(r.minute, 5);
+}
+
+// squad list (exe writer 0x1402deea0, loader 0x1402df0c0)
+TEST(KenshiSave, SquadListRoundTripValuesAndKeys) {
+    const fs::path d = Tmp("sqlist"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.squad_list.has_prosperity); EXPECT_FLOAT_EQ(r.squad_list.prosperity, 3.5f);
+    ASSERT_EQ(r.squad_list.entries.size(), 2u);
+    EXPECT_EQ(r.squad_list.entries[0].name, "squad_a"); EXPECT_FLOAT_EQ(r.squad_list.entries[0].time, 2.5f);
+    ASSERT_EQ(r.squad_list.entries[0].refs.size(), 2u);
+    const KSquadRef& q = r.squad_list.entries[0].refs[1]; EXPECT_EQ(q.type, 6); EXPECT_EQ(q.c, 7); EXPECT_EQ(q.i, 8); EXPECT_EQ(q.s, 9); EXPECT_EQ(q.cs, 10);
+    EXPECT_EQ(r.squad_list.entries[1].name, "squad_b"); EXPECT_TRUE(r.squad_list.entries[1].refs.empty());
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "quick.save").string(), f, e)) << e.Message();
+    const md::fcs::Record* cam = nullptr; for (const auto& rec : f.records) if (rec.kind == 56) cam = &rec;
+    ASSERT_NE(cam, nullptr);
+    auto has = [](const auto& tbl, const std::string& k) { for (const auto& kv : tbl) if (kv.first == k) return true; return false; };
+    EXPECT_TRUE(has(cam->strings, "sq0")); EXPECT_TRUE(has(cam->strings, "sq1")); EXPECT_FALSE(has(cam->strings, "sq2"));
+    EXPECT_TRUE(has(cam->floats, "sqtime0")); EXPECT_TRUE(has(cam->floats, "sqtime1")); EXPECT_TRUE(has(cam->floats, "prosperity"));
+    for (const char* sfx : {"TYPE", "C", "I", "S", "CS"}) EXPECT_TRUE(has(cam->ints, std::string("0:sq list1") + sfx)) << sfx;
+    EXPECT_FALSE(has(cam->ints, "0:sq list2I")); EXPECT_FALSE(has(cam->ints, "1:sq list0I"));
+}
+
+TEST(KenshiSave, SquadListEmptyAndNoProsperity) {
+    const fs::path d = Tmp("sqlist_empty"); std::string err;
+    KenshiSave s = Sample(); s.squad_list = KSquadList{};
+    ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.squad_list.entries.empty()); EXPECT_FALSE(r.squad_list.has_prosperity);
 }
