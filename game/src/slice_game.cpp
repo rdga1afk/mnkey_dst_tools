@@ -77,14 +77,14 @@ MdEntity MakeNpc(float x, float z, float y_fallback, float& y_out, const float* 
 }
 
 // MD_TOWN_NPC=1 (off by default, DE-364): the Hub's residents of the merged load order (list: town_spawn.h, 4 templates of rebirth.mod) are placed on the squad spawn nodes of the Hub's buildings
-// (town_nodes.h; DEVIATION: town membership by radius) and created as NPC entities, capped by kTownNpcBudget. Fixed seed; the Hub centre and radius come from the townlist / `size radius`.
+// (town_nodes.h: the buildings the town holds by its type radius, DE-364) and created as NPC entities, capped by kTownNpcBudget. Fixed seed; the Hub comes from the townlist.
 void TownNpcSpawn(float fallback_y) {
     static const bool on = getenv("MD_TOWN_NPC") && getenv("MD_TOWN_NPC")[0] == '1'; if (!on) return;
-    constexpr float kHubX = 9647.7f, kHubZ = 15038.8f, kHubR = 350.f;
     md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err; md::fcs::GameDataContainer data;
     if (!inst.LoadOrderFor(order, err) || !data.Load(order, err)) { MD_LOG(MD_LOG_WARNING, "[town-npc] load order not readable (%s)", err.Message().c_str()); return; }
-    std::vector<md::world::TownNode> nodes; std::string e2;
-    if (!md::world::LoadTownNodes(md::KenshiDir(), data, kHubX, kHubZ, kHubR, nodes, e2)) { MD_LOG(MD_LOG_WARNING, "[town-npc] nodes not readable (%s)", e2.c_str()); return; }
+    std::vector<md::world::TownSite> towns; std::vector<md::world::TownNode> nodes; std::string e2; int hub = -1;
+    if (md::world::LoadTownSites(md::KenshiDir(), data, towns, e2)) for (size_t i = 0; i < towns.size(); ++i) if (towns[i].id == "18919-Newwworld.mod") hub = (int)i;
+    if (hub < 0 || !md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, nodes, e2)) { MD_LOG(MD_LOG_WARNING, "[town-npc] nodes not readable (%s)", e2.c_str()); return; }
     const auto l = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
     md::world::NodePlacer placer(nodes, 1);
     const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);

@@ -115,18 +115,21 @@ TEST(TownSpawnInstall, HubRadiusFromTypeAndMultiplier) {   // what the exe radiu
     EXPECT_GT(md::world::TownRadiusM(type, mult), 0.f);
 }
 
-TEST(TownSpawnInstall, HubHasGeneralNodesInsideTheTownRadius) {
+static int HubIndex(const std::vector<md::world::TownSite>& t) { for (size_t i = 0; i < t.size(); ++i) if (t[i].id == "18919-Newwworld.mod") return (int)i; return -1; }
+
+TEST(TownSpawnInstall, HubMembershipByTypeRadius) {
     GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
-    // the Hub: centre from the townlist (9647.7, 15038.8) m, `size radius` 350 m
-    const float cx = 9647.7f, cz = 15038.8f, R = 350.f;
-    std::vector<md::world::TownNode> nodes; std::string err;
-    ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, cx, cz, R, nodes, err)) << err;
-    size_t gen = 0, shop = 0; for (const auto& n : nodes) (n.node_type == 1 ? gen : shop)++;
-    std::printf("Hub nodes: %zu general, %zu shopkeeper\n", gen, shop);
-    ASSERT_GT(gen, 0u);
-    // a node sits inside its building, so within the radius plus a building's half size (nodes up to ~40 m from the placement origin)
-    for (const auto& n : nodes) { const float dx = n.x - cx, dz = n.z - cz; EXPECT_LE(std::sqrt(dx * dx + dz * dz), R + 60.f) << n.building; }
-    std::vector<md::world::TownNode> again; ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, cx, cz, R, again, err));
+    std::vector<md::world::TownSite> towns; std::string err; ASSERT_TRUE(md::world::LoadTownSites(md::KenshiDir(), data, towns, err)) << err;
+    const int hub = HubIndex(towns); ASSERT_GE(hub, 0);
+    std::vector<md::world::TownNode> nodes; ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, nodes, err)) << err;
+    size_t t0 = 0, t1 = 0, t2 = 0; for (const auto& n : nodes) (n.node_type == 0 ? t0 : n.node_type == 1 ? t1 : t2)++;
+    std::printf("Hub: %zu towns in the list, radius %.1f m, %zu buildings with nodes, nodes type0 %zu type1 %zu type2 %zu\n", towns.size(), md::world::TownRadiusM(towns[hub].type, towns[hub].mult), md::world::TownBuildingCount(nodes), t0, t1, t2);
+    ASSERT_GT(t1, 0u);
+    const float R = md::world::TownRadiusM(towns[hub].type, towns[hub].mult);
+    for (const auto& n : nodes) {   // a node sits inside its building: the radius plus a building's half size; and the nearest holding town is the Hub
+        const float dx = n.x - towns[hub].x, dz = n.z - towns[hub].z; EXPECT_LE(std::sqrt(dx * dx + dz * dz), R + 60.f) << n.building;
+    }
+    std::vector<md::world::TownNode> again; ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, again, err));
     ASSERT_EQ(again.size(), nodes.size());
 }
 
@@ -140,8 +143,10 @@ TEST(TownNodes, ChoiceIsTypeOneFirstThenTypeZeroAndCoversTheRange) {
 
 TEST(TownSpawnInstall, HubPlanIsPlacedOnNodesAndSeedStable) {
     GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
-    const float cx = 9647.7f, cz = 15038.8f, R = 350.f; std::vector<md::world::TownNode> nodes; std::string err;
-    ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, cx, cz, R, nodes, err)) << err;
+    std::vector<md::world::TownSite> towns; std::vector<md::world::TownNode> nodes; std::string err; ASSERT_TRUE(md::world::LoadTownSites(md::KenshiDir(), data, towns, err)) << err;
+    const int hub = HubIndex(towns); ASSERT_GE(hub, 0);
+    const float cx = towns[hub].x, cz = towns[hub].z, R = md::world::TownRadiusM(towns[hub].type, towns[hub].mult);
+    ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, nodes, err)) << err;
     const auto list = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
     md::world::NodePlacer p1(nodes, 1), p2(nodes, 1), p3(nodes, 2);
     const auto a = md::world::PlanTownSpawn(list, md::world::kTownNpcBudget, p1), b = md::world::PlanTownSpawn(list, md::world::kTownNpcBudget, p2), c = md::world::PlanTownSpawn(list, md::world::kTownNpcBudget, p3);
@@ -154,4 +159,41 @@ TEST(TownSpawnInstall, HubPlanIsPlacedOnNodesAndSeedStable) {
     for (size_t i = 0; i < a.size() && i < 5; ++i) std::printf("member %zu at (%.1f, %.1f) node y %.2f\n", i + 1, a[i].x, a[i].z, a[i].y);
     for (const auto& m : a) EXPECT_TRUE(m.has_y);
     float lo = 1e9f, hi = -1e9f; for (const auto& n : nodes) { lo = std::min(lo, n.y); hi = std::max(hi, n.y); } std::printf("node y range %.1f .. %.1f\n", lo, hi);
+}
+
+TEST(TownNodes, TownOfPointIsTheNearestHoldingTown) {
+    std::vector<md::world::TownSite> t = { {"a", 0.f, 0.f, 2, 1.f}, {"b", 3000.f, 0.f, 3, 1.f}, {"c", 100.f, 0.f, 8, 1.f} };   // a: 2500 m, b: 937.5 m, c: type 8 = no radius
+    EXPECT_EQ(md::world::TownOfPoint(t, 10.f, 0.f), 0);       // c is nearer but holds nothing
+    EXPECT_EQ(md::world::TownOfPoint(t, 2600.f, 0.f), 1);     // a's 2500 m ends; b holds it
+    EXPECT_EQ(md::world::TownOfPoint(t, 2400.f, 0.f), 1);     // both hold it, b is nearer
+    EXPECT_EQ(md::world::TownOfPoint(t, 2400.f, 5000.f), -1); // nobody
+}
+
+TEST(TownNodes, SquadSpawnNodeOrderIsZeroTwoOneInItsOwnBuilding) {
+    auto N = [](int placed, int type, float x) { md::world::TownNode n; n.placed = placed; n.node_type = type; n.x = x; return n; };
+    std::vector<md::world::TownNode> v = { N(0, 1, 1.f), N(1, 1, 2.f), N(1, 2, 3.f), N(1, 2, 4.f), N(2, 0, 5.f), N(2, 2, 6.f), N(2, 1, 7.f) };
+    EXPECT_EQ(md::world::SquadSpawnNode(v, 2, 0u)->x, 5.f);                 // 0 first
+    const auto* g = md::world::SquadSpawnNode(v, 1, 0xffffffffu); ASSERT_NE(g, nullptr); EXPECT_EQ(g->node_type, 2); EXPECT_EQ(g->x, 4.f);   // no 0: 2 before 1
+    EXPECT_EQ(md::world::SquadSpawnNode(v, 0, 7u)->node_type, 1);           // only 1
+    EXPECT_EQ(md::world::SquadSpawnNode(v, 9, 7u), nullptr);                // no building: the origin
+    for (uint32_t r : { 0u, 0x80000000u, 0xffffffffu }) EXPECT_EQ(md::world::SquadSpawnNode(v, 1, r)->placed, 1);
+}
+
+TEST(TownNodes, HousingWalksPrioritiesFiveToZero) {
+    std::vector<md::world::WantedBuilding> table = { {10, 0, 5}, {11, 3, 1}, {12, 5, 2}, {13, 3, 1} };
+    const auto h = md::world::AssignHousing(table, 6);
+    ASSERT_EQ(h.size(), 6u);
+    EXPECT_EQ(h[0], 12); EXPECT_EQ(h[1], 12);   // priority 5 first, count 2
+    EXPECT_EQ(h[2], 11); EXPECT_EQ(h[3], 13);   // priority 3 in table order
+    EXPECT_EQ(h[4], 10); EXPECT_EQ(h[5], 10);   // priority 0
+    EXPECT_EQ(md::world::AssignHousing(table, 6), h);   // deterministic
+    const auto few = md::world::AssignHousing(table, 1); EXPECT_EQ(few[0], 12);
+    const auto many = md::world::AssignHousing({ {1, 5, 1} }, 3); EXPECT_EQ(many[0], 1); EXPECT_EQ(many[1], -1); EXPECT_EQ(many[2], -1);   // a squad with no house
+}
+
+TEST(TownNodes, GeneralChoiceIgnoresGuardPostNodes) {
+    md::world::TownNode g; g.node_type = 2; g.x = 9.f; md::world::TownNode z; z.node_type = 0; z.x = 4.f;
+    std::vector<md::world::TownNode> v = { g, z };
+    EXPECT_EQ(md::world::ChooseSpawnNode(v, 0xffffffffu)->x, 4.f);
+    v = { g }; EXPECT_EQ(md::world::ChooseSpawnNode(v, 0u), nullptr);
 }
