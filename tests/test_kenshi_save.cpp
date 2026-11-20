@@ -25,6 +25,7 @@ KenshiSave Sample() {
         sq.characters.push_back(c);
     }
     s.squads.push_back(sq);
+    s.orders.present = true; s.orders.heal = true; s.orders.rescue = true; s.orders.sleep = true; s.orders.sit = true; s.orders.shootfirst = true; s.orders.formation = 3;
     return s;
 }
 std::vector<char> Slurp(const fs::path& p) { std::ifstream f(p, std::ios::binary); return { std::istreambuf_iterator<char>(f), {} }; }
@@ -156,4 +157,31 @@ TEST(KenshiSave, MissingCameraIntsReadZero) {
     ASSERT_TRUE(md::fcs::WriteFile((d / "quick.save").string(), f, e));
     KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
     EXPECT_EQ(r.day, 0); EXPECT_EQ(r.money, 0); EXPECT_EQ(r.hour, 7);
+}
+
+// player-order toggles and formation (exe writer 0x1403eb710, loader 0x1403ebf50)
+TEST(KenshiSave, OrdersRoundTripValuesAndKeys) {
+    const fs::path d = Tmp("orders"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.orders.present); EXPECT_EQ(r.orders.formation, 3);
+    EXPECT_TRUE(r.orders.heal); EXPECT_FALSE(r.orders.help); EXPECT_TRUE(r.orders.rescue); EXPECT_FALSE(r.orders.stay); EXPECT_FALSE(r.orders.feed); EXPECT_FALSE(r.orders.share);
+    EXPECT_TRUE(r.orders.sleep); EXPECT_FALSE(r.orders.ditch); EXPECT_TRUE(r.orders.sit); EXPECT_FALSE(r.orders.eject); EXPECT_TRUE(r.orders.shootfirst);
+    // the key set and its order are the exe writer's: bools ditch sleep feed heal help rescue share stay sit eject shootfirst, int formation
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "quick.save").string(), f, e)) << e.Message();
+    const md::fcs::Record* cam = nullptr; for (const auto& rec : f.records) if (rec.kind == 56) cam = &rec;
+    ASSERT_NE(cam, nullptr);
+    const char* want[] = {"ditch", "sleep", "feed", "heal", "help", "rescue", "share", "stay", "sit", "eject", "shootfirst"};
+    ASSERT_EQ(cam->bools.size(), 11u);
+    for (int i = 0; i < 11; ++i) EXPECT_EQ(cam->bools[i].first, want[i]);
+    bool has_formation = false; for (const auto& kv : cam->ints) if (kv.first == "formation") has_formation = true;
+    EXPECT_TRUE(has_formation);
+}
+
+TEST(KenshiSave, OrdersAbsentKeepsDefaults) {
+    const fs::path d = Tmp("orders_absent"); std::string err;
+    KenshiSave s = Sample(); s.orders = KOrders{};
+    ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_FALSE(r.orders.present); EXPECT_EQ(r.orders.formation, 0); EXPECT_FALSE(r.orders.heal);
 }
