@@ -27,11 +27,11 @@ bool  g_dynres3 = !(getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '0');   /
 static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static bool s_d3_gh_for[8] = {}; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
 // dynres 0.9 switches: the env values at start, replaceable at run time by md.set_dynres_params (scenarios)
 struct DynresRt { float raise_s = getenv("MD_DYNRES_RAISE_S") ? (float)atof(getenv("MD_DYNRES_RAISE_S")) : -1.f; float turn = getenv("MD_DYNRES_TURN") ? (float)atof(getenv("MD_DYNRES_TURN")) : 0.f;
-    bool predict = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; int gh_level = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; int cmaa_off = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; bool ring = !(getenv("MD_DYNRES_RINGMEAN") && getenv("MD_DYNRES_RINGMEAN")[0] == '0'); };
+    bool predict = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; int gh_level = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; int cmaa_off = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; bool ring = !(getenv("MD_DYNRES_RINGMEAN") && getenv("MD_DYNRES_RINGMEAN")[0] == '0'); float pid = getenv("MD_DYNRES_PID") ? (float)atof(getenv("MD_DYNRES_PID")) : 0.f; };
 static DynresRt g_d3_rt;
-void md_set_dynres_params(float raise_s, float turn, bool predict, int gh_level, int cmaa_off, bool ring) {   // md.set_dynres_params: also clears the controller (scale 1.0, rings empty, prior F / K), keeping the level set
-    g_d3_rt.raise_s = raise_s; g_d3_rt.turn = turn; g_d3_rt.predict = predict; g_d3_rt.gh_level = gh_level; g_d3_rt.cmaa_off = cmaa_off; g_d3_rt.ring = ring;
-    Dynres3 fresh; fresh.SetLevelCount(s_d3.nlev); fresh.gh_enable = s_d3.gh_enable; fresh.SetParams(raise_s, turn, predict, gh_level, ring); s_d3 = fresh; for (int i = 0; i < 8; ++i) { s_d3_scale_for[i] = 1.f; s_d3_gh_for[i] = false; } s_d3_serial = 0; s_d3_mov = false;
+void md_set_dynres_params(float raise_s, float turn, bool predict, int gh_level, int cmaa_off, bool ring, float pid) {   // md.set_dynres_params: also clears the controller (scale 1.0, rings empty, prior F / K), keeping the level set
+    g_d3_rt.raise_s = raise_s; g_d3_rt.turn = turn; g_d3_rt.predict = predict; g_d3_rt.gh_level = gh_level; g_d3_rt.cmaa_off = cmaa_off; g_d3_rt.ring = ring; g_d3_rt.pid = pid;
+    Dynres3 fresh; fresh.SetLevelCount(s_d3.nlev); fresh.gh_enable = s_d3.gh_enable; fresh.SetParams(raise_s, turn, predict, gh_level, ring, pid); s_d3 = fresh; for (int i = 0; i < 8; ++i) { s_d3_scale_for[i] = 1.f; s_d3_gh_for[i] = false; } s_d3_serial = 0; s_d3_mov = false;
 }
 const Dynres3& md_dynres_state() { return s_d3; }
 void md_set_dynres_grass(bool on) { s_d3.gh_enable = on; if (!on) g_grass_scale_dyn = 1.f; }   // md.set_dynres_grass
@@ -240,7 +240,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
             { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
             { s_d3.predict = g_d3_rt.predict; s_d3.Motion(v, w); }
             if (g_d3_rt.raise_s >= 0.f) s_d3.raise_gap_s = g_d3_rt.raise_s;   // dynres 0.9 item 1: the raise wait in seconds (default 0.5 as 0.8)
-            s_d3.ring_mean = g_d3_rt.ring; s_d3.turn_thr = g_d3_rt.turn;   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
+            s_d3.ring_mean = g_d3_rt.ring; s_d3.pid_kp = g_d3_rt.pid; s_d3.turn_thr = g_d3_rt.turn;   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
             { static const bool one_step = !(getenv("MD_DYNRES_ONESTEP") && getenv("MD_DYNRES_ONESTEP")[0] == '0'); s_d3.one_step = one_step; }   // dynres 0.8 (DE-362): one-step drop + panic, MD_DYNRES_ONESTEP=0 gives the 0.7 rule   // dynres 0.5 prediction, off by default
             const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs() + (s_d3_gh_for[(ws - 1) % 8] ? s_d3.gh_saving : 0.f)); }
             { const int col = g_d3_rt.cmaa_off; g_dynres_cmaa_off_scale = col >= 0 ? s_d3.levels[col < s_d3.nlev ? col : s_d3.nlev - 1] : -1.f; }   // dynres 0.9 item 3: highest level that runs without CMAA 2 (default off = never)

@@ -180,6 +180,17 @@ int main() {
         Dynres3 g; g.SetParams(-1.f, 0.f, false, 0); CHECK(g.raise_gap_s == 0.5f && g.turn_thr == 0.f && !g.predict, "raise_s < 0 keeps the default");
         printf("0.9 SetParams checks done\n");
     }
+    { // dynres 0.9 retest arm (DE-366): the PID arm drops under a load over the budget, holds in the dead band, raises when there is room, and an off arm (pid_kp 0) is the band controller
+        auto run = [](float kp, float ms_at_1, int frames) { Dynres3 d; d.pid_kp = kp; d.last_dt = 1.f / 60.f;
+            for (int i = 0; i < frames; ++i) { const float s = d.Scale(); d.Sample(s, ms_at_1 * s * s + 6.f); } return d.Scale(); };
+        CHECK(run(0.12f, 40.f, 600) < 1.f, "PID: a load over the budget must lower the scale (%.2f)", run(0.12f, 40.f, 600));
+        CHECK(run(0.12f, 4.f, 600) == 1.f, "PID: a load with room stays at 1.0 (%.2f)", run(0.12f, 4.f, 600));
+        Dynres3 d; d.pid_kp = 0.12f; d.scale = d.pid_s = 0.67f; d.last_dt = 1.f / 60.f; for (int i = 0; i < 900; ++i) { const float s = d.Scale(); d.Sample(s, 4.f * s * s + 6.f); }
+        CHECK(d.Scale() > 0.67f, "PID: with room the scale rises from the floor (%.2f)", d.Scale());
+        Dynres3 e; e.pid_kp = 0.12f; e.scale = e.pid_s = 0.83f; e.last_dt = 1.f / 60.f; for (int i = 0; i < 600; ++i) e.Sample(e.Scale(), 16.5f);
+        CHECK(e.Scale() == 0.83f, "PID: inside the dead band the scale holds (%.2f)", e.Scale());
+        printf("0.9 PID arm checks done\n");
+    }
     { // dynres 0.9 item 6: an alternating 14 / 30 ms load (mean 22, band top 15.9) never reaches 5 consecutive frames over the band: the consecutive rule keeps the scale, the ring-mean switch drops it
         auto drops = [](bool ring) { Dynres3 d; d.ring_mean = ring; d.scale = 0.83f; d.last_dt = 1.f / 60.f; int dn = 0; float prev = d.Scale();
             for (int i = 0; i < 300; ++i) { const float s = d.Scale(); d.Sample(s, (i & 1) ? 30.f : 14.f); if (d.Scale() < prev) ++dn; prev = d.Scale(); } return dn; };

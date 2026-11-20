@@ -40,7 +40,7 @@ struct Dynres3 {
     int   panic_run = 0; float panic_sum = 0.f, above_sum = 0.f; bool fitted = false, moving = true;
     int   drops = 0, panics = 0;
     void StopMotion() { if (moving) { moving = false; motion_scale = scale; } }      // the caller: the camera came to rest (native resolution while standing)
-    void StartMotion() { if (!moving) { moving = true; scale = std::min(1.f, std::max(floor_scale, motion_scale)); above = below = panic_run = 0; rg_n = rg_h = 0; since_change_s = 0.f; } }
+    void StartMotion() { if (!moving) { moving = true; scale = std::min(1.f, std::max(floor_scale, motion_scale)); above = below = panic_run = 0; pid_s = scale; pid_i = 0.f; pid_inhibit = false; rg_n = rg_h = 0; since_change_s = 0.f; } }
     // state
     float F = 6.5f, K = 20.f;                              // prior from docs/research/DYNRES_V2_2026-11-12.md (street / top40 / high150: F 5.2-7.4, K 19-23)
     float sigma = 1.0f;                                    // residual scale (ms), Huber
@@ -74,7 +74,24 @@ struct Dynres3 {
     // dynres 0.9 item 6 (switch, off): the band is judged on the mean of the last 8 frames, not on a run of consecutive frames. A load that alternates (e.g. 14 / 30 ms frames of the ground refresh period) resets the consecutive counters every other frame, so a mean far over the target never drops the scale
     bool ring_mean = false; float rg[8] = {}; int rg_n = 0, rg_h = 0;
     float turn_thr = 0.f, turn_dps = 0.f;
-    void SetParams(float raise_s, float turn, bool pred, int gh, bool ring = false) { if (raise_s >= 0.f) raise_gap_s = raise_s; turn_thr = turn; predict = pred; gh_level = gh; ring_mean = ring; }   // dynres 0.9 switches (md.set_dynres_params)
+    // dynres 0.9 retest arm (DE-366, Filament filament/src/details/View.cpp updateScale + PIDController.h; own implementation, off by default): PID on the relative error of the 8-frame mean against the budget, relative (velocity) control of the area scale,
+    // dead band -1 % / +5 % on the output, integral limit +-100, integral inhibited while the scale is clamped; the result is rounded down to a level. pid_kp > 0 turns it on and replaces the band, hold and raise wait.
+    float pid_kp = 0.f, pid_ki = 0.002f, pid_i = 0.f, pid_s = 1.f; bool pid_inhibit = false;
+    void PidStep(float seen) {
+        rg[rg_h] = seen; rg_h = (rg_h + 1) & 7; if (rg_n < 8) ++rg_n;
+        if (rg_n < 8) return;
+        float m = 0.f; for (int i = 0; i < 8; ++i) m += rg[i]; m /= 8.f;
+        const float error = 1.f - m / target_ms;
+        pid_i = std::min(100.f, std::max(-100.f, pid_i + (pid_inhibit ? 0.f : error)));
+        float out = pid_kp * error + pid_ki * pid_i;
+        if (out > -0.01f && out < 0.05f) out = 0.f;
+        const float cmd = out < 0.f ? 1.f / (1.f - out) : 1.f + out;
+        const float raw = pid_s * std::sqrt(cmd);
+        pid_s = std::min(1.f, std::max(floor_scale, raw)); pid_inhibit = pid_s != raw;
+        const float next = LevelDown(pid_s);
+        if (next != scale) { if (next < scale) { ++drops; } scale = next; since_change_s = 0.f; rg_n = rg_h = 0; }
+    }
+    void SetParams(float raise_s, float turn, bool pred, int gh, bool ring = false, float pid = 0.f) { if (raise_s >= 0.f) raise_gap_s = raise_s; turn_thr = turn; predict = pred; gh_level = gh; ring_mean = ring; pid_kp = pid; }   // dynres 0.9 switches (md.set_dynres_params)
     void Motion(float speed, float yaw_dps = 0.f) { speed_mps = speed; turn_dps = yaw_dps; }   // once per frame: the smoothed camera speed in m/s (0..) and yaw rate in deg/s
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
@@ -93,6 +110,7 @@ struct Dynres3 {
         }
         since_change_s += last_dt;
         if (turn_thr > 0.f && turn_dps > turn_thr) since_change_s = 0.f;     // dynres 0.9 item 2: turning keeps the raise wait running
+        if (pid_kp > 0.f) { PidStep(seen); return; }
         if (ring_mean) {
             rg[rg_h] = seen; rg_h = (rg_h + 1) & 7; if (rg_n < 8) ++rg_n;
             float m = 0.f; for (int i = 0; i < rg_n; ++i) m += rg[i]; m /= (float)rg_n;
