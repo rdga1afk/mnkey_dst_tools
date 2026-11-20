@@ -63,6 +63,16 @@ jobs:
           git -C ws/engine submodule update --init --depth 1 third_party/recastnavigation   # navtile_probe compiles the Detour sources direct (tools/CMakeLists.txt)
           mkdir -p pkg
           # the engine Package job (about 4 min) may still be running when this one starts: wait for its release, bounded
+          # a docs-only engine head has no release (the engine Package runs only on its source paths): fall back to the first ancestor with a release whose sources equal the pin's.
+          # ENGINE_PATHS must match the `paths:` list of engine/.github/workflows/package.yml (include src third_party CMakeLists.txt cmake)
+          ENGINE_PATHS="include src third_party CMakeLists.txt cmake"
+          REL() { curl -fsI -o /dev/null "https://github.com/${ENGINE_REPO}/releases/download/build-${1:0:12}/engine-${1:0:12}-release.tar.zst"; }
+          if ! REL "$E"; then
+            for A in $(git -C ws/engine rev-list --max-count=200 "$E"); do
+              git -C ws/engine diff --quiet "$A" "$E" -- $ENGINE_PATHS || break
+              if REL "$A"; then echo "engine release fallback: ${A:0:12} (docs-only diff to ${E12})"; E12=${A:0:12}; break; fi
+            done
+          fi
           URL="https://github.com/${ENGINE_REPO}/releases/download/build-${E12}/engine-${E12}-release.tar.zst"
           for i in $(seq 1 30); do
             curl -fsSL -o engine.tar.zst "$URL" && break
