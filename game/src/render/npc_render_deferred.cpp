@@ -34,6 +34,9 @@ void md_set_dynres_params(float raise_s, float turn, bool predict, int gh_level,
     Dynres3 fresh; fresh.SetLevelCount(s_d3.nlev); fresh.gh_enable = s_d3.gh_enable; fresh.SetParams(raise_s, turn, predict, gh_level, ring, pid); s_d3 = fresh; for (int i = 0; i < 8; ++i) { s_d3_scale_for[i] = 1.f; s_d3_gh_for[i] = false; } s_d3_serial = 0; s_d3_mov = false;
 }
 const Dynres3& md_dynres_state() { return s_d3; }
+static float s_d3_target_override = 0.f;
+void md_set_dynres_target(float ms) { s_d3_target_override = ms; }   // md.set_dynres_target: test-only budget override
+float md_dynres_target() { return s_d3.target_ms; }
 void md_set_dynres_grass(bool on) { s_d3.gh_enable = on; if (!on) g_grass_scale_dyn = 1.f; }   // md.set_dynres_grass
 int md_dynres_target_creations() { return md::TargetCreations(); }   // md.dynres_targets
 float g_dynres3_scale() { return s_d3.Scale(); } float g_dynres3_F() { return s_d3.F; } float g_dynres3_K() { return s_d3.K; }
@@ -237,7 +240,7 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
         if (g_dynres3) {   // v3: the GPU ms of the frames that finished (fence waiter) with the scale each was rendered at
             md::GpuDevice& gd = md::GpuDevice::Get();
             { static bool said = false; if (!said) { said = true; { const char* lc = getenv("MD_DYNRES_LEVELS"); if (lc && lc[0] >= '3' && lc[0] <= '5') s_d3.SetLevelCount(lc[0] - '0'); } fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn; levels %d, one-step drop %s, panic x%.2f, raise gap %.1f s)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms, s_d3.levels_on ? s_d3.nlev : 0, s_d3.one_step ? "on" : "off", s_d3.panic_k, s_d3.raise_gap_s); } }
-            { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
+            { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); if (s_d3_target_override > 0.f) { s_d3.heavy = true; s_d3.target_ms = s_d3_target_override; } }
             { s_d3.predict = g_d3_rt.predict; s_d3.Motion(v, w); }
             if (g_d3_rt.raise_s >= 0.f) s_d3.raise_gap_s = g_d3_rt.raise_s;   // dynres 0.9 item 1: the raise wait in seconds (default 0.5 as 0.8)
             s_d3.ring_mean = g_d3_rt.ring; s_d3.pid_kp = g_d3_rt.pid; s_d3.turn_thr = g_d3_rt.turn;   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
