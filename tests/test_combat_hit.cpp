@@ -2,6 +2,7 @@
 // The install test needs KENSHI_DIR (no game data in the repo); it skips without it.
 #include <gtest/gtest.h>
 #include <monkey_dust/world/combat_hit.h>
+#include <monkey_dust/world/combat_fight.h>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -140,4 +141,46 @@ TEST(CombatHit, MatchesExeEmulatorVectors) {
     }
     EXPECT_EQ(attacks, 56);
     EXPECT_EQ(blocks, 11);
+}
+
+// Fight loop (DE-364): off by default; a whole exchange at a fixed seed is reproducible and ends in a knock-out.
+namespace {
+Fighter Duelist(float cut, float level) {
+    Fighter f; f.body = Body(); f.weapon.cut = cut; f.attack_level = level; f.block_level = level;
+    for (int i = 0; i < 3; ++i) f.body.parts[i].health = 60.f;
+    return f;
+}
+}
+
+TEST(CombatFight, OffByDefaultDoesNothing) {
+    HitConstants c; FightConfig cfg; Fighter a = Duelist(30, 20), b = Duelist(30, 20); Rng r(5);
+    const FightResult res = RunFight(c, cfg, a, b, r);
+    EXPECT_FALSE(res.ran);
+    EXPECT_EQ(res.winner, -1);
+    EXPECT_FLOAT_EQ(b.body.parts[0].health, 60.f);
+    EXPECT_FALSE(cfg.enabled);
+}
+
+TEST(CombatFight, WholeExchangeAtFixedSeed) {
+    HitConstants c; FightConfig cfg; cfg.enabled = true;
+    auto run = [&](FightResult& out, Fighter& a, Fighter& b) { Rng r(12345); a = Duelist(40, 30); b = Duelist(40, 30); out = RunFight(c, cfg, a, b, r); };
+    FightResult r1, r2; Fighter a1, b1, a2, b2;
+    run(r1, a1, b1); run(r2, a2, b2);
+    EXPECT_TRUE(r1.ran);
+    ASSERT_GE(r1.winner, 0);
+    EXPECT_EQ(r1.winner, r2.winner); EXPECT_EQ(r1.rounds, r2.rounds);
+    EXPECT_EQ(r1.hits[0], r2.hits[0]); EXPECT_EQ(r1.hits[1], r2.hits[1]);
+    const Fighter& loser = r1.winner == 0 ? b1 : a1;
+    EXPECT_TRUE(loser.body.knocked_out);
+    EXPECT_GT(r1.hits[r1.winner], 0);
+    EXPECT_FALSE((r1.winner == 0 ? a1 : b1).body.knocked_out);
+}
+
+TEST(CombatFight, StrongerSideWinsMostDuels) {
+    HitConstants c; FightConfig cfg; cfg.enabled = true; int strong = 0;
+    for (int s = 0; s < 200; ++s) {
+        Fighter a = Duelist(60, 60), b = Duelist(20, 10); Rng r(s);
+        if (RunFight(c, cfg, a, b, r).winner == 0) ++strong;
+    }
+    EXPECT_GT(strong, 150);
 }
