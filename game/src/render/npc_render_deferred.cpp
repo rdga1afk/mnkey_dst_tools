@@ -27,7 +27,7 @@ bool  g_dynres3 = !(getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '0');   /
 static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static bool s_d3_gh_for[8] = {}; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
 // dynres 0.9 switches: the env values at start, replaceable at run time by md.set_dynres_params (scenarios)
 struct DynresRt { float raise_s = getenv("MD_DYNRES_RAISE_S") ? (float)atof(getenv("MD_DYNRES_RAISE_S")) : -1.f; float turn = getenv("MD_DYNRES_TURN") ? (float)atof(getenv("MD_DYNRES_TURN")) : 0.f;
-    bool predict = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; int gh_level = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; int cmaa_off = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; bool ring = getenv("MD_DYNRES_RINGMEAN") && getenv("MD_DYNRES_RINGMEAN")[0] == '1'; };
+    bool predict = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; int gh_level = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; int cmaa_off = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; bool ring = !(getenv("MD_DYNRES_RINGMEAN") && getenv("MD_DYNRES_RINGMEAN")[0] == '0'); };
 static DynresRt g_d3_rt;
 void md_set_dynres_params(float raise_s, float turn, bool predict, int gh_level, int cmaa_off, bool ring) {   // md.set_dynres_params: also clears the controller (scale 1.0, rings empty, prior F / K), keeping the level set
     g_d3_rt.raise_s = raise_s; g_d3_rt.turn = turn; g_d3_rt.predict = predict; g_d3_rt.gh_level = gh_level; g_d3_rt.cmaa_off = cmaa_off; g_d3_rt.ring = ring;
@@ -729,7 +729,6 @@ extern bool g_ground_pvt, g_ground_hist_fast;   // engine/src/render/terrain_sha
 void md_settings_set_ground_hist_fast(int mode) { g_ground_hist_fast = mode != 0; }   // F3 Settings (#207, owner 01.11)
 void md_settings_set_ground_pvt(int on) { g_ground_pvt = on != 0; }                    // F3 Settings (#207, owner 01.11)
 void md_settings_set_up_sharp(int mode) { g_up_sharp = mode < 0 || mode > 2 ? 0 : mode; }   // F3 Settings (#207, owner 31.10)
-void md_settings_set_dynres_ring(bool on) { g_d3_rt.ring = on; }   // DE-366 item 6 F3 Settings
 void md_settings_set_cmaa2(bool on) { g_opt_cmaa2 = on; }   // DE-358 F3 Settings
 void md_set_aa_mode(const char* m) { g_opt_cmaa2 = !strcmp(m, "cmaa2"); }   // DE-358 / DE-360: "cmaa2" | "off"   // F3 Settings (#180)
 void md_settings_set_dyn_res(float scale) { g_dynres_on = scale > 0.f; if (scale > 0.f) g_dynres_scale = scale < 0.5f ? 0.5f : (scale > 1.f ? 1.f : scale); }   // F3 Settings (#182): 0 = off
@@ -763,10 +762,19 @@ void md_settings_set_ground_aniso(int level) { g_terrain_ground_aniso_level = le
 void md_settings_set_view_distance(float v) { md::g_view_distance_m = v < 1500.f ? 1500.f : (v > 12000.f ? 12000.f : v); }   // F3 Settings (#175): Kenshi's "view distance" 1500...12000
 void md_settings_set_town_foliage(bool on, float range_m) { TownFoliage::Get().SetEnabled(on, range_m); }   // F3 Settings (#120): MEDIUM plants and rocks of the zones around the camera, Kenshi range 100 m x setting
 void md_settings_set_town_grass(bool on, float range_m, float density) { TownFoliage::Get().SetGrass(on, range_m, density); }   // F3 Settings (#120): CLOSE grass blades round the camera (needs Plants and rocks on)
+void md_settings_get_town_state(bool* b, bool* f, bool* g) { *b = TownBuildings::Get().Enabled(); *f = TownFoliage::Get().Enabled(); *g = TownFoliage::Get().GrassOn(); }   // F3 Settings (DE-368)
+const char* md_settings_dynres_version() { return kDynresVersion; }   // F3 Settings (DE-368)
 void md_settings_set_town_buildings(bool on, float range_m) { TownBuildings::Get().SetEnabled(on, range_m); }   // F3 Settings (#119): buildings of the zones around the camera, Kenshi `objects view range` in metres
 void md_settings_set_fps_cap(int fps) { window_set_fps_cap(fps); }   // F3 Settings (#191, #207): -1 auto (default) / 30 / 40 / 60 / 0 = unlimited
 void md_settings_set_vsync(bool on) { window_set_vsync(on ? 60 : 0); }   // F3 Settings (#175): Kenshi's VSync (default No = the engine's mailbox)
 void md_settings_set_window_size(int w, int h) { window_set_size(w, h); }   // F3 Settings (#175)
+void md_settings_set_borderless(bool on) {   // F3 Settings (DE-368): borderless fullscreen at the desktop size, off = the maximised window; few ordered SDL calls as in md.place_window_on_largest_display
+    SDL_Window* win = _wnd::ptr(); if (!win) return;
+    if (on) {
+        if (SDL_GetWindowFlags(win) & SDL_WINDOW_MAXIMIZED) { SDL_RestoreWindow(win); for (int i = 0; i < 50 && (SDL_GetWindowFlags(win) & SDL_WINDOW_MAXIMIZED); ++i) { SDL_PumpEvents(); SDL_Delay(20); } }
+        SDL_SetWindowFullscreenMode(win, nullptr); SDL_SetWindowFullscreen(win, true);
+    } else { SDL_SetWindowFullscreen(win, false); SDL_MaximizeWindow(win); }
+}
 int  md_settings_get_terrain_chunk() { return g_terrain_lod_patch; }
 void md_settings_set_terrain_chunk(int cells) { g_terrain_lod_patch = (cells == 64) ? 64 : 16; }
 

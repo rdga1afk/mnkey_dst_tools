@@ -48,7 +48,6 @@ extern int   md_settings_get_ground_reuse_chain();
 extern void  md_settings_set_ground_reuse_chain(int c);   // #207: 0 standard / 3 / 5
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
-extern void  md_settings_set_dynres_ring(bool on);   // dynres 0.9 item 6: band judged on the mean of 8 frames
 extern void  md_settings_set_cmaa2(bool on);   // DE-360: CMAA 2 (the default AA)
 extern void  md_settings_set_terrain_lod(float detail, float distant, float threshold);   // #175
 extern void  md_settings_set_vsync(bool on);   // #175
@@ -62,6 +61,9 @@ extern int   md_settings_get_ground_reuse_cr();   // #193
 extern bool  md_settings_ground_preset(int n, int* aniso, float* dyn_scale, int* cr);
 extern bool  md_settings_set_ground_preset(int n);
 extern void  md_settings_set_window_size(int w, int h);   // #175
+extern void  md_settings_set_borderless(bool on);   // DE-368
+extern void  md_settings_get_town_state(bool* buildings, bool* plants, bool* grass);   // DE-368: the real state of the town objects
+extern const char* md_settings_dynres_version();   // DE-368
 extern void  md_settings_set_dyn_res(float scale);   // #182: resolution while the camera moves (Native upscaling only); 0 = off
 extern int   md_settings_get_terrain_chunk();
 extern void  md_settings_set_terrain_chunk(int cells);
@@ -72,15 +74,12 @@ static int   s_set_hf        = 0;      // "hf": history filter of the ground whi
 static int   s_set_pvt       = 0;      // "pvt": ground cache (PVT) in pass A (#207, owner 01.11): 0 Off (default), 1 On
 static int   s_set_ush       = 0;      // "ush": sharpening of the upscale while the camera moves (#207, owner 31.10): 0 Quality (default, 5 taps + adaptive), 1 Fast (3 taps), 2 Off (1 tap)
 static int   s_set_chunk     = 16;
-static bool  s_set_dring      = false;   // "dring": dynres ring-mean band (dynres 0.9 item 6), off until the owner decides
 static bool  s_set_cmaa2     = true;   // "aa": CMAA 2 (DE-360, owner 19.11), on by default; a new key, so a layout saved while CMAA 2 was off by default does not pin it off
 // Kenshi's graphics sliders (#175, docs/research/KENSHI_GRAPHICS_OPTIONS.md): names, ranges and defaults of settings.cfg
 static float s_set_tdetail   = 1.f;    // "td": terrain detail 0..1, Kenshi 1.0
 static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.0
 static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
-static bool  s_set_tbld      = false;  // "tbld": buildings of the zones around the camera (#119), off by default
-static bool  s_set_tfol      = false;  // plants and rocks of the zones around the camera (#120), off by default, not saved
-static bool  s_set_grass     = false;  // CLOSE grass (#120), off by default, not saved
+static bool  s_set_bless     = false;  // "bl": borderless 1920x1080 window (DE-368), default off = the maximised window
 static float s_set_grange    = 50.f;   // Kenshi CLOSE range, metres
 static float s_set_gdens     = 1.f;    // grass density x
 static float s_set_fvr       = 100.f;  // Kenshi MEDIUM foliage range, metres (default 100 = 1000 units)
@@ -97,11 +96,6 @@ static const int kWinRes[][2] = { {1280, 720}, {1366, 768}, {1600, 900}, {1920, 
 static int   s_set_dyn       = 1;      // "dyn": resolution while moving (#182, owner 17.10; 0.67 owner 13.11): 0 off, 1 = 0.67 (default), 2 = 0.5
 static float dyn_scale_of(int m) { return m == 1 ? 0.67f : (m == 2 ? 0.5f : 0.f); }
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
-// #193 "Ground quality": the preset whose three settings equal the current ones (0 dyn067_a1, 1 dyn067, 2 reuse05), else 3 = Custom
-static int ground_preset_now() {
-    for (int n = 0; n < 3; ++n) { int a, c; float d; md_settings_ground_preset(n, &a, &d, &c); if (a == kAnisoLv[s_set_ga] && d == dyn_scale_of(s_set_dyn) && c == md_settings_get_ground_reuse_cr()) return n; }
-    return 4;
-}
 static void ground_preset_apply(int n) {
     int a, c; float d; if (!md_settings_set_ground_preset(n) || !md_settings_ground_preset(n, &a, &d, &c)) return;
     for (int i = 0; i < 3; ++i) if (kAnisoLv[i] == a) s_set_ga = i;
@@ -160,13 +154,12 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
         if (strstr(buf, "\"grp\"")) { s_set_reuse_period = (int)f3_parse_f(buf, "\"grp\""); if (s_set_reuse_period != 4 && s_set_reuse_period != 8) s_set_reuse_period = 16; }
         if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
-        if (strstr(buf, "\"dring\"")) s_set_dring = f3_parse_f(buf, "\"dring\"") != 0.f;
         if (strstr(buf, "\"aa\"")) s_set_cmaa2 = f3_parse_f(buf, "\"aa\"") != 0.f;
         if (strstr(buf, "\"fxaa\"")) { static bool warned = false; if (!warned) { warned = true; fprintf(stderr, "[F3] layout key \"fxaa\" ignored: FXAA was removed (DE-360)\n"); } }
         if (strstr(buf, "\"td\"")) { s_set_tdetail = f3_parse_f(buf, "\"td\""); if (s_set_tdetail < 0.f || s_set_tdetail > 1.f) s_set_tdetail = 1.f; }
         if (strstr(buf, "\"tdi\"")) { s_set_tdistant = f3_parse_f(buf, "\"tdi\""); if (s_set_tdistant < 0.f || s_set_tdistant > 1.f) s_set_tdistant = 0.f; }
         if (strstr(buf, "\"tth\"")) { s_set_tthresh = f3_parse_f(buf, "\"tth\""); if (s_set_tthresh < 100.f || s_set_tthresh > 3000.f) s_set_tthresh = 750.f; }
-        if (strstr(buf, "\"tbld\"")) s_set_tbld = f3_parse_f(buf, "\"tbld\"") != 0.f;
+        if (strstr(buf, "\"bl\"")) s_set_bless = f3_parse_f(buf, "\"bl\"") != 0.f;
         if (strstr(buf, "\"ovr\"")) { s_set_ovr = f3_parse_f(buf, "\"ovr\""); if (s_set_ovr < 100.f || s_set_ovr > 800.f) s_set_ovr = 300.f; }
         if (strstr(buf, "\"gp\"")) { s_set_gp = (int)f3_parse_f(buf, "\"gp\""); s_set_gp = s_set_gp < 0 ? 0 : (s_set_gp > 3 ? 3 : s_set_gp); }   // the old numbering had aniso1 at 0 (= dyn067_a1 now) and Custom at 4
         if (strstr(buf, "\"grc\"")) { s_set_chain = (int)f3_parse_f(buf, "\"grc\""); if (s_set_chain != 0 && s_set_chain != 3) s_set_chain = 5; }
@@ -205,7 +198,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d,\"aa\":%d,\"dring\":%d}\n",
+        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"bl\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d,\"aa\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -216,7 +209,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
         s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fif, s_set_dyn,
-        s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr, s_set_chain, s_set_ush, s_set_hf, s_set_pvt, s_set_cmaa2 ? 1 : 0, s_set_dring ? 1 : 0);
+        s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_bless ? 1 : 0, s_set_ovr, s_set_chain, s_set_ush, s_set_hf, s_set_pvt, s_set_cmaa2 ? 1 : 0);
     fclose(f);
 }
 
@@ -236,10 +229,10 @@ void EditorCore::Init() {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
         if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { md_settings_set_up_sharp(s_set_ush); md_settings_set_ground_hist_fast(s_set_hf); md_settings_set_ground_pvt(s_set_pvt); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_ground_reuse_period(s_set_reuse_period); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
-            if (s_set_dring) md_settings_set_dynres_ring(true);
             md_settings_set_cmaa2(s_set_cmaa2); md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh); md_settings_set_vsync(s_set_vsync); md_settings_set_view_distance(s_set_vdist); md_settings_set_ground_aniso(kAnisoLv[s_set_ga]);
             if (s_set_gp >= 0 && s_set_gp <= 2) ground_preset_apply(s_set_gp);
-            if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
+            if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]);
+            if (s_set_bless) md_settings_set_borderless(true); }
         else { ground_preset_apply(s_set_gp); s_set_chunk = md_settings_get_terrain_chunk(); s_set_reuse = md_settings_get_ground_reuse(); s_set_reuse_period = md_settings_get_ground_reuse_period(); s_set_light = md_settings_get_lighting(); }
         {   // #207 precedence: env MD_GROUND_CHAIN > saved Settings ("grc") > default 5; a Lua md.set_ground_reuse_chain call wins afterwards
             const char* ce = getenv("MD_GROUND_CHAIN"); const char* src = "default";
@@ -475,58 +468,25 @@ void EditorCore::Update(float dt) {
                 ImGui::SliderFloat("Fly speed (m/s)##fset", &cam_speed, 5.f, 5000.f, "%.0f",
                                    ImGuiSliderFlags_Logarithmic);
 #ifndef MONKEY_DUST_STANDALONE_EDITOR
-                // Upscaling: the scene is native; C15 lowers it while the camera moves (the only scaler since 31.10; the other upscaling modes were removed)
+                // DE-368 (owner 20.11): the player settings stay here, small variants and unverified ones are under "Debug"
                 ImGui::Separator();
-                ImGui::TextUnformatted("Upscaling");
+                ImGui::TextUnformatted("Resolution");
                 {
-                    {   // #193 (owner 22.10): one switch over the three ground settings; a manual change below makes it Custom
-                        static const char* kGpNm[] = { "dyn067_a1 (default)", "dyn067", "reuse05", "Custom" };
-                        s_set_gp = ground_preset_now();
-                        int gp = s_set_gp;
-                        ImGui::SetNextItemWidth(220.f);
-                        if (ImGui::Combo("Ground quality##gq", &gp, kGpNm, 4) && gp < 3) { ground_preset_apply(gp); s_set_gp = gp; }
-                    }
-                    // #182: while the camera moves the scene renders at a lower scale, native when it stands
-                    ImGui::TextUnformatted("Resolution while moving"); ImGui::SameLine(); ImGui::TextDisabled("(dynres 0.4)");
-                    if (ImGui::RadioButton("Off##dyn0", s_set_dyn == 0)) { s_set_dyn = 0; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("0.67##dyn1", s_set_dyn == 1)) { s_set_dyn = 1; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("0.5##dyn2", s_set_dyn == 2)) { s_set_dyn = 2; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
-                    // #207 (owner 31.10): the sharpen of the upscale, only while C15 has lowered the resolution; Quality = 5 taps + adaptive (~3 ms), Fast = 3 taps (~1.3 ms), Off = 1 tap (~0.75 ms)
-                    ImGui::TextUnformatted("Sharpening while moving");
-                    if (ImGui::RadioButton("Quality##ush0", s_set_ush == 0)) { s_set_ush = 0; md_settings_set_up_sharp(s_set_ush); }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Fast##ush1", s_set_ush == 1)) { s_set_ush = 1; md_settings_set_up_sharp(s_set_ush); }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Off##ush2", s_set_ush == 2)) { s_set_ush = 2; md_settings_set_up_sharp(s_set_ush); }
-                    // #207 (owner 01.11): two accelerations of the ground in motion; the defaults keep today's look
-                    ImGui::TextUnformatted("History filter while moving");
-                    if (ImGui::RadioButton("Quality##hf0", s_set_hf == 0)) { s_set_hf = 0; md_settings_set_ground_hist_fast(s_set_hf); }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Fast##hf1", s_set_hf == 1)) { s_set_hf = 1; md_settings_set_ground_hist_fast(s_set_hf); }
-                    ImGui::TextUnformatted("Ground cache (PVT)");
-                    if (ImGui::RadioButton("Off##pvt0", s_set_pvt == 0)) { s_set_pvt = 0; md_settings_set_ground_pvt(s_set_pvt); }
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("On##pvt1", s_set_pvt == 1)) { s_set_pvt = 1; md_settings_set_ground_pvt(s_set_pvt); }
+                    bool dyn_on = s_set_dyn != 0;
+                    char dl[64]; snprintf(dl, sizeof dl, "Resolution while moving (%s)##dyn", md_settings_dynres_version());
+                    if (ImGui::Checkbox(dl, &dyn_on)) { s_set_dyn = dyn_on ? 1 : 0; md_settings_set_dyn_res(dyn_scale_of(s_set_dyn)); }
                     int iw = 0, ih = 0, ow = 0, oh = 0;
                     md_settings_render_size(&iw, &ih, &ow, &oh);
                     ImGui::Text("internal %dx%d -> output %dx%d", iw, ih, ow, oh);
+                    if (ImGui::Checkbox("Borderless 1920x1080##bless", &s_set_bless)) md_settings_set_borderless(s_set_bless);
                 }
                 // #175: Kenshi's graphics options as separate sliders (no presets); names, ranges and defaults of settings.cfg
                 ImGui::Separator();
                 ImGui::TextUnformatted("Graphics");
                 {
-                    bool lod_ch = false;
                     ImGui::SetNextItemWidth(220.f);
-                    lod_ch |= ImGui::SliderFloat("Terrain Detail##tdet", &s_set_tdetail, 0.f, 1.f, "%.2f");
-                    ImGui::SetNextItemWidth(220.f);
-                    lod_ch |= ImGui::SliderFloat("Terrain Distant##tdis", &s_set_tdistant, 0.f, 1.f, "%.2f");
-                    ImGui::SetNextItemWidth(220.f);
-                    lod_ch |= ImGui::SliderFloat("Terrain Threshold##tthr", &s_set_tthresh, 100.f, 3000.f, "%.0f");
-                    if (lod_ch) md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh);
+                    if (ImGui::SliderFloat("Terrain Detail##tdet", &s_set_tdetail, 0.f, 1.f, "%.2f")) md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh);
                     if (ImGui::Checkbox("CMAA 2 (anti-aliasing)##cmaa2", &s_set_cmaa2)) md_settings_set_cmaa2(s_set_cmaa2);
-                    if (ImGui::Checkbox("Dynres: band on the mean of 8 frames##dring", &s_set_dring)) md_settings_set_dynres_ring(s_set_dring);
                     {
                         static const char* kAnisoNm[] = { "Footprint mip", "Aniso x4", "Aniso x16 (Kenshi)" };
                         int gi = s_set_ga;
@@ -536,17 +496,25 @@ void EditorCore::Update(float dt) {
                     ImGui::SetNextItemWidth(220.f);
                     if (ImGui::SliderFloat("View Distance##vdist", &s_set_vdist, 1500.f, 12000.f, "%.0f")) md_settings_set_view_distance(s_set_vdist);
                     if (ImGui::Checkbox("VSync##vsy", &s_set_vsync)) md_settings_set_vsync(s_set_vsync);
-                    if (ImGui::Checkbox("Town buildings##tbld", &s_set_tbld)) md_settings_set_town_buildings(s_set_tbld, s_set_ovr);
-                    if (s_set_tbld) {
+                    {
+                        static const char* kCapNm[] = { "Auto (30 idle / 60 moving)", "30", "60", "Unlimited" }; static const int kCapV[] = { -1, 30, 60, 0 };
+                        int ci = s_set_fcap == 30 ? 1 : (s_set_fcap == 60 ? 2 : (s_set_fcap == 0 ? 3 : 0));
+                        ImGui::SetNextItemWidth(220.f);
+                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 4)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
+                    }
+                    // the town objects are on at start; the boxes show the real state, a change lasts for this run only
+                    bool tb = false, tf = false, tg = false; md_settings_get_town_state(&tb, &tf, &tg);
+                    if (ImGui::Checkbox("Town buildings##tbld", &tb)) md_settings_set_town_buildings(tb, s_set_ovr);
+                    if (tb) {
                         ImGui::SetNextItemWidth(220.f);
                         if (ImGui::SliderFloat("Objects view range (m)##ovr", &s_set_ovr, 100.f, 800.f, "%.0f")) md_settings_set_town_buildings(true, s_set_ovr);
                     }
-                    if (ImGui::Checkbox("Plants and rocks##tfol", &s_set_tfol)) md_settings_set_town_foliage(s_set_tfol, s_set_fvr);
-                    if (s_set_tfol) {
+                    if (ImGui::Checkbox("Plants and rocks##tfol", &tf)) md_settings_set_town_foliage(tf, s_set_fvr);
+                    if (tf) {
                         ImGui::SetNextItemWidth(220.f);
                         if (ImGui::SliderFloat("Plants view range (m)##fvr", &s_set_fvr, 50.f, 400.f, "%.0f")) md_settings_set_town_foliage(true, s_set_fvr);
-                        if (ImGui::Checkbox("Grass##grs", &s_set_grass)) md_settings_set_town_grass(s_set_grass, s_set_grange, s_set_gdens);
-                        if (s_set_grass) {
+                        if (ImGui::Checkbox("Grass##grs", &tg)) md_settings_set_town_grass(tg, s_set_grange, s_set_gdens);
+                        if (tg) {
                             ImGui::SetNextItemWidth(220.f);
                             bool ch = ImGui::SliderFloat("Grass view range (m)##grng", &s_set_grange, 20.f, 150.f, "%.0f");
                             ImGui::SetNextItemWidth(220.f);
@@ -554,24 +522,38 @@ void EditorCore::Update(float dt) {
                             if (ch) md_settings_set_town_grass(true, s_set_grange, s_set_gdens);
                         }
                     }
-                    {
-                        static const char* kCapNm[] = { "Auto (30 idle / 60 moving)", "30", "60", "Unlimited" }; static const int kCapV[] = { -1, 30, 60, 0 };
-                        int ci = s_set_fcap == 30 ? 1 : (s_set_fcap == 60 ? 2 : (s_set_fcap == 0 ? 3 : 0));
-                        ImGui::SetNextItemWidth(220.f);
-                        if (ImGui::Combo("Frame cap (fps)##fcap", &ci, kCapNm, 4)) { s_set_fcap = kCapV[ci]; md_settings_set_fps_cap(s_set_fcap); }
-                    }
+                    ImGui::TextDisabled("Shadows: off (Forward tier has no shadow pass). Texture Quality, Water Reflection: not implemented yet");
+                }
+                // DE-368: small variants and rows whose effect in the release path is not proven (docs/research/F3_SETTINGS_AUDIT_2026-11-20.md)
+                ImGui::Separator();
+                if (ImGui::CollapsingHeader("Debug##f3dbg")) {
+                    bool lod_ch = false;
+                    ImGui::SetNextItemWidth(220.f);
+                    lod_ch |= ImGui::SliderFloat("Terrain Distant##tdis", &s_set_tdistant, 0.f, 1.f, "%.2f");
+                    ImGui::SetNextItemWidth(220.f);
+                    lod_ch |= ImGui::SliderFloat("Terrain Threshold##tthr", &s_set_tthresh, 100.f, 3000.f, "%.0f");
+                    if (lod_ch) md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh);
+                    ImGui::TextUnformatted("Sharpening while moving");
+                    if (ImGui::RadioButton("Quality##ush0", s_set_ush == 0)) { s_set_ush = 0; md_settings_set_up_sharp(s_set_ush); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Fast##ush1", s_set_ush == 1)) { s_set_ush = 1; md_settings_set_up_sharp(s_set_ush); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Off##ush2", s_set_ush == 2)) { s_set_ush = 2; md_settings_set_up_sharp(s_set_ush); }
+                    ImGui::TextUnformatted("History filter while moving");
+                    if (ImGui::RadioButton("Quality##hf0", s_set_hf == 0)) { s_set_hf = 0; md_settings_set_ground_hist_fast(s_set_hf); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Fast##hf1", s_set_hf == 1)) { s_set_hf = 1; md_settings_set_ground_hist_fast(s_set_hf); }
+                    ImGui::TextUnformatted("Ground cache (PVT)");
+                    if (ImGui::RadioButton("Off##pvt0", s_set_pvt == 0)) { s_set_pvt = 0; md_settings_set_ground_pvt(s_set_pvt); }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("On##pvt1", s_set_pvt == 1)) { s_set_pvt = 1; md_settings_set_ground_pvt(s_set_pvt); }
                     {
                         static const char* kRes[] = { "1280x720", "1366x768", "1600x900", "1920x1080" };
                         int ri = s_set_wres;
                         ImGui::SetNextItemWidth(220.f);
                         if (ImGui::Combo("Window resolution##wres", &ri, kRes, 4)) { s_set_wres = ri; md_settings_set_window_size(kWinRes[ri][0], kWinRes[ri][1]); }
                     }
-                    ImGui::TextDisabled("Shadows: off (Forward tier has no shadow pass). Texture Quality, Water Reflection, grass / foliage ranges: not implemented yet");
-                }
-                // #154: patch size of the terrain LOD (Kenshi's "Terrain Chunk Size"). Read at start.
-                ImGui::Separator();
-                ImGui::TextUnformatted("Terrain");
-                {
+                    // #154: patch size of the terrain LOD (Kenshi's "Terrain Chunk Size"). Read at start.
                     if (ImGui::RadioButton("Small (16)##tcs16", s_set_chunk == 16)) s_set_chunk = 16;
                     ImGui::SameLine();
                     if (ImGui::RadioButton("Large (64)##tcs64", s_set_chunk == 64)) s_set_chunk = 64;
@@ -590,7 +572,7 @@ void EditorCore::Update(float dt) {
                         if (ImGui::Combo("Ground reuse chain##grc", &ci, kGrc, 3)) { s_set_chain = ci == 0 ? 0 : (ci == 1 ? 3 : 5); md_settings_set_ground_reuse_chain(s_set_chain); }
                     }
                     {
-                        static const char* kFif[] = { "1 (lowest latency)", "2 (default)", "3" };
+                        static const char* kFif[] = { "1 (default, lowest latency)", "2", "3" };
                         int fi = s_set_fif - 1;
                         if (ImGui::Combo("GPU frames in flight##fif", &fi, kFif, 3)) { s_set_fif = fi + 1; md_settings_set_frames_in_flight(s_set_fif); }
                     }

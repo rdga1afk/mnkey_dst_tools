@@ -21,6 +21,7 @@ public:
     static TownFoliage& Get();
     void SetEnabled(bool on, float range_m);
     bool Enabled() const { return enabled_; }
+    bool GrassOn() const { return grass_on_; }
     // CLOSE grass blades (Kenshi range 50 m): a circle round the camera, regenerated on the worker when the camera has moved REGEN_M; the new set loads next to the shown one and swaps in.
     void SetGrass(bool on, float range_m, float density);
     void SetGrassExe(bool on) { grass_exe_ = on; grass_shown_ = false; }   // the exe's pager + install program (MD_GRASS=1 sets it at start; md.set_grass)

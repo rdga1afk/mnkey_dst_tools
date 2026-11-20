@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-inline constexpr const char* kDynresVersion = "dynres 0.8";
+inline constexpr const char* kDynresVersion = "dynres 0.9";
 
 struct Dynres3 {
     static constexpr int kN = 240;                         // samples kept (4 s at 60 fps)
