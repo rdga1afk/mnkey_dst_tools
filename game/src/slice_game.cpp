@@ -60,12 +60,12 @@ float Offset() {   // uniform in -kStartJitterMetres..+kStartJitterMetres, fixed
 }
 
 // one NPC entity at (x, z) in WorldTransform coordinates, on the ground (fallback y_fallback); the null entity when no transform slot is free. Shared by the slice squad and the MD_TOWN_NPC residents.
-MdEntity MakeNpc(float x, float z, float y_fallback, float& y_out) {
+MdEntity MakeNpc(float x, float z, float y_fallback, float& y_out, const float* y_at = nullptr) {
     auto& reg = MdRegistry::Get();
     auto e = reg.Create();
     reg.Handle(e).emplace<WorldTransform>();
     auto& tr = reg.Handle(e).get_mut<WorldTransform>();
-    const float y = Ground(x, z, y_fallback);
+    const float y = y_at ? *y_at : Ground(x, z, y_fallback);   // a spawn node brings its own height (floor of its building)
     tr.x = x; tr.z = z; tr.y = y; tr.rot_y = 0.f;
     tr.slot = TransformSoA::Get().Alloc(e, x, z, 0);
     if (tr.slot == TransformSoA::INVALID_SLOT) return MdEntity{};
@@ -89,7 +89,7 @@ void TownNpcSpawn(float fallback_y) {
     md::world::NodePlacer placer(nodes, 1);
     const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);
     size_t made = 0;
-    for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y) != MdEntity{}) ++made; if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f", made, m.x, m.z, y); }
+    for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y, m.has_y ? &m.y : nullptr) != MdEntity{}) ++made; if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f", made, m.x, m.z, y); }
     MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made);
 }
 

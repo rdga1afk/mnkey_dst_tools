@@ -135,4 +135,7 @@ TEST(TownSpawnInstall, HubPlanIsPlacedOnNodesAndSeedStable) {
     EXPECT_TRUE(same); EXPECT_TRUE(differs);
     for (const auto& m : a) { const float dx = m.x - cx, dz = m.z - cz; EXPECT_LE(std::sqrt(dx * dx + dz * dz), R + 60.f); }
     std::printf("Hub plan: %zu members placed on type-1 nodes of %zu nodes\n", a.size(), nodes.size());
+    for (size_t i = 0; i < a.size() && i < 5; ++i) std::printf("member %zu at (%.1f, %.1f) node y %.2f\n", i + 1, a[i].x, a[i].z, a[i].y);
+    for (const auto& m : a) EXPECT_TRUE(m.has_y);
+    float lo = 1e9f, hi = -1e9f; for (const auto& n : nodes) { lo = std::min(lo, n.y); hi = std::max(hi, n.y); } std::printf("node y range %.1f .. %.1f\n", lo, hi);
 }
