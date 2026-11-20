@@ -48,6 +48,7 @@ extern int   md_settings_get_ground_reuse_chain();
 extern void  md_settings_set_ground_reuse_chain(int c);   // #207: 0 standard / 3 / 5
 extern int   md_settings_get_lighting();   // #140: 0 ours, 2 Kenshi (L2), 3 + fog (L3), 4 + auto exposure (L4)
 extern void  md_settings_set_lighting(int mode);
+extern void  md_settings_set_dynres_ring(bool on);   // dynres 0.9 item 6: band judged on the mean of 8 frames
 extern void  md_settings_set_cmaa2(bool on);   // DE-360: CMAA 2 (the default AA)
 extern void  md_settings_set_terrain_lod(float detail, float distant, float threshold);   // #175
 extern void  md_settings_set_vsync(bool on);   // #175
@@ -71,6 +72,7 @@ static int   s_set_hf        = 0;      // "hf": history filter of the ground whi
 static int   s_set_pvt       = 0;      // "pvt": ground cache (PVT) in pass A (#207, owner 01.11): 0 Off (default), 1 On
 static int   s_set_ush       = 0;      // "ush": sharpening of the upscale while the camera moves (#207, owner 31.10): 0 Quality (default, 5 taps + adaptive), 1 Fast (3 taps), 2 Off (1 tap)
 static int   s_set_chunk     = 16;
+static bool  s_set_dring      = false;   // "dring": dynres ring-mean band (dynres 0.9 item 6), off until the owner decides
 static bool  s_set_cmaa2     = true;   // "aa": CMAA 2 (DE-360, owner 19.11), on by default; a new key, so a layout saved while CMAA 2 was off by default does not pin it off
 // Kenshi's graphics sliders (#175, docs/research/KENSHI_GRAPHICS_OPTIONS.md): names, ranges and defaults of settings.cfg
 static float s_set_tdetail   = 1.f;    // "td": terrain detail 0..1, Kenshi 1.0
@@ -158,6 +160,7 @@ static void f3_load(bool det[6], ImVec2 pos[6], ImVec2 siz[6],
         if (strstr(buf, "\"gru\"")) s_set_reuse = f3_parse_f(buf, "\"gru\"") != 0.f;
         if (strstr(buf, "\"grp\"")) { s_set_reuse_period = (int)f3_parse_f(buf, "\"grp\""); if (s_set_reuse_period != 4 && s_set_reuse_period != 8) s_set_reuse_period = 16; }
         if (strstr(buf, "\"fif\"")) { s_set_fif = (int)f3_parse_f(buf, "\"fif\""); if (s_set_fif < 1 || s_set_fif > 3) s_set_fif = 1; }
+        if (strstr(buf, "\"dring\"")) s_set_dring = f3_parse_f(buf, "\"dring\"") != 0.f;
         if (strstr(buf, "\"aa\"")) s_set_cmaa2 = f3_parse_f(buf, "\"aa\"") != 0.f;
         if (strstr(buf, "\"fxaa\"")) { static bool warned = false; if (!warned) { warned = true; fprintf(stderr, "[F3] layout key \"fxaa\" ignored: FXAA was removed (DE-360)\n"); } }
         if (strstr(buf, "\"td\"")) { s_set_tdetail = f3_parse_f(buf, "\"td\""); if (s_set_tdetail < 0.f || s_set_tdetail > 1.f) s_set_tdetail = 1.f; }
@@ -202,7 +205,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         "\"dbx\":%.0f,\"dby\":%.0f,\"dbw\":%.0f,\"dbh\":%.0f,"
         "\"cmx\":%.0f,\"cmy\":%.0f,\"cmw\":%.0f,\"cmh\":%.0f,"
         "\"stx\":%.0f,\"sty\":%.0f,\"stw\":%.0f,\"sth\":%.0f,"
-        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d,\"aa\":%d}\n",
+        "\"rm\":0,\"tcs\":%d,\"gru\":%d,\"lgt\":%d,\"fif\":%d,\"dyn\":%d,\"td\":%.2f,\"tdi\":%.2f,\"tth\":%.0f,\"vsy\":%d,\"vd\":%.0f,\"ga\":%d,\"wres\":%d,\"grp\":%d,\"fcap\":%d,\"gp\":%d,\"tbld\":%d,\"ovr\":%.0f,\"grc\":%d,\"ush\":%d,\"hf\":%d,\"pvt\":%d,\"aa\":%d,\"dring\":%d}\n",
         (int)det[0],(int)det[1],(int)det[2],(int)det[3],(int)det[4],(int)det[5],
         fspd,(int)set.det,
         pos[0].x,pos[0].y,siz[0].x,siz[0].y,
@@ -213,7 +216,7 @@ static void f3_save(const bool det[6], const ImVec2 pos[6], const ImVec2 siz[6],
         pos[5].x,pos[5].y,siz[5].x,siz[5].y,
         set.pos.x,set.pos.y,set.siz.x,set.siz.y,
         s_set_chunk, s_set_reuse ? 1 : 0, s_set_light, s_set_fif, s_set_dyn,
-        s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr, s_set_chain, s_set_ush, s_set_hf, s_set_pvt, s_set_cmaa2 ? 1 : 0);
+        s_set_tdetail, s_set_tdistant, s_set_tthresh, s_set_vsync ? 1 : 0, s_set_vdist, s_set_ga, s_set_wres, s_set_reuse_period, s_set_fcap, s_set_gp, s_set_tbld ? 1 : 0, s_set_ovr, s_set_chain, s_set_ush, s_set_hf, s_set_pvt, s_set_cmaa2 ? 1 : 0, s_set_dring ? 1 : 0);
     fclose(f);
 }
 
@@ -233,6 +236,7 @@ void EditorCore::Init() {
         FILE* sf = fopen(F3_LAYOUT_PATH, "rb");
         char sb[1024] = {}; if (sf) { size_t n = fread(sb, 1, 1023, sf); sb[n] = '\0'; fclose(sf); }
         if (strstr(sb, F3_VERSION_TAG) && strstr(sb, "\"rm\"")) { md_settings_set_up_sharp(s_set_ush); md_settings_set_ground_hist_fast(s_set_hf); md_settings_set_ground_pvt(s_set_pvt); md_settings_set_terrain_chunk(s_set_chunk); md_settings_set_ground_reuse(s_set_reuse); md_settings_set_ground_reuse_period(s_set_reuse_period); md_settings_set_lighting(s_set_light); md_settings_set_frames_in_flight(s_set_fif); md_settings_set_dyn_res(dyn_scale_of(s_set_dyn));
+            if (s_set_dring) md_settings_set_dynres_ring(true);
             md_settings_set_cmaa2(s_set_cmaa2); md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh); md_settings_set_vsync(s_set_vsync); md_settings_set_view_distance(s_set_vdist); md_settings_set_ground_aniso(kAnisoLv[s_set_ga]);
             if (s_set_gp >= 0 && s_set_gp <= 2) ground_preset_apply(s_set_gp);
             if (s_set_wres >= 0) md_settings_set_window_size(kWinRes[s_set_wres][0], kWinRes[s_set_wres][1]); }
@@ -522,6 +526,7 @@ void EditorCore::Update(float dt) {
                     lod_ch |= ImGui::SliderFloat("Terrain Threshold##tthr", &s_set_tthresh, 100.f, 3000.f, "%.0f");
                     if (lod_ch) md_settings_set_terrain_lod(s_set_tdetail, s_set_tdistant, s_set_tthresh);
                     if (ImGui::Checkbox("CMAA 2 (anti-aliasing)##cmaa2", &s_set_cmaa2)) md_settings_set_cmaa2(s_set_cmaa2);
+                    if (ImGui::Checkbox("Dynres: band on the mean of 8 frames##dring", &s_set_dring)) md_settings_set_dynres_ring(s_set_dring);
                     {
                         static const char* kAnisoNm[] = { "Footprint mip", "Aniso x4", "Aniso x16 (Kenshi)" };
                         int gi = s_set_ga;

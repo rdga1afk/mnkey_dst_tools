@@ -188,6 +188,13 @@ int main() {
         CHECK(on >= 1, "alternating load, ring mean: %d drops (expected >= 1)", on);
         printf("0.9 item 6 ring mean: drops off %d on %d\n", off, on);
     }
+    { // dynres 0.9 item 6 on a stream whose mean fits: alternating 10 / 20 ms (mean 15 < band top 15.9, target 16.7) must not drop with the ring mean; a stream of mean 19 must
+        auto drops = [](float a, float b) { Dynres3 d; d.ring_mean = true; d.scale = 0.83f; d.last_dt = 1.f / 60.f; int dn = 0; float prev = d.Scale();
+            for (int i = 0; i < 600; ++i) { const float s = d.Scale(); d.Sample(s, (i & 1) ? b : a); if (d.Scale() < prev) ++dn; prev = d.Scale(); } return dn; };
+        CHECK(drops(10.f, 20.f) == 0, "ring mean: a 10/20 ms stream (mean 15) dropped the scale");
+        CHECK(drops(14.f, 30.f) >= 1, "ring mean: a 14/30 ms stream (mean 22) did not drop");
+        printf("0.9 item 6 fit stream: drops 10/20 %d, 14/30 %d\n", drops(10.f, 20.f), drops(14.f, 30.f));
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }

@@ -729,6 +729,7 @@ extern bool g_ground_pvt, g_ground_hist_fast;   // engine/src/render/terrain_sha
 void md_settings_set_ground_hist_fast(int mode) { g_ground_hist_fast = mode != 0; }   // F3 Settings (#207, owner 01.11)
 void md_settings_set_ground_pvt(int on) { g_ground_pvt = on != 0; }                    // F3 Settings (#207, owner 01.11)
 void md_settings_set_up_sharp(int mode) { g_up_sharp = mode < 0 || mode > 2 ? 0 : mode; }   // F3 Settings (#207, owner 31.10)
+void md_settings_set_dynres_ring(bool on) { g_d3_rt.ring = on; }   // DE-366 item 6 F3 Settings
 void md_settings_set_cmaa2(bool on) { g_opt_cmaa2 = on; }   // DE-358 F3 Settings
 void md_set_aa_mode(const char* m) { g_opt_cmaa2 = !strcmp(m, "cmaa2"); }   // DE-358 / DE-360: "cmaa2" | "off"   // F3 Settings (#180)
 void md_settings_set_dyn_res(float scale) { g_dynres_on = scale > 0.f; if (scale > 0.f) g_dynres_scale = scale < 0.5f ? 0.5f : (scale > 1.f ? 1.f : scale); }   // F3 Settings (#182): 0 = off
