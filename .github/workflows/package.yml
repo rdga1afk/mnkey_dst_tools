@@ -70,7 +70,7 @@ jobs:
           if ! REL "$E"; then
             for A in $(git -C ws/engine rev-list --max-count=200 "$E"); do
               git -C ws/engine diff --quiet "$A" "$E" -- $ENGINE_PATHS || break
-              if REL "$A"; then echo "engine release fallback: ${A:0:12} (docs-only diff to ${E12})"; E12=${A:0:12}; break; fi
+              if REL "$A"; then echo "engine release fallback: ${A:0:12} (docs-only diff to ${E12})"; echo "MD_ENGINE_PKG_EQUAL=$A" >> "$GITHUB_ENV"; E12=${A:0:12}; break; fi
             done
           fi
           URL="https://github.com/${ENGINE_REPO}/releases/download/build-${E12}/engine-${E12}-release.tar.zst"
@@ -92,7 +92,7 @@ jobs:
       - name: Configure and build
         run: |
           cmake -S ws -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DMONKEY_DUST_EDITOR=ON -DMD_MARCH=skylake -DMD_ENGINE_PREBUILT=$PWD/pkg
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DMONKEY_DUST_EDITOR=ON -DMD_MARCH=skylake -DMD_ENGINE_PREBUILT=$PWD/pkg -DMD_ENGINE_PKG_EQUAL="${MD_ENGINE_PKG_EQUAL:-}"
           ninja -C build monkey_dust_editor kenshi_navmesh_extract md_ui_third_party md_game_panels md_character md_session_synthetic_test
           ctest --test-dir build -R session_synthetic --output-on-failure   # #185: editor logic on a synthetic install, no Kenshi files
           ccache -s | head -6
