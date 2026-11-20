@@ -145,6 +145,21 @@ int main() {
         CHECK(md::TargetCreations() - cr0 == d.nlev, "control: %d creations without a warm-up", md::TargetCreations() - cr0);
         printf("0.8 levels: %d scale changes, %d sets created at warm-up, 0 after\n", changes, warm);
     }
+    { // dynres 0.9 (DE-366) items 1 and 2: the raise wait is a parameter, and a turn above turn_thr blocks a raise (the defaults 0.5 s / off are the 0.8 behaviour)
+        auto first_raise_frame = [](float raise_gap, float turn_thr, float turn_dps, int turn_frames) {
+            Dynres3 d; d.scale = 0.75f; d.moving = true; d.F = 12.f; d.K = 3.f; d.raise_gap_s = raise_gap; d.turn_thr = turn_thr; d.last_dt = 1.f / 60.f; d.since_change_s = 0.f;
+            Sim sim{ 12.f, 3.f, 0.01f, 0.f, 0.f };   // T(0.75) = 13.7 ms (below 0.85 x target), T(0.83) = 14.1 < target - margin: room to raise
+            for (int i = 0; i < 1200; ++i) { d.Motion(0.f, i < turn_frames ? turn_dps : 0.f); const float s = d.Scale(); d.Sample(s, sim.T(s, d.target_ms)); if (d.Scale() > 0.75f) return i; }
+            return -1; };
+        const int base = first_raise_frame(0.5f, 0.f, 0.f, 0), longer = first_raise_frame(2.0f, 0.f, 0.f, 0);
+        CHECK(base >= 0 && longer > base + 60, "raise wait: 0.5 s raised at frame %d, 2.0 s at %d (must be later by more than 60 frames)", base, longer);
+        const int off = first_raise_frame(0.5f, 0.f, 90.f, 300), on = first_raise_frame(0.5f, 30.f, 90.f, 300);
+        CHECK(off >= 0 && off < 300, "turn off: raised at frame %d during the turn", off);
+        CHECK(on >= 300, "turn_thr 30 deg/s: raised at frame %d, not after the 300-frame turn", on);
+        const int slow = first_raise_frame(0.5f, 30.f, 10.f, 300);
+        CHECK(slow >= 0 && slow < 300, "a turn below the threshold must not block the raise (frame %d)", slow);
+        printf("0.9 items 1,2: raise at %d (0.5 s) / %d (2.0 s); turn blocks: %d vs %d\n", base, longer, off, on);
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }

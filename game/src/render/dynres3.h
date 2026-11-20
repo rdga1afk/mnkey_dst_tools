@@ -68,7 +68,9 @@ struct Dynres3 {
         if (held_s >= switch_s) { heavy = heavy_now; held_s = 0.f; target_ms = heavy ? heavy_ms : light_ms; above = below = 0; }
     }
 
-    void Motion(float speed) { speed_mps = speed; }        // once per frame: the smoothed camera speed in m/s (0..)
+    // dynres 0.9 (DE-366 item 2, off by default): a camera turn faster than turn_thr (deg/s, the smoothed yaw rate of the caller) counts as motion next to the speed: a raise waits while it lasts
+    float turn_thr = 0.f, turn_dps = 0.f;
+    void Motion(float speed, float yaw_dps = 0.f) { speed_mps = speed; turn_dps = yaw_dps; }   // once per frame: the smoothed camera speed in m/s (0..) and yaw rate in deg/s
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
         last_full_ms = gpu_ms;
@@ -85,6 +87,7 @@ struct Dynres3 {
             projected = ema_fast + slope * horizon; seen = std::max(gpu_ms, projected);
         }
         since_change_s += last_dt;
+        if (turn_thr > 0.f && turn_dps > turn_thr) since_change_s = 0.f;     // dynres 0.9 item 2: turning keeps the raise wait running
         above = seen > hi ? above + 1 : 0; below = (gpu_ms < lo && (!predict || projected < lo)) ? below + 1 : 0;
         above_sum = above > 0 ? above_sum + seen : 0.f;
         const bool over = gpu_ms > panic_k * target_ms;

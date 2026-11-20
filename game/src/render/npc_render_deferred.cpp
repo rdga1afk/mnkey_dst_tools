@@ -228,7 +228,9 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
             md::GpuDevice& gd = md::GpuDevice::Get();
             { static bool said = false; if (!said) { said = true; { const char* lc = getenv("MD_DYNRES_LEVELS"); if (lc && lc[0] >= '3' && lc[0] <= '5') s_d3.SetLevelCount(lc[0] - '0'); } fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn; levels %d, one-step drop %s, panic x%.2f, raise gap %.1f s)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms, s_d3.levels_on ? s_d3.nlev : 0, s_d3.one_step ? "on" : "off", s_d3.panic_k, s_d3.raise_gap_s); } }
             { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
-            { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v); }
+            { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v, w); }
+            { static const float raise_s = getenv("MD_DYNRES_RAISE_S") ? (float)atof(getenv("MD_DYNRES_RAISE_S")) : -1.f; if (raise_s >= 0.f) s_d3.raise_gap_s = raise_s; }   // dynres 0.9 item 1: the raise wait in seconds (default 0.5 as 0.8)
+            { static const float turn_thr = getenv("MD_DYNRES_TURN") ? (float)atof(getenv("MD_DYNRES_TURN")) : 0.f; s_d3.turn_thr = turn_thr; }   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
             { static const bool one_step = !(getenv("MD_DYNRES_ONESTEP") && getenv("MD_DYNRES_ONESTEP")[0] == '0'); s_d3.one_step = one_step; }   // dynres 0.8 (DE-362): one-step drop + panic, MD_DYNRES_ONESTEP=0 gives the 0.7 rule   // dynres 0.5 prediction, off by default
             const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs() + (s_d3_gh_for[(ws - 1) % 8] ? s_d3.gh_saving : 0.f)); }
             s_d3.GrassStep(dt); g_grass_scale_dyn = s_d3.GrassScale();
