@@ -31,6 +31,8 @@ KenshiSave Sample() {
     s.squad_list.has_prosperity = true; s.squad_list.prosperity = 3.5f;
     { KSquadListEntry e; e.name = "squad_a"; e.time = 2.5f; e.refs = { {1, 2, 3, 4, 5}, {6, 7, 8, 9, 10} }; s.squad_list.entries.push_back(e); }
     { KSquadListEntry e; e.name = "squad_b"; e.time = 0.f; s.squad_list.entries.push_back(e); }
+    s.selection.present = true; s.selection.characters = { {1, 2, 3, 4, 5}, {6, 7, 8, 9, 10} }; s.selection.character = {1, 2, 3, 4, 5};
+    s.biome_text.present = true; s.biome_text.timer = 4.5f; s.biome_text.name = "Hub";
     return s;
 }
 std::vector<char> Slurp(const fs::path& p) { std::ifstream f(p, std::ios::binary); return { std::istreambuf_iterator<char>(f), {} }; }
@@ -279,4 +281,30 @@ TEST(KenshiSave, PartWoundsRoundTripAndKeys) {
     auto has = [](const auto& tbl, const std::string& k) { for (const auto& kv : tbl) if (kv.first == k) return true; return false; };
     EXPECT_TRUE(has(med->strings, "sid0")); EXPECT_TRUE(has(med->strings, "sid1")); EXPECT_FALSE(has(med->strings, "sid2"));
     for (const char* k : {"hit", "hitmult", "flesh", "stun", "bandage", "rig", "wear"}) { EXPECT_TRUE(has(med->floats, std::string(k) + "0")) << k; EXPECT_TRUE(has(med->floats, std::string(k) + "1")) << k; }
+}
+
+// selection and biome text (exe 0x1407f3e60 / 0x1407f3fb0, 0x140728af0 / 0x140728c10)
+TEST(KenshiSave, SelectionAndBiomeTextRoundTripAndKeys) {
+    const fs::path d = Tmp("selection"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.selection.present); ASSERT_EQ(r.selection.characters.size(), 2u);
+    EXPECT_EQ(r.selection.characters[1].cs, 10); EXPECT_EQ(r.selection.character.s, 4);
+    EXPECT_EQ(r.selection.gui_object.type, 11); EXPECT_EQ(r.selection.gui_object.i, 0);   // null reference
+    EXPECT_TRUE(r.biome_text.present); EXPECT_FLOAT_EQ(r.biome_text.timer, 4.5f); EXPECT_EQ(r.biome_text.name, "Hub");
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "quick.save").string(), f, e)) << e.Message();
+    const md::fcs::Record* cam = nullptr; for (const auto& rec : f.records) if (rec.kind == 56) cam = &rec;
+    ASSERT_NE(cam, nullptr);
+    auto has = [](const auto& tbl, const std::string& k) { for (const auto& kv : tbl) if (kv.first == k) return true; return false; };
+    for (const char* sfx : {"TYPE", "C", "I", "S", "CS"}) { EXPECT_TRUE(has(cam->ints, std::string("selected_characters1") + sfx)); EXPECT_TRUE(has(cam->ints, std::string("selected_character") + sfx)); EXPECT_TRUE(has(cam->ints, std::string("selected_gui_object") + sfx)); }
+    EXPECT_FALSE(has(cam->ints, "selected_characters2I"));
+    EXPECT_TRUE(has(cam->floats, "biome_text_timer")); EXPECT_TRUE(has(cam->strings, "biome_text_groud"));
+}
+
+TEST(KenshiSave, SelectionAbsentReadsNullReferences) {
+    const fs::path d = Tmp("selection_absent"); std::string err;
+    KenshiSave s = Sample(); s.selection = KSelection{}; s.biome_text = KBiomeText{};
+    ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_FALSE(r.selection.present); EXPECT_TRUE(r.selection.characters.empty()); EXPECT_EQ(r.selection.character.type, 11); EXPECT_FALSE(r.biome_text.present);
 }
