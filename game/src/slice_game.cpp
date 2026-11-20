@@ -89,7 +89,7 @@ void TownNpcSpawn(float fallback_y) {
     md::world::NodePlacer placer(nodes, 1);
     const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);
     size_t made = 0;
-    for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y) != MdEntity{}) ++made; }
+    for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y) != MdEntity{}) ++made; if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f", made, m.x, m.z, y); }
     MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made);
 }
 
@@ -160,8 +160,20 @@ void OrderMoveTo(float lx, float lz, bool walk) {
 
 bool Enabled() { static const bool on = [] { const char* e = std::getenv("MD_SLICE"); return e && e[0] == '1'; }(); return on; }
 
+// MD_TOWN_NPC=1, independent of MD_SLICE: the Hub residents are made once, on the first frame the player is within 400 m of the Hub centre (so the ground height is there to put them on).
+void TownNpcTick(MdEntity player) {
+    static const bool on = getenv("MD_TOWN_NPC") && getenv("MD_TOWN_NPC")[0] == '1'; static bool done = false;
+    if (!on || done) return;
+    const WorldTransform pt = MdRegistry::Get().Handle(player).get_mut<WorldTransform>();
+    float ax, az; ToAbs(pt.x, pt.z, ax, az);
+    const float dx = ax - 9647.7f, dz = az - 15038.8f; if (dx * dx + dz * dz > 400.f * 400.f) return;
+    done = true; TownNpcSpawn(pt.y);
+}
+
+void TownNpcNow(MdEntity player) { const WorldTransform pt = MdRegistry::Get().Handle(player).get_mut<WorldTransform>(); TownNpcSpawn(pt.y); }   // md.town_npc_spawn (scenarios: RunScenarioMode does not run the game loop body)
+
 void Update(MdEntity player, MdCamera& camera, const Input& in, float dt, float& cam_x, float& cam_z) {
-    if (!s_init) { Spawn(player); TownNpcSpawn(s_squad.c[0].pos[1]); s_init = true; s_squad.Click(0, false); }
+    if (!s_init) { Spawn(player); s_init = true; s_squad.Click(0, false); }
     if (in.screen_w > 0 && in.screen_h > 0 && (in.lmb_click || in.rmb_click)) {
         float o[3], d[3]; PixelRay(camera, in, o, d);
         if (in.lmb_click) { const int i = PickChar(o, d); if (i >= 0) s_squad.Click(i, in.shift); }

@@ -253,6 +253,7 @@ int main(int argc, char** argv)
             _pnav.desired_vel_x = 0.f; _pnav.desired_vel_z = 0.f;
         }
         if (!skip_world) {
+            md::slice::TownNpcTick(player_entity);
             if (md::slice::Enabled()) {   // MD_SLICE=1: the squad of #212 replaces the player's own movement (docs/research/VERTICAL_SLICE_Q04_2026-11-18.md)
                 static bool s_l_prev = false, s_r_prev = false; static float s_r_hold = 0.f;
                 const bool l = input_mouse_down(MOUSE_BUTTON_LEFT), r = input_mouse_down(MOUSE_BUTTON_RIGHT);

@@ -1,4 +1,5 @@
 #include "lua_scenario_api_internal.h"
+#include "../slice_game.h"
 
 static float ScenarioRandF01() {
     // xorshift32
@@ -107,6 +108,15 @@ int l_md_teleport_player(lua_State* L) {
         soa.py[tr.slot] = tr.y;
         soa.MarkTransformDirty(tr.slot);
     }
+    return 0;
+}
+
+// ── md.town_npc_spawn() (DE-364, needs MD_TOWN_NPC=1): the Hub residents at once, as the game loop's TownNpcTick does (scenario mode does not run that loop).
+int l_md_town_npc_spawn(lua_State*) {
+    auto& reg = MdRegistry::Get();
+    static auto q_player_lookup = reg.Raw().query().all<PlayerController>().all<WorldTransform>();
+    const MdEntity player = MdFirst(q_player_lookup);
+    if (reg.Valid(player)) md::slice::TownNpcNow(player);
     return 0;
 }
 

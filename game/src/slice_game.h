@@ -14,6 +14,8 @@ struct Input {
     bool lmb_click = false, rmb_click = false, shift = false;   // one frame each (a click is a release after a short press)
 };
 
+void TownNpcNow(MdEntity player);                   // md.town_npc_spawn: the same spawn at once, only with MD_TOWN_NPC=1
+void TownNpcTick(MdEntity player);                  // MD_TOWN_NPC=1 (DE-364): once, when the player is near the Hub
 bool Enabled();                                    // getenv("MD_SLICE") == "1"
 void Update(MdEntity player, MdCamera& camera, const Input& in, float dt, float& cam_x, float& cam_z);   // spawns the squad on the first call; sets the camera centre
 

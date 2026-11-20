@@ -81,6 +81,7 @@ int l_md_rand(lua_State* L);
 int l_md_teleport_camera(lua_State* L);
 int l_md_teleport_player(lua_State* L);
 int l_md_spawn_npc(lua_State* L);
+int l_md_town_npc_spawn(lua_State* L);
 
 int l_md_terrain_height(lua_State* L);
 int l_md_ray_ground(lua_State* L);
