@@ -81,7 +81,7 @@ static float s_set_tdistant  = 0.f;    // "tdi": terrain distant 0..1, Kenshi 0.
 static float s_set_tthresh   = 750.f;  // "tth": terrain threshold, Kenshi 750
 static bool  s_set_bless     = false;  // "bl": borderless 1920x1080 window (DE-368), default off = the maximised window
 static float s_set_grange    = 50.f;   // Kenshi CLOSE range, metres
-static float s_set_gdens     = 1.f;    // grass density x
+static float s_set_gdens     = 0.5f;   // grass density x (default 0.5, DE-370)
 static float s_set_fvr       = 100.f;  // Kenshi MEDIUM foliage range, metres (default 100 = 1000 units)
 static float s_set_ovr       = 300.f;  // "ovr": Kenshi `objects view range`, metres (default 300 = 3000 units)
 static int   s_set_fcap      = -1;     // "fcap": frame cap -1 = auto (30 idle / 60 moving, default), 60, 30, 0 = unlimited; 40 is not offered (#207)

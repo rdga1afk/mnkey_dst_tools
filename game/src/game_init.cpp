@@ -249,7 +249,7 @@ void InitGame(MdEntity& player_entity, GameState& gs, MdCamera& camera, float& c
         reg.Handle(player_entity).emplace<WorldTransform>(spawn_x, p_spawn_y, spawn_z, 0.0f);
         if (getenv("MD_TOWNS")) {   // md.sh: the town, its foliage and the grass are on, as in a scenario that calls md.set_town_buildings / set_town_foliage / set_grass
             TownBuildings::Get().SetEnabled(true, 300.f);
-            TownFoliage::Get().SetEnabled(true, 100.f); TownFoliage::Get().SetGrassExe(true); TownFoliage::Get().SetGrass(true, 50.f, 1.f);
+            TownFoliage::Get().SetEnabled(true, 100.f); TownFoliage::Get().SetGrassExe(true); TownFoliage::Get().SetGrass(true, 50.f, 0.5f);
         }
         // the player entity is only the camera / streaming focus: position, movement input and a nav component the movement code reads
         PlayerController pctrl_wo = {};
