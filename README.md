@@ -28,7 +28,7 @@ The game itself moved into this repository (GPL-3.0-or-later): `game/` (source, 
 
 ### Latest (20.11.2026)
 
-- **Dynamic resolution 0.9** (`game/src/render/dynres3.h`): the frame budget is judged on the mean of the last 8 frames; the resolution no longer drifts in heavy scenes. CMAA 2 is the anti-aliasing at native resolution.
+- **Dynamic resolution 0.9** (`game/src/render/dynres3.h`; decided 20.11, being made the default): the frame budget is judged on the mean of the last 8 frames; the resolution no longer drifts in heavy scenes. CMAA 2 is the anti-aliasing at native resolution.
 - **First game systems, off by default:** town residents by the game's own rule, behind `MD_TOWN_NPC=1` (`game/src/slice_game.cpp`, list and placement in the engine); saving and loading in Kenshi's save format (engine `md::save`, tests `tests/test_kenshi_save.cpp`); the melee hit rule (engine `combat_hit.h`, tests against Kenshi's functions run in an emulator).
 - **Standalone CI** (build, unit tests, decompilation-pattern scan) and the Package job are green again; the package waits for the engine release instead of failing on push order.
 
@@ -116,7 +116,7 @@ GPL-3.0-or-later, see [LICENSE](LICENSE) ("or any later version" applies). MIT f
 
 ### Найновіше (20.11.2026)
 
-- **Динамічна роздільність 0.9** (`game/src/render/dynres3.h`): бюджет кадру оцінюється за середнім останніх 8 кадрів; роздільність у важких сценах більше не «пливе». Згладжування на рідній роздільності — CMAA 2.
+- **Динамічна роздільність 0.9** (`game/src/render/dynres3.h`; рішення 20.11, вмикається за замовчуванням): бюджет кадру оцінюється за середнім останніх 8 кадрів; роздільність у важких сценах більше не «пливе». Згладжування на рідній роздільності — CMAA 2.
 - **Перші ігрові системи, за замовчуванням вимкнені:** жителі міст за правилом самої гри, за `MD_TOWN_NPC=1` (`game/src/slice_game.cpp`, список і розміщення — у рушії); збереження й завантаження у форматі Kenshi (рушій `md::save`, тести `tests/test_kenshi_save.cpp`); правило удару в ближньому бою (рушій `combat_hit.h`, тести проти функцій Kenshi, запущених в емуляторі).
 - **Самостійна збірка в CI** (збірка, тести, перевірка на сліди декомпіляції) і пакет знову зелені; пакет чекає на реліз рушія замість падати через порядок пушів.
 
