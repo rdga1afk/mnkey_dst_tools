@@ -46,6 +46,7 @@ bool  g_hialgo = true, g_hialgo_x2 = false, g_hialgo_catmull = true; int g_stair
 bool  g_upscaler_lite = false;   // md.set_upscaler("fsr2lite"): variant 5 (own temporal upscaler on the FSR 2 model) in the SGSR 2 slot
 bool  g_opt_sgsr2 = false;   // md.set_sgsr2: Snapdragon GSR 2 (temporal) instead of SGSR 1, scene below native only, default off (dynres 0.6)
 bool  g_opt_sgsr1 = true;   // #198 S1 md.set_sgsr1: Snapdragon GSR 1 instead of the bilinear + sharpen upscale (only when the scene is below native), default on (DE-283)
+float g_dynres_cmaa_off_scale = -1.f;   // dynres 0.9 item 3: CMAA 2 is skipped in the hialgo path at scales up to this value (-1 = never, as 0.8)
 bool  g_opt_cmaa2 = true;   // DE-360 (owner 19.11): CMAA 2 is the default AA (native pass and the hialgo path); md.set_aa("off") / F3 switch it off
 float g_frame_dt_s = 1.f / 60.f;   // RenderFrame's dt, read by the L4 auto-exposure
 float g_adapt_override_mean = -1.f, g_adapt_override_dt = -1.f; // md.adapt_lum_debug: >= 0 replaces the measured mean luminance (oracle)
@@ -233,6 +234,8 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
             { static const float turn_thr = getenv("MD_DYNRES_TURN") ? (float)atof(getenv("MD_DYNRES_TURN")) : 0.f; s_d3.turn_thr = turn_thr; }   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
             { static const bool one_step = !(getenv("MD_DYNRES_ONESTEP") && getenv("MD_DYNRES_ONESTEP")[0] == '0'); s_d3.one_step = one_step; }   // dynres 0.8 (DE-362): one-step drop + panic, MD_DYNRES_ONESTEP=0 gives the 0.7 rule   // dynres 0.5 prediction, off by default
             const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs() + (s_d3_gh_for[(ws - 1) % 8] ? s_d3.gh_saving : 0.f)); }
+            { static const int col = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; g_dynres_cmaa_off_scale = col >= 0 ? s_d3.levels[col < s_d3.nlev ? col : s_d3.nlev - 1] : -1.f; }   // dynres 0.9 item 3: highest level that runs without CMAA 2 (default off = never)
+            { static const int ghl = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; s_d3.gh_level = ghl; }   // dynres 0.9 item 3: grass half-resolution level (default 0 = floor as 0.8)
             s_d3.GrassStep(dt); g_grass_scale_dyn = s_d3.GrassScale();
         }
         if (input_on && g_dynres_input_event && (g_dynres3 ? !s_d3_mov : g_dynres_cur >= 0.999f)) { if (g_dynres3) s_d3_mov = true; else g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
@@ -577,7 +580,8 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
                                 GpuPopDebugGroup(fc.cmd);
                             }
                             if (g_hialgo && sr_up.hialgo_.Ready() && EffectiveResolutionScale() < 0.999f) {   // DE-312: CMAA 2 (DE-360) -> (stair blur) -> neighbour-clamped upscale + clamped sharpening
-                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth, g_opt_cmaa2); GpuPopDebugGroup(fc.cmd); upscaled = true;
+                                const float real_scale_now = EffectiveResolutionScale();
+                                GpuPushDebugGroup(fc.cmd, "Hialgo"); sr_up.hialgo_.Apply(fc.cmd, sr_up.upscale_pass_.Tex(), rw_, rh_, real_sc, (int)up_w, (int)up_h, g_stair_taps, g_hialgo_x2, g_hialgo_catmull, haze_depth, g_opt_cmaa2 && !(g_dynres_cmaa_off_scale > 0.f && real_scale_now <= g_dynres_cmaa_off_scale + 0.005f)); GpuPopDebugGroup(fc.cmd); upscaled = true;
                             }
                             if (!upscaled && g_opt_sgsr2 && sr_up.sgsr2_.Ready() && EffectiveResolutionScale() < 0.999f) {   // dynres 0.6: SGSR 2, depth of the G-buffer (terrain + NPC prepass) and the inverse view-projection of this frame
                                 auto& tsp_up = sr_up.terrain_shading_projected_;

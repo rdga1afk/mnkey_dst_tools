@@ -54,9 +54,11 @@ struct Dynres3 {
     float gh_saving = 9.f;                                 // ms saved by half-resolution grass at the floor scale (ABBA 17.11, zone 17,28, scene 0.67: 31.9 -> 21.9 = 10 ms; 9 keeps a margin)
     float gh_hold_s = 1.0f, gh_on_s = 0.f, gh_off_s = 0.f, last_full_ms = 0.f;
     float GrassScale() const { return grass_half ? 0.5f : 1.0f; }
+    int   gh_level = 0;                                    // dynres 0.9 item 3: level index below which (inclusive) the grass goes to half resolution; 0 = the floor level as 0.8
+    float GhScale() const { return gh_level > 0 ? levels[gh_level < nlev ? gh_level : nlev - 1] : floor_scale; }
     void GrassStep(float dt) {                             // once per frame
         if (!gh_enable || !heavy) { grass_half = false; gh_on_s = gh_off_s = 0.f; return; }
-        const bool at_floor = scale <= floor_scale + 0.005f;
+        const bool at_floor = scale <= GhScale() + 0.005f;
         if (!grass_half) { gh_on_s = (at_floor && last_full_ms > target_ms) ? gh_on_s + dt : 0.f; if (gh_on_s >= gh_hold_s) { grass_half = true; gh_on_s = gh_off_s = 0.f; } }
         else { gh_off_s = (!at_floor || last_full_ms <= 0.9f * target_ms) ? gh_off_s + dt : 0.f; if (gh_off_s >= gh_hold_s) { grass_half = false; gh_on_s = gh_off_s = 0.f; } }
     }

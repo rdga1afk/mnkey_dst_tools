@@ -160,6 +160,17 @@ int main() {
         CHECK(slow >= 0 && slow < 300, "a turn below the threshold must not block the raise (frame %d)", slow);
         printf("0.9 items 1,2: raise at %d (0.5 s) / %d (2.0 s); turn blocks: %d vs %d\n", base, longer, off, on);
     }
+    { // dynres 0.9 (DE-366) item 3: the grass half-resolution level (default 0 = the floor as 0.8) engages above the floor when gh_level is raised
+        auto grass_on = [](int gh_level, float at_scale) {
+            Dynres3 d; d.heavy = true; d.scale = at_scale; d.gh_level = gh_level; d.last_full_ms = d.target_ms + 5.f;
+            for (int i = 0; i < 300; ++i) d.GrassStep(1.f / 60.f);
+            return d.grass_half; };
+        CHECK(!grass_on(0, 0.83f), "default: grass must stay full at scale 0.83");
+        CHECK(grass_on(0, 0.67f), "default: grass half at the floor over budget");
+        CHECK(grass_on(2, 0.83f), "gh_level 2: grass half at 0.83 over budget");
+        CHECK(!grass_on(2, 0.92f), "gh_level 2: grass full at 0.92");
+        printf("0.9 item 3 grass level checks done\n");
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }
