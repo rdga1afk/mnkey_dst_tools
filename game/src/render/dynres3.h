@@ -40,7 +40,7 @@ struct Dynres3 {
     int   panic_run = 0; float panic_sum = 0.f, above_sum = 0.f; bool fitted = false, moving = true;
     int   drops = 0, panics = 0;
     void StopMotion() { if (moving) { moving = false; motion_scale = scale; } }      // the caller: the camera came to rest (native resolution while standing)
-    void StartMotion() { if (!moving) { moving = true; scale = std::min(1.f, std::max(floor_scale, motion_scale)); above = below = panic_run = 0; since_change_s = 0.f; } }
+    void StartMotion() { if (!moving) { moving = true; scale = std::min(1.f, std::max(floor_scale, motion_scale)); above = below = panic_run = 0; rg_n = rg_h = 0; since_change_s = 0.f; } }
     // state
     float F = 6.5f, K = 20.f;                              // prior from docs/research/DYNRES_V2_2026-11-12.md (street / top40 / high150: F 5.2-7.4, K 19-23)
     float sigma = 1.0f;                                    // residual scale (ms), Huber
@@ -71,8 +71,10 @@ struct Dynres3 {
     }
 
     // dynres 0.9 (DE-366 item 2, off by default): a camera turn faster than turn_thr (deg/s, the smoothed yaw rate of the caller) counts as motion next to the speed: a raise waits while it lasts
+    // dynres 0.9 item 6 (switch, off): the band is judged on the mean of the last 8 frames, not on a run of consecutive frames. A load that alternates (e.g. 14 / 30 ms frames of the ground refresh period) resets the consecutive counters every other frame, so a mean far over the target never drops the scale
+    bool ring_mean = false; float rg[8] = {}; int rg_n = 0, rg_h = 0;
     float turn_thr = 0.f, turn_dps = 0.f;
-    void SetParams(float raise_s, float turn, bool pred, int gh) { if (raise_s >= 0.f) raise_gap_s = raise_s; turn_thr = turn; predict = pred; gh_level = gh; }   // dynres 0.9 switches (md.set_dynres_params)
+    void SetParams(float raise_s, float turn, bool pred, int gh, bool ring = false) { if (raise_s >= 0.f) raise_gap_s = raise_s; turn_thr = turn; predict = pred; gh_level = gh; ring_mean = ring; }   // dynres 0.9 switches (md.set_dynres_params)
     void Motion(float speed, float yaw_dps = 0.f) { speed_mps = speed; turn_dps = yaw_dps; }   // once per frame: the smoothed camera speed in m/s (0..) and yaw rate in deg/s
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;
@@ -91,8 +93,15 @@ struct Dynres3 {
         }
         since_change_s += last_dt;
         if (turn_thr > 0.f && turn_dps > turn_thr) since_change_s = 0.f;     // dynres 0.9 item 2: turning keeps the raise wait running
+        if (ring_mean) {
+            rg[rg_h] = seen; rg_h = (rg_h + 1) & 7; if (rg_n < 8) ++rg_n;
+            float m = 0.f; for (int i = 0; i < rg_n; ++i) m += rg[i]; m /= (float)rg_n;
+            const bool full = rg_n >= 8, ov = full && m > hi;
+            above = ov ? above + 1 : 0; below = (full && m < lo && (!predict || projected < lo)) ? below + 1 : 0; above_sum = ov ? above_sum + m : 0.f;
+        } else {
         above = seen > hi ? above + 1 : 0; below = (gpu_ms < lo && (!predict || projected < lo)) ? below + 1 : 0;
         above_sum = above > 0 ? above_sum + seen : 0.f;
+        }
         const bool over = gpu_ms > panic_k * target_ms;
         panic_run = over ? panic_run + 1 : 0; panic_sum = over ? panic_sum + gpu_ms : 0.f;
         const bool panic = one_step && panic_run >= 2;

@@ -180,6 +180,14 @@ int main() {
         Dynres3 g; g.SetParams(-1.f, 0.f, false, 0); CHECK(g.raise_gap_s == 0.5f && g.turn_thr == 0.f && !g.predict, "raise_s < 0 keeps the default");
         printf("0.9 SetParams checks done\n");
     }
+    { // dynres 0.9 item 6: an alternating 14 / 30 ms load (mean 22, band top 15.9) never reaches 5 consecutive frames over the band: the consecutive rule keeps the scale, the ring-mean switch drops it
+        auto drops = [](bool ring) { Dynres3 d; d.ring_mean = ring; d.scale = 0.83f; d.last_dt = 1.f / 60.f; int dn = 0; float prev = d.Scale();
+            for (int i = 0; i < 300; ++i) { const float s = d.Scale(); d.Sample(s, (i & 1) ? 30.f : 14.f); if (d.Scale() < prev) ++dn; prev = d.Scale(); } return dn; };
+        const int off = drops(false), on = drops(true);
+        CHECK(off == 0, "alternating load, consecutive rule: %d drops (the defect: expected 0)", off);
+        CHECK(on >= 1, "alternating load, ring mean: %d drops (expected >= 1)", on);
+        printf("0.9 item 6 ring mean: drops off %d on %d\n", off, on);
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }
