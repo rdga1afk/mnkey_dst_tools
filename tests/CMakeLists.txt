@@ -92,6 +92,7 @@ add_executable(md_tests
     ${MD_UTEST_DIR}/test_install_hash.cpp
     ${MD_UTEST_DIR}/test_player_selection.cpp
     ${MD_UTEST_DIR}/test_move_speed.cpp
+    ${MD_UTEST_DIR}/test_combat_hit.cpp
     ${MD_UTEST_DIR}/test_steer.cpp
     ${MD_UTEST_DIR}/test_start_squad.cpp
     ${MD_UTEST_DIR}/test_slice_squad.cpp
