@@ -99,6 +99,22 @@ TEST(TownSpawnInstall, HubHasRebirthResidentsAndBrinkHasUnitedCitiesResidents) {
     EXPECT_TRUE(Same(b, b2));
 }
 
+TEST(TownRadius, ExeTypeRadiiTimesMultiplier) {   // the exe radius virtual (read ok): the constants per type, the multiplier clamp of the town init
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 1.f), 2500.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(3, 1.f), 937.5f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(4, 1.f), 875.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(9, 1.f), 437.5f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(1, 1.f), 1250.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(8, 1.f), 0.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(10, 3.f), 0.f);
+    EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 0.2f), 500.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 0.05f), 2500.f); EXPECT_FLOAT_EQ(md::world::TownRadiusM(2, 9.f), 12500.f);
+}
+
+TEST(TownSpawnInstall, HubRadiusFromTypeAndMultiplier) {   // what the exe radius is for the Hub record (printed: the facts the DE-027 replacement rests on)
+    GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
+    const auto* t = data.Get("18919-Newwworld.mod"); ASSERT_NE(t, nullptr);
+    const auto ti = t->ints.find("type"); const auto mi = t->floats.find("town radius mult"); const auto si = t->floats.find("size radius");
+    const int type = ti == t->ints.end() ? -1 : ti->second; const float mult = mi == t->floats.end() ? 1.f : mi->second;
+    std::printf("Hub: type %d, town radius mult %.3f (%s), size radius %.1f, exe radius %.1f m\n", type, mult, mi == t->floats.end() ? "absent" : "set", si == t->floats.end() ? -1.f : si->second, md::world::TownRadiusM(type, mult));
+    EXPECT_GT(md::world::TownRadiusM(type, mult), 0.f);
+}
+
 TEST(TownSpawnInstall, HubHasGeneralNodesInsideTheTownRadius) {
     GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
     // the Hub: centre from the townlist (9647.7, 15038.8) m, `size radius` 350 m
