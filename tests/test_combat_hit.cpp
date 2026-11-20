@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 #include <monkey_dust/world/combat_hit.h>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <type_traits>
 
 using namespace md::world::combat;
@@ -115,4 +118,26 @@ TEST(CombatHit, SameSeedSameResult) {
 TEST(CombatHit, NoAllocationTypesArePod) {
     EXPECT_TRUE(std::is_trivially_copyable<BodyState>::value);
     EXPECT_TRUE(std::is_trivially_copyable<HitResult>::value);
+}
+
+// The exe attack roll and block chance run in the Unicorn emulator (tools_private/research/combat_oracle.py -> tools/tests/data/exe_combat.tsv).
+// The settings the generator wrote are the base data's (0.05, 70, 1.5, 1.2). Attack rows compare the boolean exactly, block rows within 1e-4 relative (the exe's soft cap runs in double).
+TEST(CombatHit, MatchesExeEmulatorVectors) {
+    std::ifstream in(MD_TOOLS_TEST_DATA "/exe_combat.tsv"); std::string line; int attacks = 0, blocks = 0;
+    HitConstants c;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#' || line.rfind("fn", 0) == 0) continue;
+        std::istringstream ss(line); std::string f[6]; for (auto& x : f) std::getline(ss, x, '\t');
+        const float x = std::stof(f[1]), y = std::stof(f[2]);
+        if (f[0] == "attack") {
+            EXPECT_EQ(AttackRoll(c, x, y, std::stof(f[3]), std::stof(f[4])), std::stoi(f[5]) != 0) << line;
+            ++attacks;
+        } else {
+            const float want = std::stof(f[5]);
+            EXPECT_NEAR(BlockChancePercent(c, x, y), want, 1e-4f * (want > 1.f ? want : 1.f)) << line;
+            ++blocks;
+        }
+    }
+    EXPECT_EQ(attacks, 56);
+    EXPECT_EQ(blocks, 11);
 }
