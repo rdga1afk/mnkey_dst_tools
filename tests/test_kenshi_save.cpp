@@ -22,6 +22,7 @@ KenshiSave Sample() {
         c.rotation[0] = 1.f; c.rotation[2] = 0.25f * i;
         c.stats = { {"strength", 20.f + i}, {"attack", 15.5f} };
         c.dead = i == 2; c.unconscious = i == 1; c.coma = i == 1; c.ko = 3.5f * i; c.bleeding = 0.25f * i; c.blood = 100.f - 10 * i; c.hunger = 2.f + i; c.fed = 0.5f * i;
+        if (i == 1) c.parts = { {"head", 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f}, {"arm", 0.5f, 0.f, 0.f, 0.f, 0.f, 0.f, 9.f} };
         sq.characters.push_back(c);
     }
     s.squads.push_back(sq);
@@ -260,4 +261,22 @@ TEST(KenshiSave, SquadListEmptyAndNoProsperity) {
     ASSERT_TRUE(WriteKenshiSave(d.string(), s, err)) << err;
     KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
     EXPECT_TRUE(r.squad_list.entries.empty()); EXPECT_FALSE(r.squad_list.has_prosperity);
+}
+
+// per-part wounds (exe writer 0x14064d390, loader 0x14064d600)
+TEST(KenshiSave, PartWoundsRoundTripAndKeys) {
+    const fs::path d = Tmp("parts"); std::string err;
+    ASSERT_TRUE(WriteKenshiSave(d.string(), Sample(), err)) << err;
+    KenshiSave r; ASSERT_TRUE(ReadKenshiSave(d.string(), r, err)) << err;
+    EXPECT_TRUE(r.squads[0].characters[0].parts.empty());
+    const auto& p = r.squads[0].characters[1].parts; ASSERT_EQ(p.size(), 2u);
+    EXPECT_EQ(p[0].sid, "head"); EXPECT_FLOAT_EQ(p[0].hit, 1.f); EXPECT_FLOAT_EQ(p[0].hitmult, 2.f); EXPECT_FLOAT_EQ(p[0].flesh, 3.f); EXPECT_FLOAT_EQ(p[0].stun, 4.f);
+    EXPECT_FLOAT_EQ(p[0].bandage, 5.f); EXPECT_FLOAT_EQ(p[0].rig, 6.f); EXPECT_FLOAT_EQ(p[0].wear, 7.f);
+    EXPECT_EQ(p[1].sid, "arm"); EXPECT_FLOAT_EQ(p[1].wear, 9.f);
+    md::fcs::File f; md::fcs::Error e; ASSERT_TRUE(md::fcs::ReadFile((d / "platoon" / "Nameless_0.platoon").string(), f, e)) << e.Message();
+    const md::fcs::Record* med = nullptr; int seen = 0; for (const auto& rec : f.records) if (rec.kind == 57 && ++seen == 2) med = &rec;
+    ASSERT_NE(med, nullptr);
+    auto has = [](const auto& tbl, const std::string& k) { for (const auto& kv : tbl) if (kv.first == k) return true; return false; };
+    EXPECT_TRUE(has(med->strings, "sid0")); EXPECT_TRUE(has(med->strings, "sid1")); EXPECT_FALSE(has(med->strings, "sid2"));
+    for (const char* k : {"hit", "hitmult", "flesh", "stun", "bandage", "rig", "wear"}) { EXPECT_TRUE(has(med->floats, std::string(k) + "0")) << k; EXPECT_TRUE(has(med->floats, std::string(k) + "1")) << k; }
 }
