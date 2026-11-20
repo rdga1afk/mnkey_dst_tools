@@ -121,3 +121,18 @@ TEST(TownNodes, ChoiceIsTypeOneFirstThenTypeZeroAndCoversTheRange) {
     v[1].node_type = v[3].node_type = 0; EXPECT_EQ(md::world::ChooseSpawnNode(v, 0xffffffffu)->x, 4.f);   // no type 1: type 0
     EXPECT_EQ(md::world::ChooseSpawnNode({}, 7u), nullptr);
 }
+
+TEST(TownSpawnInstall, HubPlanIsPlacedOnNodesAndSeedStable) {
+    GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
+    const float cx = 9647.7f, cz = 15038.8f, R = 350.f; std::vector<md::world::TownNode> nodes; std::string err;
+    ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, cx, cz, R, nodes, err)) << err;
+    const auto list = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
+    md::world::NodePlacer p1(nodes, 1), p2(nodes, 1), p3(nodes, 2);
+    const auto a = md::world::PlanTownSpawn(list, md::world::kTownNpcBudget, p1), b = md::world::PlanTownSpawn(list, md::world::kTownNpcBudget, p2), c = md::world::PlanTownSpawn(list, md::world::kTownNpcBudget, p3);
+    ASSERT_EQ(a.size(), list.anonymous.size() + list.named.size());   // 16 members, under the budget of 64
+    ASSERT_EQ(a.size(), b.size()); bool same = true, differs = false;
+    for (size_t i = 0; i < a.size(); ++i) { same = same && a[i].x == b[i].x && a[i].z == b[i].z; differs = differs || a[i].x != c[i].x; }
+    EXPECT_TRUE(same); EXPECT_TRUE(differs);
+    for (const auto& m : a) { const float dx = m.x - cx, dz = m.z - cz; EXPECT_LE(std::sqrt(dx * dx + dz * dz), R + 60.f); }
+    std::printf("Hub plan: %zu members placed on type-1 nodes of %zu nodes\n", a.size(), nodes.size());
+}

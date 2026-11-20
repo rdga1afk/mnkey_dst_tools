@@ -5,6 +5,7 @@
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/world/slice_squad.h>
 #include <monkey_dust/world/start_squad.h>
+#include <monkey_dust/world/town_nodes.h>
 #include <monkey_dust/world/town_spawn.h>
 #include <monkey_dust/world/terrain_query.h>
 #include <monkey_dust/world/chunk_def.h>
@@ -58,15 +59,38 @@ float Offset() {   // uniform in -kStartJitterMetres..+kStartJitterMetres, fixed
     return ((float)(st >> 8) / (float)(1u << 24) * 2.f - 1.f) * md::world::kStartJitterMetres;
 }
 
-// MD_TOWN_NPC=1 (off by default, DE-364): the Hub's resident list of the merged load order is built and logged. Nobody is placed: the exe's position rule (home building, spawn point) is not read,
-// so there is no placer yet (PlanTownSpawn takes one); no stand-in position is used in the game.
-void TownNpcList() {
+// one NPC entity at (x, z) in WorldTransform coordinates, on the ground (fallback y_fallback); the null entity when no transform slot is free. Shared by the slice squad and the MD_TOWN_NPC residents.
+MdEntity MakeNpc(float x, float z, float y_fallback, float& y_out) {
+    auto& reg = MdRegistry::Get();
+    auto e = reg.Create();
+    reg.Handle(e).emplace<WorldTransform>();
+    auto& tr = reg.Handle(e).get_mut<WorldTransform>();
+    const float y = Ground(x, z, y_fallback);
+    tr.x = x; tr.z = z; tr.y = y; tr.rot_y = 0.f;
+    tr.slot = TransformSoA::Get().Alloc(e, x, z, 0);
+    if (tr.slot == TransformSoA::INVALID_SLOT) return MdEntity{};
+    TransformSoA::Get().py[tr.slot] = y; TransformSoA::Get().MarkTransformDirty(tr.slot);
+    reg.Handle(e).emplace<NavAgent>();
+    reg.Handle(e).emplace<AnimatorComponent>();
+    y_out = y;
+    return e;
+}
+
+// MD_TOWN_NPC=1 (off by default, DE-364): the Hub's residents of the merged load order (list: town_spawn.h, 4 templates of rebirth.mod) are placed on the squad spawn nodes of the Hub's buildings
+// (town_nodes.h; DEVIATION: town membership by radius) and created as NPC entities, capped by kTownNpcBudget. Fixed seed; the Hub centre and radius come from the townlist / `size radius`.
+void TownNpcSpawn(float fallback_y) {
     static const bool on = getenv("MD_TOWN_NPC") && getenv("MD_TOWN_NPC")[0] == '1'; if (!on) return;
+    constexpr float kHubX = 9647.7f, kHubZ = 15038.8f, kHubR = 350.f;
     md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err; md::fcs::GameDataContainer data;
     if (!inst.LoadOrderFor(order, err) || !data.Load(order, err)) { MD_LOG(MD_LOG_WARNING, "[town-npc] load order not readable (%s)", err.Message().c_str()); return; }
+    std::vector<md::world::TownNode> nodes; std::string e2;
+    if (!md::world::LoadTownNodes(md::KenshiDir(), data, kHubX, kHubZ, kHubR, nodes, e2)) { MD_LOG(MD_LOG_WARNING, "[town-npc] nodes not readable (%s)", e2.c_str()); return; }
     const auto l = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
-    const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, [](const md::world::TownSpawnEntry&, size_t, float&, float&) { return false; });
-    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named members listed, %zu placed (no position rule read yet)", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), planned.size());
+    md::world::NodePlacer placer(nodes, 1);
+    const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);
+    size_t made = 0;
+    for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y) != MdEntity{}) ++made; }
+    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made);
 }
 
 void Spawn(MdEntity player) {
@@ -76,16 +100,8 @@ void Spawn(MdEntity player) {
     s_ent[0] = player; s_squad.Add(pt.x, pt.y, pt.z);
     for (int i = 1; i < count; ++i) {
         const float x = pt.x + Offset(), z = pt.z + Offset();
-        auto e = reg.Create();
-        reg.Handle(e).emplace<WorldTransform>();
-        auto& tr = reg.Handle(e).get_mut<WorldTransform>();
-        const float y = Ground(x, z, pt.y);
-        tr.x = x; tr.z = z; tr.y = y; tr.rot_y = 0.f;
-        tr.slot = TransformSoA::Get().Alloc(e, x, z, 0);
-        if (tr.slot == TransformSoA::INVALID_SLOT) { MD_LOG(MD_LOG_WARNING, "[slice] no free transform slot"); break; }
-        TransformSoA::Get().py[tr.slot] = y; TransformSoA::Get().MarkTransformDirty(tr.slot);
-        reg.Handle(e).emplace<NavAgent>();
-        reg.Handle(e).emplace<AnimatorComponent>();
+        float y; const MdEntity e = MakeNpc(x, z, pt.y, y);
+        if (e == MdEntity{}) { MD_LOG(MD_LOG_WARNING, "[slice] no free transform slot"); break; }
         s_ent[s_squad.Add(x, y, z)] = e;
     }
 }
@@ -145,7 +161,7 @@ void OrderMoveTo(float lx, float lz, bool walk) {
 bool Enabled() { static const bool on = [] { const char* e = std::getenv("MD_SLICE"); return e && e[0] == '1'; }(); return on; }
 
 void Update(MdEntity player, MdCamera& camera, const Input& in, float dt, float& cam_x, float& cam_z) {
-    if (!s_init) { Spawn(player); TownNpcList(); s_init = true; s_squad.Click(0, false); }
+    if (!s_init) { Spawn(player); TownNpcSpawn(s_squad.c[0].pos[1]); s_init = true; s_squad.Click(0, false); }
     if (in.screen_w > 0 && in.screen_h > 0 && (in.lmb_click || in.rmb_click)) {
         float o[3], d[3]; PixelRay(camera, in, o, d);
         if (in.lmb_click) { const int i = PickChar(o, d); if (i >= 0) s_squad.Click(i, in.shift); }
