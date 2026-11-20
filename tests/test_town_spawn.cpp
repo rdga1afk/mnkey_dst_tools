@@ -1,6 +1,8 @@
 // MakeTownSpawnList (DE-364): synthetic records for the rules, and the install data for the facts (the Hub via rebirth.mod; Brink is owned by United Cities).
 #include <gtest/gtest.h>
+#include <cmath>
 #include <monkey_dust/io/kenshi_dir.h>
+#include <monkey_dust/world/town_nodes.h>
 #include <monkey_dust/world/town_spawn.h>
 
 using md::fcs::GameData;
@@ -95,4 +97,27 @@ TEST(TownSpawnInstall, HubHasRebirthResidentsAndBrinkHasUnitedCitiesResidents) {
     std::printf("Brink: %zu templates, %zu anonymous, %zu named\n", b.templates.size(), b.anonymous.size(), b.named.size());
     const auto b2 = md::world::MakeTownSpawnList(data, "962-gamedata.base", 3);
     EXPECT_TRUE(Same(b, b2));
+}
+
+TEST(TownSpawnInstall, HubHasGeneralNodesInsideTheTownRadius) {
+    GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
+    // the Hub: centre from the townlist (9647.7, 15038.8) m, `size radius` 350 m
+    const float cx = 9647.7f, cz = 15038.8f, R = 350.f;
+    std::vector<md::world::TownNode> nodes; std::string err;
+    ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, cx, cz, R, nodes, err)) << err;
+    size_t gen = 0, shop = 0; for (const auto& n : nodes) (n.node_type == 1 ? gen : shop)++;
+    std::printf("Hub nodes: %zu general, %zu shopkeeper\n", gen, shop);
+    ASSERT_GT(gen, 0u);
+    // a node sits inside its building, so within the radius plus a building's half size (nodes up to ~40 m from the placement origin)
+    for (const auto& n : nodes) { const float dx = n.x - cx, dz = n.z - cz; EXPECT_LE(std::sqrt(dx * dx + dz * dz), R + 60.f) << n.building; }
+    std::vector<md::world::TownNode> again; ASSERT_TRUE(md::world::LoadTownNodes(md::KenshiDir(), data, cx, cz, R, again, err));
+    ASSERT_EQ(again.size(), nodes.size());
+}
+
+TEST(TownNodes, ChoiceIsTypeOneFirstThenTypeZeroAndCoversTheRange) {
+    std::vector<md::world::TownNode> v(5); for (size_t i = 0; i < v.size(); ++i) { v[i].node_type = (i == 1 || i == 3) ? 1 : 0; v[i].x = (float)i; }
+    for (uint32_t r : { 0u, 0x40000000u, 0x80000000u, 0xffffffffu }) { const auto* n = md::world::ChooseSpawnNode(v, r); ASSERT_NE(n, nullptr); EXPECT_EQ(n->node_type, 1); }
+    EXPECT_EQ(md::world::ChooseSpawnNode(v, 0u)->x, 1.f); EXPECT_EQ(md::world::ChooseSpawnNode(v, 0xffffffffu)->x, 3.f);
+    v[1].node_type = v[3].node_type = 0; EXPECT_EQ(md::world::ChooseSpawnNode(v, 0xffffffffu)->x, 4.f);   // no type 1: type 0
+    EXPECT_EQ(md::world::ChooseSpawnNode({}, 7u), nullptr);
 }
