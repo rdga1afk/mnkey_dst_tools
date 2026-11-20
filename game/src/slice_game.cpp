@@ -5,6 +5,7 @@
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/world/slice_squad.h>
 #include <monkey_dust/world/start_squad.h>
+#include <monkey_dust/world/town_spawn.h>
 #include <monkey_dust/world/terrain_query.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/transform_soa.h>
@@ -55,6 +56,17 @@ float Offset() {   // uniform in -kStartJitterMetres..+kStartJitterMetres, fixed
     static uint32_t st = 0x2918u;
     st = st * 1664525u + 1013904223u;
     return ((float)(st >> 8) / (float)(1u << 24) * 2.f - 1.f) * md::world::kStartJitterMetres;
+}
+
+// MD_TOWN_NPC=1 (off by default, DE-364): the Hub's resident list of the merged load order is built and logged. Nobody is placed: the exe's position rule (home building, spawn point) is not read,
+// so there is no placer yet (PlanTownSpawn takes one); no stand-in position is used in the game.
+void TownNpcList() {
+    static const bool on = getenv("MD_TOWN_NPC") && getenv("MD_TOWN_NPC")[0] == '1'; if (!on) return;
+    md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err; md::fcs::GameDataContainer data;
+    if (!inst.LoadOrderFor(order, err) || !data.Load(order, err)) { MD_LOG(MD_LOG_WARNING, "[town-npc] load order not readable (%s)", err.Message().c_str()); return; }
+    const auto l = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
+    const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, [](const md::world::TownSpawnEntry&, size_t, float&, float&) { return false; });
+    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named members listed, %zu placed (no position rule read yet)", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), planned.size());
 }
 
 void Spawn(MdEntity player) {
@@ -133,7 +145,7 @@ void OrderMoveTo(float lx, float lz, bool walk) {
 bool Enabled() { static const bool on = [] { const char* e = std::getenv("MD_SLICE"); return e && e[0] == '1'; }(); return on; }
 
 void Update(MdEntity player, MdCamera& camera, const Input& in, float dt, float& cam_x, float& cam_z) {
-    if (!s_init) { Spawn(player); s_init = true; s_squad.Click(0, false); }
+    if (!s_init) { Spawn(player); TownNpcList(); s_init = true; s_squad.Click(0, false); }
     if (in.screen_w > 0 && in.screen_h > 0 && (in.lmb_click || in.rmb_click)) {
         float o[3], d[3]; PixelRay(camera, in, o, d);
         if (in.lmb_click) { const int i = PickChar(o, d); if (i >= 0) s_squad.Click(i, in.shift); }

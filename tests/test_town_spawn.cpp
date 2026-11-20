@@ -53,6 +53,18 @@ TEST(TownSpawn, SameSeedSameListAndTheSeedChangesTheRandomCounts) {
     EXPECT_TRUE(differs);
 }
 
+TEST(TownSpawn, PlanIsCappedByTheBudgetAndHonoursTheTestPlacer) {
+    auto d = Synth(); const auto l = md::world::MakeTownSpawnList(d, "townB", 7);
+    const size_t total = l.anonymous.size() + l.named.size(); ASSERT_GT(total, 4u);
+    auto at_anchor = [](const md::world::TownSpawnEntry&, size_t, float& x, float& z) { x = 100.f; z = -50.f; return true; };   // test-only placement: everyone at the town anchor
+    const auto all = md::world::PlanTownSpawn(l, 1000, at_anchor); EXPECT_EQ(all.size(), total);
+    const auto cap = md::world::PlanTownSpawn(l, 4, at_anchor); ASSERT_EQ(cap.size(), 4u); EXPECT_EQ(cap[0].x, 100.f); EXPECT_EQ(cap[0].z, -50.f);
+    auto none = [](const md::world::TownSpawnEntry&, size_t, float&, float&) { return false; };   // no position rule: nothing is placed
+    EXPECT_TRUE(md::world::PlanTownSpawn(l, 1000, none).empty());
+    auto odd = [](const md::world::TownSpawnEntry&, size_t i, float& x, float& z) { x = z = 0.f; return (i & 1) == 0; };
+    EXPECT_EQ(md::world::PlanTownSpawn(l, 1000, odd).size(), (total + 1) / 2);
+}
+
 namespace {
 bool LoadMerged(GameDataContainer& data) {
     md::fcs::Install inst(md::KenshiDir()); md::fcs::LoadOrder order; md::fcs::Error err;
