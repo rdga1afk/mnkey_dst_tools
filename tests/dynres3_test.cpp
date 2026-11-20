@@ -171,6 +171,15 @@ int main() {
         CHECK(!grass_on(2, 0.92f), "gh_level 2: grass full at 0.92");
         printf("0.9 item 3 grass level checks done\n");
     }
+    { // dynres 0.9: the run-time setter (md.set_dynres_params) reaches the controller fields and a fresh controller starts from scale 1.0 with empty rings
+        Dynres3 d; for (int i = 0; i < 400; ++i) { const float sc = d.Scale(); d.Sample(sc, 24.f + 20.f * sc * sc); }
+        CHECK(d.Scale() < 1.f && d.n > 0, "the controller must have moved before the reset (scale %.2f, n %d)", d.Scale(), d.n);
+        Dynres3 f; f.SetLevelCount(d.nlev); f.SetParams(1.0f, 30.f, true, 2);
+        CHECK(f.raise_gap_s == 1.0f && f.turn_thr == 30.f && f.predict && f.gh_level == 2, "SetParams must reach the fields");
+        CHECK(f.Scale() == 1.f && f.n == 0, "a fresh controller: scale %.2f n %d", f.Scale(), f.n);
+        Dynres3 g; g.SetParams(-1.f, 0.f, false, 0); CHECK(g.raise_gap_s == 0.5f && g.turn_thr == 0.f && !g.predict, "raise_s < 0 keeps the default");
+        printf("0.9 SetParams checks done\n");
+    }
     printf(fails ? "dynres3 test: FAIL (%d)\n" : "dynres3 test: PASS\n", fails);
     return fails ? 1 : 0;
 }

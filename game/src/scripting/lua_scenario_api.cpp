@@ -306,6 +306,8 @@ static int l_md_set_sgsr2(lua_State* L) { g_opt_sgsr2 = lua_toboolean(L, 1) != 0
 extern bool g_upscaler_lite;
 extern float g_grass_scale;
 extern void md_set_dynres_grass(bool on);
+extern void md_set_dynres_params(float raise_s, float turn, bool predict, int gh_level, int cmaa_off);
+static int l_md_set_dynres_params(lua_State* L) { md_set_dynres_params((float)luaL_optnumber(L, 1, -1.0), (float)luaL_optnumber(L, 2, 0.0), lua_toboolean(L, 3) != 0, (int)luaL_optinteger(L, 4, 0), (int)luaL_optinteger(L, 5, -1)); return 0; }   // md.set_dynres_params(raise_s, turn_dps, predict, gh_level, cmaa_off_level): dynres 0.9 switches at run time, clears the controller
 static int l_md_set_dynres_grass(lua_State* L) { md_set_dynres_grass(lua_toboolean(L, 1) != 0); return 0; }   // dynres 0.7: half-resolution grass as the last step of dynres in grass
 extern float g_grass_scale_dyn;
 static int l_md_dyn_grass_scale(lua_State* L) { lua_pushnumber(L, g_grass_scale_dyn); return 1; }   // dynres 0.7: the grass scale dynres asks for now
@@ -579,6 +581,7 @@ void RegisterLuaScenarioAPI(float* cam_x, float* cam_z) {
     sys.RegisterNamespaceFunction("set_sgsr1", l_md_set_sgsr1);
     sys.RegisterNamespaceFunction("set_sgsr2", l_md_set_sgsr2);
     sys.RegisterNamespaceFunction("set_dynres_grass", l_md_set_dynres_grass);
+    sys.RegisterNamespaceFunction("set_dynres_params", l_md_set_dynres_params);
     sys.RegisterNamespaceFunction("dyn_grass_scale", l_md_dyn_grass_scale);
     sys.RegisterNamespaceFunction("set_grass_scale", l_md_set_grass_scale);
     sys.RegisterNamespaceFunction("set_stair_blur", l_md_set_stair_blur);

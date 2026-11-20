@@ -72,6 +72,7 @@ struct Dynres3 {
 
     // dynres 0.9 (DE-366 item 2, off by default): a camera turn faster than turn_thr (deg/s, the smoothed yaw rate of the caller) counts as motion next to the speed: a raise waits while it lasts
     float turn_thr = 0.f, turn_dps = 0.f;
+    void SetParams(float raise_s, float turn, bool pred, int gh) { if (raise_s >= 0.f) raise_gap_s = raise_s; turn_thr = turn; predict = pred; gh_level = gh; }   // dynres 0.9 switches (md.set_dynres_params)
     void Motion(float speed, float yaw_dps = 0.f) { speed_mps = speed; turn_dps = yaw_dps; }   // once per frame: the smoothed camera speed in m/s (0..) and yaw rate in deg/s
     void Sample(float s, float gpu_ms) {                   // one frame: the scale it was rendered at and its GPU ms
         if (!(gpu_ms > 0.f) || gpu_ms > 200.f) return;

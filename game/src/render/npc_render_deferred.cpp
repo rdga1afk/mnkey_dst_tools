@@ -25,6 +25,15 @@ float g_dynres_ema = 0.9f; int g_dynres_hold = 0, g_dynres_hold_left = 0; long g
 extern float g_grass_scale_dyn;   // grass_still.cpp: the grass scale dynres asks for (1 or 0.5)
 bool  g_dynres3 = !(getenv("MD_DYNRES3") && getenv("MD_DYNRES3")[0] == '0');   // dynres v3 (DE-279, md.set_dynres3): the scale while moving comes from the cost model T = F + K s^2 fitted on the GPU time of the fence waiter; default on (DE-283), MD_DYNRES3=0 / md.set_dynres3(false) = v2
 static Dynres3 s_d3; static float s_d3_scale_for[8] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f }; static bool s_d3_gh_for[8] = {}; static uint64_t s_d3_serial = 0; static bool s_d3_mov = false;
+// dynres 0.9 switches: the env values at start, replaceable at run time by md.set_dynres_params (scenarios)
+struct DynresRt { float raise_s = getenv("MD_DYNRES_RAISE_S") ? (float)atof(getenv("MD_DYNRES_RAISE_S")) : -1.f; float turn = getenv("MD_DYNRES_TURN") ? (float)atof(getenv("MD_DYNRES_TURN")) : 0.f;
+    bool predict = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; int gh_level = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; int cmaa_off = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; };
+static DynresRt g_d3_rt;
+void md_set_dynres_params(float raise_s, float turn, bool predict, int gh_level, int cmaa_off) {   // md.set_dynres_params: also clears the controller (scale 1.0, rings empty, prior F / K), keeping the level set
+    g_d3_rt.raise_s = raise_s; g_d3_rt.turn = turn; g_d3_rt.predict = predict; g_d3_rt.gh_level = gh_level; g_d3_rt.cmaa_off = cmaa_off;
+    Dynres3 fresh; fresh.SetLevelCount(s_d3.nlev); fresh.gh_enable = s_d3.gh_enable; fresh.SetParams(raise_s, turn, predict, gh_level); s_d3 = fresh; for (int i = 0; i < 8; ++i) { s_d3_scale_for[i] = 1.f; s_d3_gh_for[i] = false; } s_d3_serial = 0; s_d3_mov = false;
+}
+const Dynres3& md_dynres_state() { return s_d3; }
 void md_set_dynres_grass(bool on) { s_d3.gh_enable = on; if (!on) g_grass_scale_dyn = 1.f; }   // md.set_dynres_grass
 int md_dynres_target_creations() { return md::TargetCreations(); }   // md.dynres_targets
 float g_dynres3_scale() { return s_d3.Scale(); } float g_dynres3_F() { return s_d3.F; } float g_dynres3_K() { return s_d3.K; }
@@ -229,13 +238,13 @@ void NpcRender::RenderFrame(const MdCamera& cam, float now_s, float dt,
             md::GpuDevice& gd = md::GpuDevice::Get();
             { static bool said = false; if (!said) { said = true; { const char* lc = getenv("MD_DYNRES_LEVELS"); if (lc && lc[0] >= '3' && lc[0] <= '5') s_d3.SetLevelCount(lc[0] - '0'); } fprintf(stderr, "[dynres] %s (target %.1f ms, %.1f ms while grass is drawn; levels %d, one-step drop %s, panic x%.2f, raise gap %.1f s)\n", kDynresVersion, s_d3.light_ms, s_d3.heavy_ms, s_d3.levels_on ? s_d3.nlev : 0, s_d3.one_step ? "on" : "off", s_d3.panic_k, s_d3.raise_gap_s); } }
             { static const bool scene_on = !(getenv("MD_DYNRES_SCENE") && getenv("MD_DYNRES_SCENE")[0] == '0'); s_d3.Scene(scene_on && TownFoliage::Get().stats().grass_blades > 0, dt); }
-            { static const bool pred_on = getenv("MD_DYNRES_PREDICT") && getenv("MD_DYNRES_PREDICT")[0] == '1'; s_d3.predict = pred_on; s_d3.Motion(v, w); }
-            { static const float raise_s = getenv("MD_DYNRES_RAISE_S") ? (float)atof(getenv("MD_DYNRES_RAISE_S")) : -1.f; if (raise_s >= 0.f) s_d3.raise_gap_s = raise_s; }   // dynres 0.9 item 1: the raise wait in seconds (default 0.5 as 0.8)
-            { static const float turn_thr = getenv("MD_DYNRES_TURN") ? (float)atof(getenv("MD_DYNRES_TURN")) : 0.f; s_d3.turn_thr = turn_thr; }   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
+            { s_d3.predict = g_d3_rt.predict; s_d3.Motion(v, w); }
+            if (g_d3_rt.raise_s >= 0.f) s_d3.raise_gap_s = g_d3_rt.raise_s;   // dynres 0.9 item 1: the raise wait in seconds (default 0.5 as 0.8)
+            s_d3.turn_thr = g_d3_rt.turn;   // dynres 0.9 item 2: yaw rate in deg/s above which a raise waits (0 = off)
             { static const bool one_step = !(getenv("MD_DYNRES_ONESTEP") && getenv("MD_DYNRES_ONESTEP")[0] == '0'); s_d3.one_step = one_step; }   // dynres 0.8 (DE-362): one-step drop + panic, MD_DYNRES_ONESTEP=0 gives the 0.7 rule   // dynres 0.5 prediction, off by default
             const uint64_t ws = gd.WaiterSerial(); if (ws > s_d3_serial) { s_d3_serial = ws; s_d3.Sample(s_d3_scale_for[(ws - 1) % 8], gd.WaiterGpuMs() + (s_d3_gh_for[(ws - 1) % 8] ? s_d3.gh_saving : 0.f)); }
-            { static const int col = getenv("MD_DYNRES_CMAA_OFF_LEVEL") ? atoi(getenv("MD_DYNRES_CMAA_OFF_LEVEL")) : -1; g_dynres_cmaa_off_scale = col >= 0 ? s_d3.levels[col < s_d3.nlev ? col : s_d3.nlev - 1] : -1.f; }   // dynres 0.9 item 3: highest level that runs without CMAA 2 (default off = never)
-            { static const int ghl = getenv("MD_DYNRES_GH_LEVEL") ? atoi(getenv("MD_DYNRES_GH_LEVEL")) : 0; s_d3.gh_level = ghl; }   // dynres 0.9 item 3: grass half-resolution level (default 0 = floor as 0.8)
+            { const int col = g_d3_rt.cmaa_off; g_dynres_cmaa_off_scale = col >= 0 ? s_d3.levels[col < s_d3.nlev ? col : s_d3.nlev - 1] : -1.f; }   // dynres 0.9 item 3: highest level that runs without CMAA 2 (default off = never)
+            s_d3.gh_level = g_d3_rt.gh_level;   // dynres 0.9 item 3: grass half-resolution level (default 0 = floor as 0.8)
             s_d3.GrassStep(dt); g_grass_scale_dyn = s_d3.GrassScale();
         }
         if (input_on && g_dynres_input_event && (g_dynres3 ? !s_d3_mov : g_dynres_cur >= 0.999f)) { if (g_dynres3) s_d3_mov = true; else g_dynres_cur = g_dynres_scale; g_dynres_cnt = 0; ++g_dynres_changes; g_dynres_hold_left = g_dynres_hold; }
