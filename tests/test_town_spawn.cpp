@@ -244,7 +244,7 @@ TEST(NpcLookInstall, HubResidentsRaceSplitAndSeedStable) {
         ++n;
         EXPECT_EQ(a.race, b.race); EXPECT_EQ(a.female, b.female); EXPECT_EQ(a.head, b.head); EXPECT_EQ(a.hair, b.hair); EXPECT_EQ(a.hair_argb, b.hair_argb);
         if (!a.resolved) { ++unresolved; std::printf("  unresolved: %s (%s, faction %s)\n", e.character.c_str(), e.name.c_str(), fac.c_str()); continue; }
-        { const auto* rr = data.Get(a.race); ++split[a.race + " (" + (rr ? rr->name : std::string("?")) + ")" + (a.female ? " F" : " M")]; }
+        { const auto* rr = data.Get(a.race); std::printf("    mesh=%s tex=%s\n", a.mesh.c_str(), a.body_texture.c_str()); ++split[a.race + " (" + (rr ? rr->name : std::string("?")) + ")" + (a.female ? " F" : " M")]; }
         EXPECT_FALSE(a.mesh.empty()) << a.race;
         std::printf("  %s: %s %s head=%s hair=%s beard=%s col=%08x\n", e.name.c_str(), a.race.c_str(), a.female ? "F" : "M", a.head.c_str(), a.hair.c_str(), a.beard.c_str(), a.hair_argb);
     }

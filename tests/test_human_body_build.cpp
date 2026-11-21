@@ -25,3 +25,14 @@ TEST(HumanBodyBuild, OutputMatchesHashReference) {
     for (size_t i = 0; i < b.morph_names.size(); ++i) { all += b.morph_names[i] + "|"; putv(b.morph_delta[i]); }
     MD_EXPECT_INSTALL_HASH("human_body_build", all.data(), all.size());
 }
+
+TEST(HumanBodyBuild, FemaleBodyBuildsWithItsOwnSkeleton) {
+    ASSERT_FALSE(md::KenshiDir().empty()) << "needs KENSHI_DIR";
+    HumanBodyData m, f;
+    ASSERT_TRUE(BuildHumanBody(md::KenshiDir(), m));
+    ASSERT_TRUE(BuildHumanBody(md::KenshiDir(), "human_female.mesh", f));
+    EXPECT_GT(f.nv, 0u); EXPECT_FALSE(f.idx.empty()); EXPECT_FALSE(f.bone_names.empty()); EXPECT_FALSE(f.clips.empty());
+    EXPECT_NE(f.nv, m.nv);
+    std::printf("female body: %u vertices, %zu bones, %zu clips (male: %u, %zu, %zu)\n", f.nv, f.bone_names.size(), f.clips.size(), m.nv, m.bone_names.size(), m.clips.size());
+    EXPECT_FALSE(BuildHumanBody(md::KenshiDir(), "no_such_body.mesh", f));
+}
