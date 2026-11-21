@@ -33,6 +33,8 @@ TEST(HumanBodyBuild, FemaleBodyBuildsWithItsOwnSkeleton) {
     ASSERT_TRUE(BuildHumanBody(md::KenshiDir(), "human_female.mesh", f));
     EXPECT_GT(f.nv, 0u); EXPECT_FALSE(f.idx.empty()); EXPECT_FALSE(f.bone_names.empty()); EXPECT_FALSE(f.clips.empty());
     EXPECT_NE(f.nv, m.nv);
+    ASSERT_EQ(f.clips.size(), m.clips.size()); for (size_t i = 0; i < f.clips.size(); ++i) EXPECT_EQ(f.clips[i].name, m.clips[i].name) << i;   // the clip indices of the male body address the female clips too
+    EXPECT_NE(f.bone_names, m.bone_names);   // the female skeleton has no jaw bones and two breast bones: its own animator is needed
     std::printf("female body: %u vertices, %zu bones, %zu clips (male: %u, %zu, %zu)\n", f.nv, f.bone_names.size(), f.clips.size(), m.nv, m.bone_names.size(), m.clips.size());
     EXPECT_FALSE(BuildHumanBody(md::KenshiDir(), "no_such_body.mesh", f));
 }
