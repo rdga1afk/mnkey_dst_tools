@@ -200,3 +200,30 @@ TEST(TownNodes, GeneralChoiceIgnoresGuardPostNodes) {
     EXPECT_EQ(md::world::ChooseSpawnNode(v, 0xffffffffu)->x, 4.f);
     v = { g }; EXPECT_EQ(md::world::ChooseSpawnNode(v, 0u), nullptr);
 }
+
+// Template housing (DE-364): templates are served by priority 5..0, each takes the first free placed building of its `building` set.
+TEST(TownNodes, TemplatesTakeFreeWantedBuildingsByPriority) {
+    GameDataContainer d;
+    Add(d, 10, "nofac", "No Faction"); Add(d, 13, "town", "Town"); Add(d, 52, "lo", "Lo"); Add(d, 52, "hi", "Hi"); Add(d, 52, "none", "None");
+    SetRefs(d, "town", "residents", { { "lo", { 1, 1, 0 } }, { "hi", { 1, 5, 0 } }, { "none", { 1, 100, 0 } } });   // lo: priority 1, hi: 5, none: stored 100 -> 0
+    SetRefs(d, "lo", "building", { { "bA", { 0, 0, 0 } }, { "bB", { 0, 0, 0 } } });
+    SetRefs(d, "hi", "building", { { "bA", { 0, 0, 0 } } });
+    const auto l = md::world::MakeTownSpawnList(d, "town", 1);
+    ASSERT_EQ(l.priorities.size(), 3u);
+    EXPECT_EQ(l.priorities[0], 1); EXPECT_EQ(l.priorities[1], 5); EXPECT_EQ(l.priorities[2], 0);
+    std::vector<md::world::TownNode> nodes(3);
+    nodes[0].building = "bA"; nodes[0].placed = 4; nodes[0].node_type = 1; nodes[0].x = 10.f;
+    nodes[1].building = "bB"; nodes[1].placed = 7; nodes[1].node_type = 1; nodes[1].x = 20.f;
+    nodes[2].building = "bC"; nodes[2].placed = 9; nodes[2].node_type = 1; nodes[2].x = 30.f;
+    const auto h = md::world::AssignTemplateHomes(d, l, nodes);
+    ASSERT_EQ(h.size(), 3u);
+    EXPECT_EQ(h[1], 4);    // hi (priority 5) takes bA first
+    EXPECT_EQ(h[0], 7);    // lo wanted bA too, but it is taken: bB
+    EXPECT_EQ(h[2], -1);   // no `building` set
+    EXPECT_EQ(md::world::AssignTemplateHomes(d, l, nodes), h);   // deterministic
+    md::world::NodePlacer placer(nodes, 3); placer.list = &l; placer.homes = &h;
+    md::world::TownSpawnEntry e; e.template_id = "hi"; float x = 0, z = 0, y = 0;
+    ASSERT_TRUE(placer(e, 0, x, z, y)); EXPECT_FLOAT_EQ(x, 10.f);
+    e.template_id = "none"; ASSERT_TRUE(placer(e, 1, x, z, y));   // no home: any general node
+    EXPECT_TRUE(x == 10.f || x == 20.f || x == 30.f);
+}

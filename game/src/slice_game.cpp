@@ -86,7 +86,8 @@ void TownNpcSpawn(float fallback_y) {
     if (md::world::LoadTownSites(md::KenshiDir(), data, towns, e2)) for (size_t i = 0; i < towns.size(); ++i) if (towns[i].id == "18919-Newwworld.mod") hub = (int)i;
     if (hub < 0 || !md::world::LoadTownNodes(md::KenshiDir(), data, towns, hub, nodes, e2)) { MD_LOG(MD_LOG_WARNING, "[town-npc] nodes not readable (%s)", e2.c_str()); return; }
     const auto l = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
-    md::world::NodePlacer placer(nodes, 1);
+    const std::vector<int> homes = md::world::AssignTemplateHomes(data, l, nodes);
+    md::world::NodePlacer placer(nodes, 1); placer.list = &l; placer.homes = &homes;
     const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);
     size_t made = 0;
     for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y, m.has_y ? &m.y : nullptr) != MdEntity{}) ++made; if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f", made, m.x, m.z, y); }
