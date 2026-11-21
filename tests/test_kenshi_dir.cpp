@@ -96,3 +96,19 @@ TEST(KenshiBuild, ReviewedInstallIsKnownAndAModifiedFileWarns) {
     EXPECT_FALSE(md::KenshiBuildWarning("/nonexistent_kenshi_dir", &label).empty());   // files missing: warns, label says unknown
     EXPECT_EQ(label, "unknown build");
 }
+
+TEST(KenshiBuild, FingerprintFindsAGogNamedExe) {
+    Home h;
+    const fs::path d = h.root / "gog";
+    h.Write(d / "kenshi_GOG_x64.exe", "exe");
+    h.Write(d / "Plugin_Terrain_x64.dll", "dll");
+    h.Write(d / "data/gamedata.base", "base");
+    h.Write(d / "data/materials/debug.material", "m1");
+    h.Write(d / "data/materials/deferred/buildings.material", "m2");
+    uint64_t f[md::kBuildFiles];
+    EXPECT_TRUE(md::KenshiFingerprint(d.string(), f));
+    fs::remove(d / "kenshi_GOG_x64.exe");
+    EXPECT_FALSE(md::KenshiFingerprint(d.string(), f));
+    h.Write(d / "KENSHI_x64.EXE", "exe");   // case-insensitive
+    EXPECT_TRUE(md::KenshiFingerprint(d.string(), f));
+}
