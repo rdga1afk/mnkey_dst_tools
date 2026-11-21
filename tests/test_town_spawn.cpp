@@ -4,6 +4,8 @@
 #include <monkey_dust/io/kenshi_dir.h>
 #include <monkey_dust/world/town_nodes.h>
 #include <monkey_dust/world/town_spawn.h>
+#include <monkey_dust/world/npc_look.h>
+#include <map>
 
 using md::fcs::GameData;
 using md::fcs::GameDataContainer;
@@ -226,4 +228,27 @@ TEST(TownNodes, TemplatesTakeFreeWantedBuildingsByPriority) {
     ASSERT_TRUE(placer(e, 0, x, z, y)); EXPECT_FLOAT_EQ(x, 10.f);
     e.template_id = "none"; ASSERT_TRUE(placer(e, 1, x, z, y));   // no home: any general node
     EXPECT_TRUE(x == 10.f || x == 20.f || x == 30.f);
+}
+
+// Look of the Hub residents: race source order, same seed same look, unresolved ones are reported (no stand-in).
+TEST(NpcLookInstall, HubResidentsRaceSplitAndSeedStable) {
+    GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
+    const auto hub = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
+    ASSERT_TRUE(hub.found);
+    std::map<std::string, int> split; int unresolved = 0, n = 0;
+    for (const auto& e : hub.anonymous) {
+        const auto* t = data.Get(e.template_id); std::string fac = hub.owner;
+        if (t) if (const auto* f = t->Refs("faction")) if (!f->empty()) fac = (*f)[0].first;
+        const auto a = md::world::ResolveNpcLook(data, e.character, e.template_id, fac, 7);
+        const auto b = md::world::ResolveNpcLook(data, e.character, e.template_id, fac, 7);
+        ++n;
+        EXPECT_EQ(a.race, b.race); EXPECT_EQ(a.female, b.female); EXPECT_EQ(a.head, b.head); EXPECT_EQ(a.hair, b.hair); EXPECT_EQ(a.hair_argb, b.hair_argb);
+        if (!a.resolved) { ++unresolved; std::printf("  unresolved: %s (%s, faction %s)\n", e.character.c_str(), e.name.c_str(), fac.c_str()); continue; }
+        { const auto* rr = data.Get(a.race); ++split[a.race + " (" + (rr ? rr->name : std::string("?")) + ")" + (a.female ? " F" : " M")]; }
+        EXPECT_FALSE(a.mesh.empty()) << a.race;
+        std::printf("  %s: %s %s head=%s hair=%s beard=%s col=%08x\n", e.name.c_str(), a.race.c_str(), a.female ? "F" : "M", a.head.c_str(), a.hair.c_str(), a.beard.c_str(), a.hair_argb);
+    }
+    for (const auto& kv : split) std::printf("Hub race split: %s x%d\n", kv.first.c_str(), kv.second);
+    std::printf("Hub residents %d, unresolved %d\n", n, unresolved);
+    EXPECT_GT(n, 0);
 }
