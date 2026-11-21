@@ -9,6 +9,7 @@
 #include "town_foliage.h"
 #include <monkey_dust/nav/nav_world.h>
 #include "npc_render_internal.h"
+#include "npc_skin_live.h"
 float g_dump_pr[16] = {}, g_dump_cam[3] = {};
 #include <monkey_dust/render/gpu_copy_pass.h>
 #include <monkey_dust/render/gpu_depth_texture.h>
@@ -30,6 +31,8 @@ int   g_terrain_lod_levels[11] = {}; // nodes per level of the last LOD selectio
 extern float g_dynres_cur;
 uint8_t g_npc_female[MAX_ANIMATED_NPC];   // per slot: the NPC draws with the female body (set at spawn, MD_TOWN_NPC)
 void md_npc_set_female(int slot, int female) { if (slot >= 0 && slot < MAX_ANIMATED_NPC) g_npc_female[slot] = female ? 1 : 0; }
+uint8_t g_npc_group[MAX_ANIMATED_NPC];   // per slot: head group (0 = default body set, >= 2 = npcskin::RegisterHead id)
+void md_npc_set_group(int slot, int group) { if (slot >= 0 && slot < MAX_ANIMATED_NPC) g_npc_group[slot] = (uint8_t)group; }
 float g_terrain_lod_near_px = 5.f, g_terrain_lod_far_px = 35.f, g_terrain_lod_near_dist = 750.f, g_terrain_lod_far_dist = 1500.f;
 bool g_terrain_detail_n_atten = true; // owner decision 2026-10-10: back ON (SLOPE_STREAKS_FIX step 1; bisection: N.y^4 damps slope streaks). md.set_terrain_detail_n_atten(false) = as terrainfp4.hlsl:265-268
 // Divergence #7 prototype: ground-layer anisotropy level (engine global, 0 = off); any level >= 1 turns on the textureGrad path, carried as +400 on |pix_scale|.
@@ -422,8 +425,9 @@ if (fc.ac > 0 && index_count > 0) {
     float r_asp = (float)window_get_width() / (float)window_get_height();
     cam.FrustumPlanes(r_asp, frustum);
 
-    static uint32_t visible_indices[4 * MAX_ANIMATED_NPC];
+    static uint32_t visible_indices[(4 + 2 * md::npcskin::kMaxHeadGroups) * MAX_ANIMATED_NPC];
     t01_count_ = 0; t2_count_ = 0; f01_count_ = 0; f2_count_ = 0;
+    for (auto& c : xg_count_) c[0] = c[1] = 0;
     TransformSoA& tsoa = TransformSoA::Get();
     const int scan_count = fc.ac < MAX_ANIMATED_NPC ? fc.ac : MAX_ANIMATED_NPC;
     for (int idx = 0; idx < scan_count; ++idx) {
@@ -440,7 +444,11 @@ if (fc.ac > 0 && index_count > 0) {
         }
         if (culled) continue;
         uint32_t lod_tier = AnimationSoA::Get().GetState(idx).lod_tier;
-        if (fem_ok_ && g_npc_female[idx]) {
+        const int grp = g_npc_group[idx];
+        if (grp >= 2 && grp - 2 < md::npcskin::HeadGroupCount() && (fem_ok_ || !md::npcskin::GroupFemale(grp))) {
+            uint32_t& c = xg_count_[grp - 2][lod_tier <= 1u ? 0 : 1];
+            if (c < (uint32_t)MAX_ANIMATED_NPC) visible_indices[(uint32_t)(4 + 2 * (grp - 2) + (lod_tier <= 1u ? 0 : 1)) * MAX_ANIMATED_NPC + c++] = (uint32_t)idx;
+        } else if (fem_ok_ && g_npc_female[idx]) {
             if (lod_tier <= 1u) { if (f01_count_ < (uint32_t)MAX_ANIMATED_NPC) visible_indices[2u * MAX_ANIMATED_NPC + f01_count_++] = (uint32_t)idx; }
             else if (f2_count_ < (uint32_t)MAX_ANIMATED_NPC) visible_indices[3u * MAX_ANIMATED_NPC + f2_count_++] = (uint32_t)idx;
         } else if (lod_tier <= 1u) {
@@ -451,7 +459,7 @@ if (fc.ac > 0 && index_count > 0) {
                 visible_indices[(uint32_t)MAX_ANIMATED_NPC + t2_count_++] = (uint32_t)idx;
         }
     }
-    vis_buf.UploadInCmd(fc.cmd, visible_indices, (int)sizeof(visible_indices));
+    vis_buf.UploadInCmd(fc.cmd, visible_indices, (int)sizeof(uint32_t) * (4 + 2 * md::npcskin::HeadGroupCount()) * MAX_ANIMATED_NPC);
 }
 
 // ImGui: upload vertex/index data via copy pass — MUST be before any render pass.

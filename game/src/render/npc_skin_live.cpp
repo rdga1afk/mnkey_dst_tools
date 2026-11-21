@@ -21,6 +21,8 @@ struct State {
     Stage vs, fs;
     SDL_GPUGraphicsPipeline* pipe = nullptr;
     SDL_GPUSampler* diffuse_smp = nullptr;
+    struct Head { bool female = false, loaded = false, usable = false; std::string key, path[3]; GpuTexture t[3]; };
+    Head heads[kMaxHeadGroups]; int n_heads = 0;
     GpuTexture texf[13];   // the same units for the female body (human_female files); fem_ok = all present
     bool fem_ok = false;
     GpuTexture tex[13];   // the Character material's units s0..s12: install files or the material's defaults
@@ -122,8 +124,30 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
 
 bool Ready() { return S.ready; }
 
+int HeadGroupCount() { return S.n_heads; }
+
+bool GroupFemale(int g) { return g == 1 || (g >= 2 && g - 2 < S.n_heads && S.heads[g - 2].female); }
+
+int RegisterHead(bool female, const std::string& d, const std::string& n, const std::string& m) {
+    const std::string key = std::string(female ? "f|" : "m|") + d + "|" + n + "|" + m;
+    for (int i = 0; i < S.n_heads; ++i) if (S.heads[i].key == key) return 2 + i;
+    if (S.n_heads >= kMaxHeadGroups) return -1;
+    State::Head& h = S.heads[S.n_heads];
+    h.female = female; h.key = key; h.path[0] = d; h.path[1] = n; h.path[2] = m;
+    return 2 + S.n_heads++;   // textures load at the first draw (the GPU side may not be up at spawn)
+}
+
+static void LoadHead(State::Head& h) {
+    h.loaded = true; h.usable = true;
+    for (int k = 0; k < 3 && h.usable; ++k) {
+        if (k == 1 && h.path[1].empty()) { GpuSamplerDesc sd; const uint8_t flat[4] = { 128, 128, 255, 128 }; h.t[1].InitFromMemory(flat, 1, 1, sd); if (!h.t[1].SDLTexture()) h.usable = false; continue; }
+        if (!h.t[k].InitFromDDS(h.path[k].c_str())) { fprintf(stderr, "[NpcSkin] head texture missing: %s\n", h.path[k].c_str()); h.usable = false; }
+    }
+    if (!h.usable) for (auto& t : h.t) t.Shutdown();
+}
+
 void Record(const Frame& f) {
-    if (!S.ready || !f.cmd || !f.vbo || !f.ibo || !f.terrain_depth || !f.view_proj || (f.n01 + f.n2 + f.fem_n01 + f.fem_n2) == 0) return;
+    if (!S.ready || !f.cmd || !f.vbo || !f.ibo || !f.terrain_depth || !f.view_proj || (f.n01 + f.n2 + f.fem_n01 + f.fem_n2 + f.xg_total) == 0) return;
     SDL_GPUColorTargetInfo cti[3] = {};
     for (int i = 0; i < 3; ++i) { cti[i].texture = f.target[i]; cti[i].load_op = SDL_GPU_LOADOP_LOAD; cti[i].store_op = SDL_GPU_STOREOP_STORE; }
     SDL_GPUDepthStencilTargetInfo dti = {}; dti.texture = f.depth; dti.load_op = SDL_GPU_LOADOP_CLEAR; dti.clear_depth = 1.f; dti.store_op = SDL_GPU_STOREOP_DONT_CARE;
@@ -139,22 +163,28 @@ void Record(const Frame& f) {
     SDL_BindGPUGraphicsPipeline(rp, S.pipe);
     SDL_GPUBuffer* st[5] = { f.storage[0], f.storage[1], f.storage[2], f.storage[3], f.storage[4] }; SDL_BindGPUVertexStorageBuffers(rp, 0, st, 5);
     SDL_GPUViewport vpt = { 0.f, 0.f, (float)f.w, (float)f.h, 0.f, 1.f }; SDL_SetGPUViewport(rp, &vpt);
-    for (int grp = 0; grp < 2; ++grp) {
-        const bool fem = grp == 1;
+    for (int grp = 0; grp < 2 + S.n_heads; ++grp) {
+        const bool fem = GroupFemale(grp);
+        State::Head* hd = grp >= 2 ? &S.heads[grp - 2] : nullptr;
+        if (hd && !hd->loaded) LoadHead(*hd);
+        if (hd && !hd->usable) hd = nullptr;   // missing file: the body set's default head
         SDL_GPUBuffer* gv = fem ? f.fem_vbo : f.vbo; SDL_GPUBuffer* gi = fem ? f.fem_ibo : f.ibo;
-        const uint32_t cnt[2] = { fem ? f.fem_n01 : f.n01, fem ? f.fem_n2 : f.n2 };
+        uint32_t cnt[2], bas[2];
+        if (grp == 0) { cnt[0] = f.n01; cnt[1] = f.n2; bas[0] = 0; bas[1] = f.t2_base; }
+        else if (grp == 1) { cnt[0] = f.fem_n01; cnt[1] = f.fem_n2; bas[0] = f.fem_base01; bas[1] = f.fem_base2; }
+        else { for (int t = 0; t < 2; ++t) { cnt[t] = f.xg_n[grp - 2][t]; bas[t] = f.xg_base[grp - 2][t]; } }
         if (!(cnt[0] + cnt[1]) || !gv || !gi || (fem && !S.fem_ok)) continue;
         GpuTexture* tx = fem ? S.texf : S.tex;
         SDL_GPUBufferBinding vb = { gv, 0 }; SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
         SDL_GPUBufferBinding ib = { gi, 0 }; SDL_BindGPUIndexBuffer(rp, &ib, fem ? f.fem_idx_elem : f.idx_elem);
         SDL_GPUTextureSamplerBinding tb[14];
-        for (int u = 0; u < 13; ++u) tb[u] = { tx[u].SDLTexture(), u == 0 ? S.diffuse_smp : tx[u].SDLSampler() };
+        for (int u = 0; u < 13; ++u) { const GpuTexture& t = (hd && u >= 5 && u <= 7) ? hd->t[u - 5] : tx[u]; tb[u] = { t.SDLTexture(), u == 0 ? S.diffuse_smp : t.SDLSampler() }; }
         tb[13] = { f.terrain_depth, S.tex[1].SDLSampler() };
         SDL_BindGPUFragmentSamplers(rp, 0, tb, 14);
         SDL_PushGPUFragmentUniformData(f.cmd, 0, fu.b.data(), (Uint32)fu.b.size());
         for (int tier = 0; tier < 2; ++tier) {
             const uint32_t n = cnt[tier]; if (!n) continue;
-            const float base[4] = { (float)(fem ? (tier ? f.fem_base2 : f.fem_base01) : (tier ? f.t2_base : 0u)), 0.f, 0.f, 0.f }; vu.set("base_inst", base, 4);
+            const float base[4] = { (float)bas[tier], 0.f, 0.f, 0.f }; vu.set("base_inst", base, 4);
             SDL_PushGPUVertexUniformData(f.cmd, 0, vu.b.data(), (Uint32)vu.b.size());
             SDL_DrawGPUIndexedPrimitives(rp, fem ? f.fem_index_count : f.index_count, n, 0, 0, 0);
         }
@@ -171,6 +201,7 @@ void Shutdown() {
     if (S.diffuse_smp) SDL_ReleaseGPUSampler(S.dev, S.diffuse_smp);
     for (auto& t : S.tex) t.Shutdown();
     for (auto& t : S.texf) t.Shutdown();
+    for (auto& h : S.heads) for (auto& t : h.t) t.Shutdown();
     S = State{};
 }
 

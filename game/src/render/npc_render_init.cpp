@@ -376,7 +376,7 @@ void NpcRender::Init() {
     // which is real disabled-but-live VT infrastructure and was left alone).
     // Godot PR #64044: vis_buf holds 2 LOD-tier regions × MAX_ANIMATED_NPC each.
     // Region 0: T01 (lod_tier 0-1, 0-80m). Region 1: T2 (lod_tier 2, 80-150m).
-    vis_buf.Init(4 * MAX_ANIMATED_NPC * (int)sizeof(uint32_t));
+    vis_buf.Init((4 + 2 * md::npcskin::kMaxHeadGroups) * MAX_ANIMATED_NPC * (int)sizeof(uint32_t));
     ind_buf.Init(40, SSBO_INDIRECT);  // 2 × GpuDrawIndexedIndirect (2 × 20B)
     // VBfA-R9: dead mask (excludes dead NPCs from main draw) + dissolve vis buffer
     dead_mask_buf.Init(TransformSoA::MAX_SLOTS * (int)sizeof(uint32_t));

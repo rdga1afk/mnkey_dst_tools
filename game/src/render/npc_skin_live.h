@@ -7,6 +7,8 @@
 
 namespace md::npcskin {
 
+constexpr int kMaxHeadGroups = 8;
+
 struct Frame {
     SDL_GPUCommandBuffer* cmd = nullptr;
     SDL_GPUTexture* target[3] = {};      // the ground-live G-buffer (kept: LOADOP_LOAD)
@@ -23,12 +25,18 @@ struct Frame {
     // Second group: the female body (own skeleton, own textures); its two tiers start at fem_base01 / fem_base2 in Visible.
     SDL_GPUBuffer* fem_vbo = nullptr; SDL_GPUBuffer* fem_ibo = nullptr; SDL_GPUIndexElementSize fem_idx_elem = SDL_GPU_INDEXELEMENTSIZE_16BIT; uint32_t fem_index_count = 0;
     uint32_t fem_n01 = 0, fem_n2 = 0, fem_base01 = 0, fem_base2 = 0;
+    // Head groups (id 2 + i): the body of the group's sex with its own head textures; tier t of group i starts at xg_base[i][t] in Visible.
+    uint32_t xg_n[kMaxHeadGroups][2] = {}, xg_base[kMaxHeadGroups][2] = {}; uint32_t xg_total = 0;
 };
 
 constexpr uint32_t kStride = 84;   // SkinVertex 52 + 4 unused + tangent float4 (56) + binormal float3 (72)
 
 bool Init(SDL_GPUDevice* dev, const std::string& kenshi_dir);   // false: the NPCs stay on the old path
 bool Ready();
+// A head texture set (units s5..s7 of the Character material) for one sex; returns the group id (2..) or -1 (no room / file missing). Same files give the same id.
+int RegisterHead(bool female, const std::string& diffuse, const std::string& normal, const std::string& mask);
+bool GroupFemale(int group);
+int HeadGroupCount();
 void Record(const Frame& f);
 void Shutdown();
 

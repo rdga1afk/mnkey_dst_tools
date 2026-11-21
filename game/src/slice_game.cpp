@@ -15,10 +15,12 @@
 #include <monkey_dust/components/animator.h>
 #include <monkey_dust/components/nav_agent.h>
 #include "render/scene_render.h"
+#include "render/npc_skin_live.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 
+extern void md_npc_set_group(int slot, int group);   // render/npc_render_frame_prep.cpp: per-slot head group
 extern void md_npc_set_female(int slot, int female);   // render/npc_render_frame_prep.cpp: per-slot body (female / male)
 
 namespace md::slice {
@@ -94,7 +96,8 @@ void TownNpcSpawn(float fallback_y) {
     md::world::NodePlacer placer(nodes, 1); placer.list = &l; placer.homes = &homes;
     const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);
     size_t made = 0;
-    size_t females = 0, undrawn = 0, pi = 0;
+    md::KenshiResources res; res.Index(md::KenshiDir());
+    size_t females = 0, undrawn = 0, pi = 0, headless = 0;
     auto endsWith = [](const std::string& s, const char* suf) { const size_t n = strlen(suf); return s.size() >= n && s.compare(s.size() - n, n, suf) == 0; };
     for (const auto& m : planned) {
         const size_t idx = pi++;
@@ -107,10 +110,15 @@ void TownNpcSpawn(float fallback_y) {
         const MdEntity ne = MakeNpc(lx, lz, fallback_y, y, m.has_y ? &m.y : nullptr);
         if (ne == MdEntity{}) continue;
         ++made; females += look.female ? 1 : 0;
-        md_npc_set_female((int)MdRegistry::Get().Handle(ne).get_mut<WorldTransform>().slot, look.female ? 1 : 0);
+        const int slot = (int)MdRegistry::Get().Handle(ne).get_mut<WorldTransform>().slot;
+        md_npc_set_female(slot, look.female ? 1 : 0);
+        const auto hf = md::world::ResolveHeadFiles(data, res, look.head);   // the head textures; no files → the body set's default head
+        const int grp = hf.ok() ? md::npcskin::RegisterHead(look.female, hf.diffuse, hf.normal, hf.mask) : -1;
+        if (grp < 0) ++headless;
+        md_npc_set_group(slot, grp < 0 ? 0 : grp);
         if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f, %s", made, m.x, m.z, y, look.female ? "female" : "male");
     }
-    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created (%zu female), %zu race not drawn yet", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made, females, undrawn);
+    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created (%zu female), %zu race not drawn yet, %zu without own head", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made, females, undrawn, headless);
 }
 
 void Spawn(MdEntity player) {

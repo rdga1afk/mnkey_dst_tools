@@ -252,3 +252,30 @@ TEST(NpcLookInstall, HubResidentsRaceSplitAndSeedStable) {
     std::printf("Hub residents %d, unresolved %d\n", n, unresolved);
     EXPECT_GT(n, 0); EXPECT_EQ(unresolved, 0);
 }
+
+// Every drawn Hub resident's head resolves to existing install files (diffuse, normal, mask); hair mesh and hair texture exist for the picked hair.
+TEST(NpcLookInstall, HubResidentsHeadAndHairFilesExist) {
+    GameDataContainer data; ASSERT_TRUE(LoadMerged(data));
+    md::KenshiResources res; res.Index(md::KenshiDir());
+    const auto hub = md::world::MakeTownSpawnList(data, "18919-Newwworld.mod", 1);
+    ASSERT_TRUE(hub.found);
+    int n = 0, headOk = 0, hairOk = 0, hairSet = 0;
+    for (const auto& e : hub.anonymous) {
+        const auto* t = data.Get(e.template_id); std::string fac = hub.owner;
+        if (t) if (const auto* f = t->Refs("faction")) if (!f->empty()) fac = (*f)[0].first;
+        const auto a = md::world::ResolveNpcLook(data, e.character, e.template_id, fac, 7);
+        if (!a.resolved) continue;
+        ++n;
+        const auto hf = md::world::ResolveHeadFiles(data, res, a.head);
+        if (hf.ok()) ++headOk; else std::printf("  head files missing: %s (%s) diffuse=%s normal=%s mask=%s\n", e.name.c_str(), a.head.c_str(), hf.diffuse.c_str(), hf.normal.c_str(), hf.mask.c_str());
+        if (!a.hair.empty()) {
+            ++hairSet;
+            const auto* h = data.Get(a.hair);
+            const bool mesh = h && h->files.count("mesh") && !res.Path(h->files.at("mesh")).empty();
+            const bool tex = h && h->files.count("texture map") && !res.Path(h->files.at("texture map")).empty();
+            if (mesh && tex) ++hairOk; else std::printf("  hair files missing: %s hair=%s mesh=%d tex=%d\n", e.name.c_str(), a.hair.c_str(), (int)mesh, (int)tex);
+        }
+    }
+    std::printf("Hub residents %d: heads resolved %d, hair set %d, hair files ok %d\n", n, headOk, hairSet, hairOk);
+    EXPECT_GT(n, 0); EXPECT_EQ(headOk, n); EXPECT_EQ(hairOk, hairSet);
+}
