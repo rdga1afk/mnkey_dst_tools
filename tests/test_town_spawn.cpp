@@ -250,5 +250,5 @@ TEST(NpcLookInstall, HubResidentsRaceSplitAndSeedStable) {
     }
     for (const auto& kv : split) std::printf("Hub race split: %s x%d\n", kv.first.c_str(), kv.second);
     std::printf("Hub residents %d, unresolved %d\n", n, unresolved);
-    EXPECT_GT(n, 0);
+    EXPECT_GT(n, 0); EXPECT_EQ(unresolved, 0);
 }
