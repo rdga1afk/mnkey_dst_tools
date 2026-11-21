@@ -1,8 +1,10 @@
 #include "npc_skin_live.h"
 #include "kenshi_hlsl.h"
 #include "npc_skin_glue.h"
+#include "npc_hair_mesh.h"
 #include "spirv_combine.h"
 #include <monkey_dust/render/gpu_sampler_texture.h>
+#include <monkey_dust/render/gpu_static_buffer.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -18,8 +20,10 @@ struct Stage { SDL_GPUShader* sh = nullptr; std::map<std::string, std::pair<uint
 
 struct State {
     SDL_GPUDevice* dev = nullptr;
-    Stage vs, fs;
-    SDL_GPUGraphicsPipeline* pipe = nullptr;
+    Stage vs, fs, hfs;
+    SDL_GPUGraphicsPipeline* pipe = nullptr; SDL_GPUGraphicsPipeline* hair_pipe = nullptr;
+    struct Hair { HairSpec spec; std::string key; bool loaded = false, usable = false; GpuTexture tex; GpuStaticBuffer vbo, ibo; uint32_t n_idx = 0; };
+    Hair hairs[kMaxHairGroups]; int n_hairs = 0;
     SDL_GPUSampler* diffuse_smp = nullptr;
     struct Head { bool female = false, loaded = false, usable = false; std::string key, path[3]; GpuTexture t[3]; };
     Head heads[kMaxHeadGroups]; int n_heads = 0;
@@ -45,6 +49,17 @@ bool Build(Stage& st, const std::string& glue, const std::vector<std::string>& d
     fprintf(stderr, "[NpcSkin] %s OK: %zu words, $Global %u bytes, %zu members (%s)\n", what, c.spv.size(), st.size, m.size(), c.from_cache ? "cache" : "compiled");
     return true;
 }
+
+// character.hlsl hair_fs behind the depth test against the terrain G-buffer; the three samplers and the uniforms as globals, like the body wrapper (FragmentGlue).
+constexpr const char* kHairWrap = R"(sampler2D md_s0 : register(s0); sampler2D md_s1 : register(s1); sampler2D md_s2 : register(s2);
+Texture2D<float4> md_gdepth : register(s3);
+uniform float3 md_hcolor; uniform float4 md_hdiffuse; uniform float4 md_halpha; uniform float3 md_hthreshold; uniform float3 md_cameraPos; uniform float md_farClip; uniform float md_hspec; uniform float depthTol;
+void main(float4 fragCoord : SV_Position, [[vk::location(0)]] float2 texCoord : TEXCOORD0, [[vk::location(1)]] float3 normal : TEXCOORD1, [[vk::location(2)]] float3 binormal : TEXCOORD2,
+          [[vk::location(3)]] float3 tangent : TEXCOORD3, [[vk::location(4)]] float3 camDir : TEXCOORD4, [[vk::location(5)]] float4 worldPos : TEXCOORD5, out GBuffer buffer) {
+    if (fragCoord.z > md_gdepth.Load(int3(int2(fragCoord.xy), 0)).r + depthTol) discard;
+    ch_hair_fs(fragCoord, texCoord, normal, binormal, tangent, camDir, worldPos, md_s0, md_s1, md_s2, md_hcolor, md_hdiffuse, md_halpha, md_hthreshold, md_cameraPos, md_farClip, md_hspec, buffer);
+}
+)";
 
 struct Ub {
     const Stage& st; std::vector<uint8_t> b;
@@ -72,6 +87,7 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
     }
     if (!Build(S.vs, kVert, {}, 'v', 0, 5, "vertex")) return false;
     if (!Build(S.fs, FragmentGlue(skin), deps, 'f', 14, 0, "fragment (character.hlsl main_fs)")) return false;
+    const bool hair_prog = Build(S.hfs, std::string(kBorder) + "#define VPOS SV_Position\n#define hair_fs ch_hair_fs\n#include \"" + skin + "\"\n" + kHairWrap, deps, 'f', 4, 0, "fragment (character.hlsl hair_fs)");
 
     {   // the install textures of the male body and head; the units the NPC has no file for get the material's defaults (nothing / flat / white)
         const std::string base = kd + "/data/character/skins/human_male/";
@@ -117,6 +133,11 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
     gi.target_info.color_target_descriptions = ct; gi.target_info.num_color_targets = 3; gi.target_info.has_depth_stencil_target = true; gi.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
     S.pipe = SDL_CreateGPUGraphicsPipeline(dev, &gi);
     if (!S.pipe) { fprintf(stderr, "[NpcSkin] pipeline: %s\n", SDL_GetError()); return false; }
+    if (hair_prog) {   // material Hair : Skinned — cull none, no blending (alpha test in the program), same targets and depth
+        gi.fragment_shader = S.hfs.sh;
+        S.hair_pipe = SDL_CreateGPUGraphicsPipeline(dev, &gi);
+        if (!S.hair_pipe) fprintf(stderr, "[NpcSkin] hair pipeline: %s\n", SDL_GetError());
+    }
     S.ready = true;
     fprintf(stderr, "[NpcSkin] ready\n");
     return true;
@@ -137,6 +158,26 @@ int RegisterHead(bool female, const std::string& d, const std::string& n, const 
     return 2 + S.n_heads++;   // textures load at the first draw (the GPU side may not be up at spawn)
 }
 
+int HairGroupCount() { return S.n_hairs; }
+
+int RegisterHair(const HairSpec& sp) {
+    char k[256]; snprintf(k, sizeof k, "%.3f,%.3f,%.3f|%g,%g,%g,%g|%g,%g,%g,%g|%g|%g", sp.color[0], sp.color[1], sp.color[2], sp.diffuse[0], sp.diffuse[1], sp.diffuse[2], sp.diffuse[3], sp.alpha[0], sp.alpha[1], sp.alpha[2], sp.alpha[3], sp.threshold, sp.specular);
+    const std::string key = sp.mesh + "|" + sp.skeleton + "|" + sp.texture + "|" + k;
+    for (int i = 0; i < S.n_hairs; ++i) if (S.hairs[i].key == key) return i;
+    if (S.n_hairs >= kMaxHairGroups) return -1;
+    State::Hair& h = S.hairs[S.n_hairs]; h.spec = sp; h.key = key;
+    return S.n_hairs++;   // mesh and texture load at the first draw
+}
+
+static void LoadHair(State::Hair& h) {
+    h.loaded = true;
+    std::vector<uint8_t> v; std::vector<uint32_t> ix;
+    if (!BuildAttachmentMesh(h.spec.mesh, h.spec.skeleton, v, ix)) { fprintf(stderr, "[NpcSkin] hair mesh does not build: %s\n", h.spec.mesh.c_str()); return; }
+    if (!h.tex.InitFromDDS(h.spec.texture.c_str())) { fprintf(stderr, "[NpcSkin] hair texture missing: %s\n", h.spec.texture.c_str()); return; }
+    h.vbo.Init(0x8892u, v.data(), (uint32_t)v.size()); h.ibo.Init(0x8893u, ix.data(), (uint32_t)(ix.size() * sizeof(uint32_t)));
+    h.n_idx = (uint32_t)ix.size(); h.usable = h.vbo.SDLBuffer() && h.ibo.SDLBuffer();
+}
+
 static void LoadHead(State::Head& h) {
     h.loaded = true; h.usable = true;
     for (int k = 0; k < 3 && h.usable; ++k) {
@@ -147,7 +188,8 @@ static void LoadHead(State::Head& h) {
 }
 
 void Record(const Frame& f) {
-    if (!S.ready || !f.cmd || !f.vbo || !f.ibo || !f.terrain_depth || !f.view_proj || (f.n01 + f.n2 + f.fem_n01 + f.fem_n2 + f.xg_total) == 0) return;
+    if (!S.ready || !f.cmd || !f.vbo || !f.ibo || !f.terrain_depth || !f.view_proj || (f.n01 + f.n2 + f.fem_n01 + f.fem_n2 + f.xg_total + f.hair_total) == 0) return;
+    for (int h = 0; h < S.n_hairs; ++h) if (f.hair_n[h] && !S.hairs[h].loaded) LoadHair(S.hairs[h]);
     SDL_GPUColorTargetInfo cti[3] = {};
     for (int i = 0; i < 3; ++i) { cti[i].texture = f.target[i]; cti[i].load_op = SDL_GPU_LOADOP_LOAD; cti[i].store_op = SDL_GPU_STOREOP_STORE; }
     SDL_GPUDepthStencilTargetInfo dti = {}; dti.texture = f.depth; dti.load_op = SDL_GPU_LOADOP_CLEAR; dti.clear_depth = 1.f; dti.store_op = SDL_GPU_STOREOP_DONT_CARE;
@@ -189,6 +231,27 @@ void Record(const Frame& f) {
             SDL_DrawGPUIndexedPrimitives(rp, fem ? f.fem_index_count : f.index_count, n, 0, 0, 0);
         }
     }
+    if (S.hair_pipe && f.hair_total) {
+        SDL_BindGPUGraphicsPipeline(rp, S.hair_pipe);
+        SDL_BindGPUVertexStorageBuffers(rp, 0, st, 5);
+        Ub hu(S.hfs);
+        const float cam3[4] = { f.cam[0], f.cam[1], f.cam[2], 0.f };
+        hu.set("md_cameraPos", cam3, 3); hu.set("md_farClip", &far1, 1); hu.set("depthTol", &tol, 1);
+        for (int h = 0; h < S.n_hairs; ++h) {
+            State::Hair& hr = S.hairs[h];
+            if (!f.hair_n[h] || !hr.usable) continue;
+            const float thr[3] = { hr.spec.threshold, hr.spec.threshold, hr.spec.threshold };
+            hu.set("md_hcolor", hr.spec.color, 3); hu.set("md_hdiffuse", hr.spec.diffuse, 4); hu.set("md_halpha", hr.spec.alpha, 4); hu.set("md_hthreshold", thr, 3); hu.set("md_hspec", &hr.spec.specular, 1);
+            SDL_GPUBufferBinding vb2 = { hr.vbo.SDLBuffer(), 0 }; SDL_BindGPUVertexBuffers(rp, 0, &vb2, 1);
+            SDL_GPUBufferBinding ib2 = { hr.ibo.SDLBuffer(), 0 }; SDL_BindGPUIndexBuffer(rp, &ib2, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            SDL_GPUTextureSamplerBinding tb[4] = { { hr.tex.SDLTexture(), S.diffuse_smp }, { S.tex[4].SDLTexture(), S.tex[4].SDLSampler() }, { S.tex[2].SDLTexture(), S.tex[2].SDLSampler() }, { f.terrain_depth, S.tex[1].SDLSampler() } };
+            SDL_BindGPUFragmentSamplers(rp, 0, tb, 4);
+            SDL_PushGPUFragmentUniformData(f.cmd, 0, hu.b.data(), (Uint32)hu.b.size());
+            const float base[4] = { (float)f.hair_base[h], 0.f, 0.f, 0.f }; vu.set("base_inst", base, 4);
+            SDL_PushGPUVertexUniformData(f.cmd, 0, vu.b.data(), (Uint32)vu.b.size());
+            SDL_DrawGPUIndexedPrimitives(rp, hr.n_idx, f.hair_n[h], 0, 0, 0);
+        }
+    }
     SDL_EndGPURenderPass(rp);
     static int logged = 0; if (logged++ % 600 == 0) fprintf(stderr, "[NpcSkin] pass drew %u + %u instances\n", f.n01, f.n2);
 }
@@ -198,6 +261,9 @@ void Shutdown() {
     if (S.pipe) SDL_ReleaseGPUGraphicsPipeline(S.dev, S.pipe);
     if (S.vs.sh) SDL_ReleaseGPUShader(S.dev, S.vs.sh);
     if (S.fs.sh) SDL_ReleaseGPUShader(S.dev, S.fs.sh);
+    if (S.hfs.sh) SDL_ReleaseGPUShader(S.dev, S.hfs.sh);
+    if (S.hair_pipe) SDL_ReleaseGPUGraphicsPipeline(S.dev, S.hair_pipe);
+    for (auto& h : S.hairs) { h.tex.Shutdown(); h.vbo.Shutdown(); h.ibo.Shutdown(); }
     if (S.diffuse_smp) SDL_ReleaseGPUSampler(S.dev, S.diffuse_smp);
     for (auto& t : S.tex) t.Shutdown();
     for (auto& t : S.texf) t.Shutdown();

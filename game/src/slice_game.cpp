@@ -16,10 +16,13 @@
 #include <monkey_dust/components/nav_agent.h>
 #include "render/scene_render.h"
 #include "render/npc_skin_live.h"
+#include <attachments.h>
+#include <monkey_dust/io/ogre_mesh.h>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 
+extern void md_npc_set_hair(int slot, int hair, int beard);   // render/npc_render_frame_prep.cpp: per-slot hair / beard group
 extern void md_npc_set_group(int slot, int group);   // render/npc_render_frame_prep.cpp: per-slot head group
 extern void md_npc_set_female(int slot, int female);   // render/npc_render_frame_prep.cpp: per-slot body (female / male)
 
@@ -116,6 +119,18 @@ void TownNpcSpawn(float fallback_y) {
         const int grp = hf.ok() ? md::npcskin::RegisterHead(look.female, hf.diffuse, hf.normal, hf.mask) : -1;
         if (grp < 0) ++headless;
         md_npc_set_group(slot, grp < 0 ? 0 : grp);
+        int hair_g = -1, beard_g = -1;   // hair / beard attachments on the body skeleton (install `Hair` material); a record without mesh or texture draws nothing
+        for (int k = 0; k < 2; ++k) {
+            const std::string& aid = k == 0 ? look.hair : look.beard; if (aid.empty()) continue;
+            md::character::AttachmentInfo ai; if (!md::character::LoadAttachment(data, aid, ai) || !ai.HasMesh(look.female)) continue;
+            md::ogre::Mesh bm; md::ogre::Error be; if (!md::ogre::ReadMesh(res.Path(look.mesh), bm, be) || !bm.has_skeleton) continue;
+            md::npcskin::HairSpec hs; hs.mesh = res.Path(ai.Mesh(look.female)); hs.skeleton = res.Path(bm.skeleton); hs.texture = res.Path(ai.Texture(look.female));
+            if (hs.mesh.empty() || hs.skeleton.empty() || hs.texture.empty()) continue;
+            hs.color[0] = (float)((look.hair_argb >> 16) & 255u) / 255.f; hs.color[1] = (float)((look.hair_argb >> 8) & 255u) / 255.f; hs.color[2] = (float)(look.hair_argb & 255u) / 255.f;
+            hs.diffuse[ai.diffuse_channel & 3] = 1.f; hs.alpha[ai.alpha_channel & 3] = 1.f; hs.threshold = (float)ai.alpha_rejection / 255.f; hs.specular = ai.specular;
+            (k == 0 ? hair_g : beard_g) = md::npcskin::RegisterHair(hs);
+        }
+        md_npc_set_hair(slot, hair_g, beard_g);
         if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f, %s", made, m.x, m.z, y, look.female ? "female" : "male");
     }
     MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created (%zu female), %zu race not drawn yet, %zu without own head", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made, females, undrawn, headless);

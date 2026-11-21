@@ -74,6 +74,7 @@ endif()
 
 target_link_libraries(monkey_dust PRIVATE
     monkey_dust::engine
+    md_character
     ${_GAME_LUA}
 )
 

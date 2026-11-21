@@ -8,6 +8,8 @@
 namespace md::npcskin {
 
 constexpr int kMaxHeadGroups = 8;
+constexpr int kMaxHairGroups = 32;
+constexpr int kHairRegionBase = 4 + 2 * kMaxHeadGroups;   // first visible-index region of the hair / beard groups (one region per group, tiers 0 and 1)
 
 struct Frame {
     SDL_GPUCommandBuffer* cmd = nullptr;
@@ -27,6 +29,8 @@ struct Frame {
     uint32_t fem_n01 = 0, fem_n2 = 0, fem_base01 = 0, fem_base2 = 0;
     // Head groups (id 2 + i): the body of the group's sex with its own head textures; tier t of group i starts at xg_base[i][t] in Visible.
     uint32_t xg_n[kMaxHeadGroups][2] = {}, xg_base[kMaxHeadGroups][2] = {}; uint32_t xg_total = 0;
+    // Hair / beard groups: group h starts at hair_base[h] in Visible.
+    uint32_t hair_n[kMaxHairGroups] = {}, hair_base[kMaxHairGroups] = {}; uint32_t hair_total = 0;
 };
 
 constexpr uint32_t kStride = 84;   // SkinVertex 52 + 4 unused + tangent float4 (56) + binormal float3 (72)
@@ -37,6 +41,13 @@ bool Ready();
 int RegisterHead(bool female, const std::string& diffuse, const std::string& normal, const std::string& mask);
 bool GroupFemale(int group);
 int HeadGroupCount();
+// A hair / beard attachment (install `Hair` material, character.hlsl hair_fs): mesh and skeleton are install paths, `texture` the DDS; colour is the `color` uniform.
+struct HairSpec {
+    std::string mesh, skeleton, texture;
+    float color[3] = {}, diffuse[4] = {}, alpha[4] = {}, threshold = 0.5f, specular = 1.f;
+};
+int RegisterHair(const HairSpec& spec);   // group id 0.. or -1 (no room); equal specs give the same id
+int HairGroupCount();
 void Record(const Frame& f);
 void Shutdown();
 

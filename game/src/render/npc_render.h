@@ -93,6 +93,7 @@ struct NpcRender {
     // preserve that exact one-frame-stale property, same as the GPU buffer
     // they replace.
     uint32_t           t01_count_ = 0, t2_count_ = 0, f01_count_ = 0, f2_count_ = 0;   // f*: female body group
+    uint32_t           hair_count_[32] = {};   // hair / beard groups (npcskin::kMaxHairGroups)
     uint32_t           xg_count_[8][2] = {};   // head groups (npcskin::kMaxHeadGroups) per LOD tier
     bool               fem_ok_ = false;                                            // the female body built (MD_TOWN_NPC)
     SkinMesh           mesh_f;

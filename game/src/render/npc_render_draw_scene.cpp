@@ -525,8 +525,9 @@ void NpcRender::RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const 
     for (int g = 0; g < md::npcskin::HeadGroupCount(); ++g) for (int t = 0; t < 2; ++t) {
         f.xg_n[g][t] = xg_count_[g][t]; f.xg_base[g][t] = (uint32_t)(4 + 2 * g + t) * MAX_ANIMATED_NPC; f.xg_total += xg_count_[g][t];
     }
+    for (int h = 0; h < md::npcskin::HairGroupCount(); ++h) { f.hair_n[h] = hair_count_[h]; f.hair_base[h] = (uint32_t)(md::npcskin::kHairRegionBase + h) * MAX_ANIMATED_NPC; f.hair_total += hair_count_[h]; }
     md::npcskin::Record(f);
-    skin_drawn_ = (f.n01 + f.n2 + f.fem_n01 + f.fem_n2 + f.xg_total) > 0;
+    skin_drawn_ = (f.n01 + f.n2 + f.fem_n01 + f.fem_n2 + f.xg_total + f.hair_total) > 0;
 }
 
 void NpcRender::DrawNpcForwardAndDissolve(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp)

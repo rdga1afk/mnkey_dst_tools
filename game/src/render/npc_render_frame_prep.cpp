@@ -32,6 +32,8 @@ extern float g_dynres_cur;
 uint8_t g_npc_female[MAX_ANIMATED_NPC];   // per slot: the NPC draws with the female body (set at spawn, MD_TOWN_NPC)
 void md_npc_set_female(int slot, int female) { if (slot >= 0 && slot < MAX_ANIMATED_NPC) g_npc_female[slot] = female ? 1 : 0; }
 uint8_t g_npc_group[MAX_ANIMATED_NPC];   // per slot: head group (0 = default body set, >= 2 = npcskin::RegisterHead id)
+uint8_t g_npc_hair[MAX_ANIMATED_NPC][2];   // per slot: hair and beard group + 1 (npcskin::RegisterHair id; 0 = none)
+void md_npc_set_hair(int slot, int hair, int beard) { if (slot >= 0 && slot < MAX_ANIMATED_NPC) { g_npc_hair[slot][0] = (uint8_t)(hair + 1); g_npc_hair[slot][1] = (uint8_t)(beard + 1); } }
 void md_npc_set_group(int slot, int group) { if (slot >= 0 && slot < MAX_ANIMATED_NPC) g_npc_group[slot] = (uint8_t)group; }
 float g_terrain_lod_near_px = 5.f, g_terrain_lod_far_px = 35.f, g_terrain_lod_near_dist = 750.f, g_terrain_lod_far_dist = 1500.f;
 bool g_terrain_detail_n_atten = true; // owner decision 2026-10-10: back ON (SLOPE_STREAKS_FIX step 1; bisection: N.y^4 damps slope streaks). md.set_terrain_detail_n_atten(false) = as terrainfp4.hlsl:265-268
@@ -425,9 +427,10 @@ if (fc.ac > 0 && index_count > 0) {
     float r_asp = (float)window_get_width() / (float)window_get_height();
     cam.FrustumPlanes(r_asp, frustum);
 
-    static uint32_t visible_indices[(4 + 2 * md::npcskin::kMaxHeadGroups) * MAX_ANIMATED_NPC];
+    static uint32_t visible_indices[(md::npcskin::kHairRegionBase + md::npcskin::kMaxHairGroups) * MAX_ANIMATED_NPC];
     t01_count_ = 0; t2_count_ = 0; f01_count_ = 0; f2_count_ = 0;
     for (auto& c : xg_count_) c[0] = c[1] = 0;
+    for (auto& c : hair_count_) c = 0;
     TransformSoA& tsoa = TransformSoA::Get();
     const int scan_count = fc.ac < MAX_ANIMATED_NPC ? fc.ac : MAX_ANIMATED_NPC;
     for (int idx = 0; idx < scan_count; ++idx) {
@@ -445,6 +448,10 @@ if (fc.ac > 0 && index_count > 0) {
         if (culled) continue;
         uint32_t lod_tier = AnimationSoA::Get().GetState(idx).lod_tier;
         const int grp = g_npc_group[idx];
+        if (lod_tier <= 1u) for (int k = 0; k < 2; ++k) {
+            const int hg = (int)g_npc_hair[idx][k] - 1;
+            if (hg >= 0 && hg < md::npcskin::HairGroupCount() && hair_count_[hg] < (uint32_t)MAX_ANIMATED_NPC) visible_indices[(uint32_t)(md::npcskin::kHairRegionBase + hg) * MAX_ANIMATED_NPC + hair_count_[hg]++] = (uint32_t)idx;
+        }
         if (grp >= 2 && grp - 2 < md::npcskin::HeadGroupCount() && (fem_ok_ || !md::npcskin::GroupFemale(grp))) {
             uint32_t& c = xg_count_[grp - 2][lod_tier <= 1u ? 0 : 1];
             if (c < (uint32_t)MAX_ANIMATED_NPC) visible_indices[(uint32_t)(4 + 2 * (grp - 2) + (lod_tier <= 1u ? 0 : 1)) * MAX_ANIMATED_NPC + c++] = (uint32_t)idx;
@@ -459,7 +466,7 @@ if (fc.ac > 0 && index_count > 0) {
                 visible_indices[(uint32_t)MAX_ANIMATED_NPC + t2_count_++] = (uint32_t)idx;
         }
     }
-    vis_buf.UploadInCmd(fc.cmd, visible_indices, (int)sizeof(uint32_t) * (4 + 2 * md::npcskin::HeadGroupCount()) * MAX_ANIMATED_NPC);
+    vis_buf.UploadInCmd(fc.cmd, visible_indices, (int)sizeof(uint32_t) * (md::npcskin::kHairRegionBase + md::npcskin::HairGroupCount()) * MAX_ANIMATED_NPC);
 }
 
 // ImGui: upload vertex/index data via copy pass — MUST be before any render pass.
