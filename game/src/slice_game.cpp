@@ -7,6 +7,7 @@
 #include <monkey_dust/world/start_squad.h>
 #include <monkey_dust/world/town_nodes.h>
 #include <monkey_dust/world/town_spawn.h>
+#include <monkey_dust/world/npc_look.h>
 #include <monkey_dust/world/terrain_query.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/transform_soa.h>
@@ -16,6 +17,9 @@
 #include "render/scene_render.h"
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+
+extern void md_npc_set_female(int slot, int female);   // render/npc_render_frame_prep.cpp: per-slot body (female / male)
 
 namespace md::slice {
 namespace {
@@ -90,8 +94,23 @@ void TownNpcSpawn(float fallback_y) {
     md::world::NodePlacer placer(nodes, 1); placer.list = &l; placer.homes = &homes;
     const auto planned = md::world::PlanTownSpawn(l, md::world::kTownNpcBudget, placer);
     size_t made = 0;
-    for (const auto& m : planned) { float lx, lz, y; ToLocal(m.x, m.z, lx, lz); if (MakeNpc(lx, lz, fallback_y, y, m.has_y ? &m.y : nullptr) != MdEntity{}) ++made; if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f", made, m.x, m.z, y); }
-    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made);
+    size_t females = 0, undrawn = 0, pi = 0;
+    auto endsWith = [](const std::string& s, const char* suf) { const size_t n = strlen(suf); return s.size() >= n && s.compare(s.size() - n, n, suf) == 0; };
+    for (const auto& m : planned) {
+        const size_t idx = pi++;
+        const auto* t = data.Get(m.entry->template_id); std::string fac = l.owner;   // faction: the template's first `faction` ref, else the town owner
+        if (t) if (const auto* f = t->Refs("faction")) if (!f->empty()) fac = (*f)[0].first;
+        const auto look = md::world::ResolveNpcLook(data, m.entry->character, m.entry->template_id, fac, 7u + (uint32_t)idx);
+        // human-skeleton races draw with the male / female human body; a race with its own skeleton is not drawn yet (no stand-in: no entity)
+        if (!look.resolved || !(endsWith(look.mesh, "human_male.mesh") || endsWith(look.mesh, "human_female.mesh"))) { ++undrawn; continue; }
+        float lx, lz, y; ToLocal(m.x, m.z, lx, lz);
+        const MdEntity ne = MakeNpc(lx, lz, fallback_y, y, m.has_y ? &m.y : nullptr);
+        if (ne == MdEntity{}) continue;
+        ++made; females += look.female ? 1 : 0;
+        md_npc_set_female((int)MdRegistry::Get().Handle(ne).get_mut<WorldTransform>().slot, look.female ? 1 : 0);
+        if (made <= 5) MD_LOG(MD_LOG_INFO, "[town-npc] member %zu at (%.1f, %.1f) m, ground y %.1f, %s", made, m.x, m.z, y, look.female ? "female" : "male");
+    }
+    MD_LOG(MD_LOG_INFO, "[town-npc] the Hub: owner %s, %zu templates, %zu anonymous + %zu named listed, %zu nodes, %zu planned, %zu created (%zu female), %zu race not drawn yet", l.owner.c_str(), l.templates.size(), l.anonymous.size(), l.named.size(), nodes.size(), planned.size(), made, females, undrawn);
 }
 
 void Spawn(MdEntity player) {

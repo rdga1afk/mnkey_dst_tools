@@ -517,8 +517,13 @@ void NpcRender::RecordSkinPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* const 
     f.storage[0] = TransformSoA::Get().SDLTransformBuffer(); f.storage[1] = vis_buf.SDLBuffer(); f.storage[2] = TransformSoA::Get().SDLFactionBuffer();
     f.storage[3] = AnimationSoA::Get().SDLBonesBuffer(); f.storage[4] = TransformSoA::Get().SDLSkinBuffer();
     f.n01 = t01_count_; f.n2 = t2_count_; f.t2_base = (uint32_t)MAX_ANIMATED_NPC;
+    if (fem_ok_) {
+        f.fem_vbo = skin_vbo_f.SDLBuffer(); f.fem_ibo = mesh_f.ibo.SDLBuffer(); f.fem_index_count = mesh_f.index_count;
+        f.fem_idx_elem = mesh_f.indices_u16 ? SDL_GPU_INDEXELEMENTSIZE_16BIT : SDL_GPU_INDEXELEMENTSIZE_32BIT;
+        f.fem_n01 = f01_count_; f.fem_n2 = f2_count_; f.fem_base01 = 2u * MAX_ANIMATED_NPC; f.fem_base2 = 3u * MAX_ANIMATED_NPC;
+    }
     md::npcskin::Record(f);
-    skin_drawn_ = (f.n01 + f.n2) > 0;
+    skin_drawn_ = (f.n01 + f.n2 + f.fem_n01 + f.fem_n2) > 0;
 }
 
 void NpcRender::DrawNpcForwardAndDissolve(FrameCtx& fc, const MdCamera& cam, SDL_GPURenderPass* rp)

@@ -21,6 +21,8 @@ struct State {
     Stage vs, fs;
     SDL_GPUGraphicsPipeline* pipe = nullptr;
     SDL_GPUSampler* diffuse_smp = nullptr;
+    GpuTexture texf[13];   // the same units for the female body (human_female files); fem_ok = all present
+    bool fem_ok = false;
     GpuTexture tex[13];   // the Character material's units s0..s12: install files or the material's defaults
     SDL_GPUSampler* diffuse_smp_head = nullptr;
     bool ready = false;
@@ -81,6 +83,18 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
             if (!S.tex[u].SDLTexture()) return false;
         }
     }
+    {   // female set: same units, human_female files; a missing file leaves the female group off (no stand-in)
+        const std::string base = kd + "/data/character/skins/human_female/";
+        const struct { int unit; const char* file; } files[] = { { 0, "human_female_body_diffuse.dds" }, { 1, "human_female_body_normal.dds" }, { 3, "human_female_body_mask_HI.dds" },
+                                                                 { 5, "human_female_head_diffuse_HI.dds" }, { 6, "human_female_head_normal_HI.dds" }, { 7, "human_female_head_mask.dds" } };
+        bool ok = true;
+        for (const auto& f : files) if (!S.texf[f.unit].InitFromDDS((base + f.file).c_str())) { fprintf(stderr, "[NpcSkin] female texture missing: %s\n", f.file); ok = false; break; }
+        if (ok) {
+            GpuSamplerDesc sd; const uint8_t none[4] = { 0, 0, 0, 0 }, flat[4] = { 128, 128, 255, 128 };
+            for (int u = 0; u < 13 && ok; ++u) { if (S.texf[u].SDLTexture()) continue; S.texf[u].InitFromMemory(u == 4 || u == 11 ? flat : none, 1, 1, sd); ok = S.texf[u].SDLTexture() != nullptr; }
+        }
+        S.fem_ok = ok;
+    }
     SDL_GPUSamplerCreateInfo sci = {}; sci.min_filter = sci.mag_filter = SDL_GPU_FILTER_LINEAR; sci.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
     sci.address_mode_u = sci.address_mode_v = sci.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT; sci.mip_lod_bias = kDiffuseMipBias; sci.max_lod = 1000.f;   // skin.material: diffuseMap trilinear, mipmap_bias -2
     S.diffuse_smp = SDL_CreateGPUSampler(dev, &sci);
@@ -109,7 +123,7 @@ bool Init(SDL_GPUDevice* dev, const std::string& kd) {
 bool Ready() { return S.ready; }
 
 void Record(const Frame& f) {
-    if (!S.ready || !f.cmd || !f.vbo || !f.ibo || !f.terrain_depth || !f.view_proj || (f.n01 + f.n2) == 0) return;
+    if (!S.ready || !f.cmd || !f.vbo || !f.ibo || !f.terrain_depth || !f.view_proj || (f.n01 + f.n2 + f.fem_n01 + f.fem_n2) == 0) return;
     SDL_GPUColorTargetInfo cti[3] = {};
     for (int i = 0; i < 3; ++i) { cti[i].texture = f.target[i]; cti[i].load_op = SDL_GPU_LOADOP_LOAD; cti[i].store_op = SDL_GPU_STOREOP_STORE; }
     SDL_GPUDepthStencilTargetInfo dti = {}; dti.texture = f.depth; dti.load_op = SDL_GPU_LOADOP_CLEAR; dti.clear_depth = 1.f; dti.store_op = SDL_GPU_STOREOP_DONT_CARE;
@@ -123,20 +137,27 @@ void Record(const Frame& f) {
     fu.set("md_bloodColour", zero4, 4); fu.set("md_hairColor", zero4, 3); fu.set("md_hairMult", zero4, 4); fu.set("md_hairAlpha", zero4, 4); fu.set("md_beardAlpha", zero4, 4);
     static const float tol = getenv("MD_NPC_SKIN_NODEPTH") ? 1e9f : 0.f; fu.set("depthTol", &tol, 1);   // diagnostic: the depth test against the terrain G-buffer off
     SDL_BindGPUGraphicsPipeline(rp, S.pipe);
-    SDL_GPUBufferBinding vb = { f.vbo, 0 }; SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
-    SDL_GPUBufferBinding ib = { f.ibo, 0 }; SDL_BindGPUIndexBuffer(rp, &ib, f.idx_elem);
     SDL_GPUBuffer* st[5] = { f.storage[0], f.storage[1], f.storage[2], f.storage[3], f.storage[4] }; SDL_BindGPUVertexStorageBuffers(rp, 0, st, 5);
-    SDL_GPUTextureSamplerBinding tb[14];
-    for (int u = 0; u < 13; ++u) tb[u] = { S.tex[u].SDLTexture(), u == 0 ? S.diffuse_smp : S.tex[u].SDLSampler() };
-    tb[13] = { f.terrain_depth, S.tex[1].SDLSampler() };
-    SDL_BindGPUFragmentSamplers(rp, 0, tb, 14);
-    SDL_PushGPUFragmentUniformData(f.cmd, 0, fu.b.data(), (Uint32)fu.b.size());
     SDL_GPUViewport vpt = { 0.f, 0.f, (float)f.w, (float)f.h, 0.f, 1.f }; SDL_SetGPUViewport(rp, &vpt);
-    for (int tier = 0; tier < 2; ++tier) {
-        const uint32_t n = tier ? f.n2 : f.n01; if (!n) continue;
-        const float base[4] = { (float)(tier ? f.t2_base : 0u), 0.f, 0.f, 0.f }; vu.set("base_inst", base, 4);
-        SDL_PushGPUVertexUniformData(f.cmd, 0, vu.b.data(), (Uint32)vu.b.size());
-        SDL_DrawGPUIndexedPrimitives(rp, f.index_count, n, 0, 0, 0);
+    for (int grp = 0; grp < 2; ++grp) {
+        const bool fem = grp == 1;
+        SDL_GPUBuffer* gv = fem ? f.fem_vbo : f.vbo; SDL_GPUBuffer* gi = fem ? f.fem_ibo : f.ibo;
+        const uint32_t cnt[2] = { fem ? f.fem_n01 : f.n01, fem ? f.fem_n2 : f.n2 };
+        if (!(cnt[0] + cnt[1]) || !gv || !gi || (fem && !S.fem_ok)) continue;
+        GpuTexture* tx = fem ? S.texf : S.tex;
+        SDL_GPUBufferBinding vb = { gv, 0 }; SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+        SDL_GPUBufferBinding ib = { gi, 0 }; SDL_BindGPUIndexBuffer(rp, &ib, fem ? f.fem_idx_elem : f.idx_elem);
+        SDL_GPUTextureSamplerBinding tb[14];
+        for (int u = 0; u < 13; ++u) tb[u] = { tx[u].SDLTexture(), u == 0 ? S.diffuse_smp : tx[u].SDLSampler() };
+        tb[13] = { f.terrain_depth, S.tex[1].SDLSampler() };
+        SDL_BindGPUFragmentSamplers(rp, 0, tb, 14);
+        SDL_PushGPUFragmentUniformData(f.cmd, 0, fu.b.data(), (Uint32)fu.b.size());
+        for (int tier = 0; tier < 2; ++tier) {
+            const uint32_t n = cnt[tier]; if (!n) continue;
+            const float base[4] = { (float)(fem ? (tier ? f.fem_base2 : f.fem_base01) : (tier ? f.t2_base : 0u)), 0.f, 0.f, 0.f }; vu.set("base_inst", base, 4);
+            SDL_PushGPUVertexUniformData(f.cmd, 0, vu.b.data(), (Uint32)vu.b.size());
+            SDL_DrawGPUIndexedPrimitives(rp, fem ? f.fem_index_count : f.index_count, n, 0, 0, 0);
+        }
     }
     SDL_EndGPURenderPass(rp);
     static int logged = 0; if (logged++ % 600 == 0) fprintf(stderr, "[NpcSkin] pass drew %u + %u instances\n", f.n01, f.n2);
@@ -149,6 +170,7 @@ void Shutdown() {
     if (S.fs.sh) SDL_ReleaseGPUShader(S.dev, S.fs.sh);
     if (S.diffuse_smp) SDL_ReleaseGPUSampler(S.dev, S.diffuse_smp);
     for (auto& t : S.tex) t.Shutdown();
+    for (auto& t : S.texf) t.Shutdown();
     S = State{};
 }
 

@@ -92,7 +92,11 @@ struct NpcRender {
     // "uses previous frame's ind_buf for draw counts") -- these members
     // preserve that exact one-frame-stale property, same as the GPU buffer
     // they replace.
-    uint32_t           t01_count_ = 0, t2_count_ = 0;
+    uint32_t           t01_count_ = 0, t2_count_ = 0, f01_count_ = 0, f2_count_ = 0;   // f*: female body group
+    bool               fem_ok_ = false;                                            // the female body built (MD_TOWN_NPC)
+    SkinMesh           mesh_f;
+    OzzAnimator        ozz_f;
+    GpuStaticBuffer    skin_vbo_f;
 
     // Vertex/index geometry
     GpuStaticBuffer    vbuf;

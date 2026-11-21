@@ -28,6 +28,8 @@ int   g_terrain_lod_patch = 16;    // patch size in quads (16 or 64), md.set_ter
 extern int g_opt_ground_split, g_kenshi_lighting_mode;   // #207 H13.3
 int   g_terrain_lod_levels[11] = {}; // nodes per level of the last LOD selection (stats)
 extern float g_dynres_cur;
+uint8_t g_npc_female[MAX_ANIMATED_NPC];   // per slot: the NPC draws with the female body (set at spawn, MD_TOWN_NPC)
+void md_npc_set_female(int slot, int female) { if (slot >= 0 && slot < MAX_ANIMATED_NPC) g_npc_female[slot] = female ? 1 : 0; }
 float g_terrain_lod_near_px = 5.f, g_terrain_lod_far_px = 35.f, g_terrain_lod_near_dist = 750.f, g_terrain_lod_far_dist = 1500.f;
 bool g_terrain_detail_n_atten = true; // owner decision 2026-10-10: back ON (SLOPE_STREAKS_FIX step 1; bisection: N.y^4 damps slope streaks). md.set_terrain_detail_n_atten(false) = as terrainfp4.hlsl:265-268
 // Divergence #7 prototype: ground-layer anisotropy level (engine global, 0 = off); any level >= 1 turns on the textureGrad path, carried as +400 on |pix_scale|.
@@ -194,6 +196,10 @@ if (mesh.loaded && AnimationSoA::Get().SDLBonesBuffer()) {
             const auto* body = MdRegistry::Get().Handle(e).try_get_mut<CharBodyState>();
             const float (*bone_sc)[3] = body ? body->bone_scales : nullptr;
             const float (*pos_sc)[3]  = body ? body->pos_scales  : nullptr;
+            int slot = (int)tr.slot;
+            if (slot < 0 || slot >= MAX_ANIMATED_NPC) return;
+            const bool fem_body = fem_ok_ && g_npc_female[slot];
+            OzzAnimator& oz = fem_body ? ozz_f : ozz; SkinMesh& sm = fem_body ? mesh_f : mesh;
             // Posture slider pose delta (see OzzAnimator::ApplyPostureDelta doc
             // comment) — Kenshi maps slider value to a time position on the
             // "postures" clip via t = clip_duration * slider * 0.01. No-op
@@ -201,13 +207,11 @@ if (mesh.loaded && AnimationSoA::Get().SDLBonesBuffer()) {
             int   posture_clip = -1;
             float posture_t_n = 0.f, posture_t_c = 0.f;
             if (sm_postures >= 0 && body) {
-                const float dur = ozz.ClipDuration(sm_postures);
+                const float dur = oz.ClipDuration(sm_postures);
                 posture_clip = sm_postures;
                 posture_t_n  = dur * 0.35f;
                 posture_t_c  = dur * (body->posture * 0.01f);
             }
-            int slot = (int)tr.slot;
-            if (slot < 0 || slot >= MAX_ANIMATED_NPC) return;
             if (slot > max_slot) max_slot = slot;
             float* row = s_all_bones + slot * MAX_SKIN_BONES * 16;
 
@@ -255,7 +259,7 @@ if (mesh.loaded && AnimationSoA::Get().SDLBonesBuffer()) {
                 if (s_t2_count < MAX_ANIMATED_NPC) {
                     anim.blend_t += (tgt_bt - anim.blend_t) * fminf(dt * 4.f, 1.f);
                     AnimT2Job& j = s_t2_jobs[s_t2_count];
-                    j.ozz        = &ozz;
+                    j.ozz        = &oz;
                     j.clip_hi    = hi_clip;
                     j.clip_lo    = lo_clip;
                     j.clip_idle  = ci;
@@ -302,17 +306,17 @@ if (mesh.loaded && AnimationSoA::Get().SDLBonesBuffer()) {
             }
 
             if (bt >= 0.99f) {
-                ozz.Blend(hi_clip, move_ph, lo_clip, move_ph, s_lo, row,
+                oz.Blend(hi_clip, move_ph, lo_clip, move_ph, s_lo, row,
                           bone_sc, pos_sc, posture_clip, posture_t_n, posture_t_c);
             } else if (bt <= 0.01f) {
-                ozz.Sample(ci >= 0 ? ci : 0, phase_idle, row,
+                oz.Sample(ci >= 0 ? ci : 0, phase_idle, row,
                            ik_ok ? s_model_xyz : nullptr, bone_sc, pos_sc,
                            posture_clip, posture_t_n, posture_t_c);
             } else {
-                ozz.Sample(ci >= 0 ? ci : 0, phase_idle, s_pose_tmp,
+                oz.Sample(ci >= 0 ? ci : 0, phase_idle, s_pose_tmp,
                            nullptr, bone_sc, pos_sc,
                            posture_clip, posture_t_n, posture_t_c);
-                ozz.Blend(hi_clip, move_ph, lo_clip, move_ph, s_lo, row,
+                oz.Blend(hi_clip, move_ph, lo_clip, move_ph, s_lo, row,
                           bone_sc, pos_sc, posture_clip, posture_t_n, posture_t_c);
                 const int nm = MAX_SKIN_BONES * 16;
                 for (int i = 0; i < nm; ++i)
@@ -325,7 +329,7 @@ if (mesh.loaded && AnimationSoA::Get().SDLBonesBuffer()) {
                 const uint32_t ehash  = (uint32_t)(e.ToIntegral() * 2654435761u) >> 24;
                 const float breath_ph = now_s * 0.38f + ehash * (6.28f / 256.f);
                 const float breath_w  = ik_ok ? 0.02f : 0.01f;
-                ozz.BlendAdditive(row, br_clip, breath_ph, breath_w);
+                oz.BlendAdditive(row, br_clip, breath_ph, breath_w);
             }
 
             // T0: foot IK disabled — s_ik_worlds not yet wired for ozz path.
@@ -343,16 +347,16 @@ if (mesh.loaded && AnimationSoA::Get().SDLBonesBuffer()) {
                 if (FootIK::SolveLeg(s_model_xyz, s_ik_worlds,
                         FootIK::L_THIGH, FootIK::L_CALF, FootIK::L_FOOT,
                         tr.y, lf_y, s_hw, s_kw, s_aw)) {
-                    mesh.PatchBoneIK(FootIK::L_THIGH, s_hw, row);
-                    mesh.PatchBoneIK(FootIK::L_CALF,  s_kw, row);
-                    mesh.PatchBoneIK(FootIK::L_FOOT,  s_aw, row);
+                    sm.PatchBoneIK(FootIK::L_THIGH, s_hw, row);
+                    sm.PatchBoneIK(FootIK::L_CALF,  s_kw, row);
+                    sm.PatchBoneIK(FootIK::L_FOOT,  s_aw, row);
                 }
                 if (FootIK::SolveLeg(s_model_xyz, s_ik_worlds,
                         FootIK::R_THIGH, FootIK::R_CALF, FootIK::R_FOOT,
                         tr.y, rf_y, s_hw, s_kw, s_aw)) {
-                    mesh.PatchBoneIK(FootIK::R_THIGH, s_hw, row);
-                    mesh.PatchBoneIK(FootIK::R_CALF,  s_kw, row);
-                    mesh.PatchBoneIK(FootIK::R_FOOT,  s_aw, row);
+                    sm.PatchBoneIK(FootIK::R_THIGH, s_hw, row);
+                    sm.PatchBoneIK(FootIK::R_CALF,  s_kw, row);
+                    sm.PatchBoneIK(FootIK::R_FOOT,  s_aw, row);
                 }
             }
         });
@@ -418,8 +422,8 @@ if (fc.ac > 0 && index_count > 0) {
     float r_asp = (float)window_get_width() / (float)window_get_height();
     cam.FrustumPlanes(r_asp, frustum);
 
-    static uint32_t visible_indices[2 * MAX_ANIMATED_NPC];
-    t01_count_ = 0; t2_count_ = 0;
+    static uint32_t visible_indices[4 * MAX_ANIMATED_NPC];
+    t01_count_ = 0; t2_count_ = 0; f01_count_ = 0; f2_count_ = 0;
     TransformSoA& tsoa = TransformSoA::Get();
     const int scan_count = fc.ac < MAX_ANIMATED_NPC ? fc.ac : MAX_ANIMATED_NPC;
     for (int idx = 0; idx < scan_count; ++idx) {
@@ -436,7 +440,10 @@ if (fc.ac > 0 && index_count > 0) {
         }
         if (culled) continue;
         uint32_t lod_tier = AnimationSoA::Get().GetState(idx).lod_tier;
-        if (lod_tier <= 1u) {
+        if (fem_ok_ && g_npc_female[idx]) {
+            if (lod_tier <= 1u) { if (f01_count_ < (uint32_t)MAX_ANIMATED_NPC) visible_indices[2u * MAX_ANIMATED_NPC + f01_count_++] = (uint32_t)idx; }
+            else if (f2_count_ < (uint32_t)MAX_ANIMATED_NPC) visible_indices[3u * MAX_ANIMATED_NPC + f2_count_++] = (uint32_t)idx;
+        } else if (lod_tier <= 1u) {
             if (t01_count_ < (uint32_t)MAX_ANIMATED_NPC)
                 visible_indices[t01_count_++] = (uint32_t)idx;
         } else {

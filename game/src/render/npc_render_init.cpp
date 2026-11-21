@@ -121,6 +121,7 @@ void NpcRender::Shutdown() {
     // (confirmed via ASan on a locally-built SDL3, heap-use-after-free in
     // VULKAN_INTERNAL_ReleaseBufferContainer regardless of call order).
     mesh.Shutdown();
+    mesh_f.Shutdown();
     vis_buf.Shutdown();
     ind_buf.Shutdown();
     dead_mask_buf.Shutdown();
@@ -233,6 +234,22 @@ void NpcRender::Init() {
                     }
                     skin_vbo.Init(0x8892u, sv.data(), (uint32_t)sv.size());
                     skin_live_ = md::npcskin::Init(md::GpuDevice::Get().SDLDevice(), md::KenshiDir());
+                    const char* town = getenv("MD_TOWN_NPC");
+                    if (skin_live_ && town && town[0] == '1') {   // female body: its own skeleton, mesh and textures; the clip indices are the male ones (same names, same order)
+                        static HumanBodyData hf;
+                        if (BuildHumanBody(md::KenshiDir(), "human_female.mesh", hf) && mesh_f.LoadFromBody(hf) && ozz_f.Init(mesh_f)
+                            && hf.tan.size() == (size_t)mesh_f.VertCount() * 4 && hf.bin.size() == (size_t)mesh_f.VertCount() * 3 && ozz_f.ClipCount() == ozz.ClipCount()) {
+                            const SkinVertex* fv = mesh_f.CpuVerts(); const uint32_t fn = mesh_f.VertCount();
+                            std::vector<uint8_t> sf((size_t)fn * md::npcskin::kStride, 0);
+                            for (uint32_t i = 0; i < fn; ++i) {
+                                uint8_t* d = &sf[(size_t)i * md::npcskin::kStride];
+                                memcpy(d, &fv[i], 52); memcpy(d + 56, &hf.tan[(size_t)i * 4], 16); memcpy(d + 72, &hf.bin[(size_t)i * 3], 12);
+                            }
+                            skin_vbo_f.Init(0x8892u, sf.data(), (uint32_t)sf.size());
+                            fem_ok_ = skin_vbo_f.SDLBuffer() != nullptr;
+                        }
+                        fprintf(stderr, "[NPC] female body: %s\n", fem_ok_ ? "ready" : "not built (females are not drawn)");
+                    }
                 }
             }
         }
@@ -359,7 +376,7 @@ void NpcRender::Init() {
     // which is real disabled-but-live VT infrastructure and was left alone).
     // Godot PR #64044: vis_buf holds 2 LOD-tier regions × MAX_ANIMATED_NPC each.
     // Region 0: T01 (lod_tier 0-1, 0-80m). Region 1: T2 (lod_tier 2, 80-150m).
-    vis_buf.Init(2 * MAX_ANIMATED_NPC * (int)sizeof(uint32_t));
+    vis_buf.Init(4 * MAX_ANIMATED_NPC * (int)sizeof(uint32_t));
     ind_buf.Init(40, SSBO_INDIRECT);  // 2 × GpuDrawIndexedIndirect (2 × 20B)
     // VBfA-R9: dead mask (excludes dead NPCs from main draw) + dissolve vis buffer
     dead_mask_buf.Init(TransformSoA::MAX_SLOTS * (int)sizeof(uint32_t));

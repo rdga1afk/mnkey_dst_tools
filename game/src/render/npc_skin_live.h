@@ -20,6 +20,9 @@ struct Frame {
     SDL_GPUBuffer* ibo = nullptr; SDL_GPUIndexElementSize idx_elem = SDL_GPU_INDEXELEMENTSIZE_16BIT; uint32_t index_count = 0;
     SDL_GPUBuffer* storage[5] = {};      // Transform, Visible, Faction, Bones, Skin
     uint32_t n01 = 0, n2 = 0, t2_base = 0;   // instances of the two tiers; t2_base = first index of tier 2 in Visible
+    // Second group: the female body (own skeleton, own textures); its two tiers start at fem_base01 / fem_base2 in Visible.
+    SDL_GPUBuffer* fem_vbo = nullptr; SDL_GPUBuffer* fem_ibo = nullptr; SDL_GPUIndexElementSize fem_idx_elem = SDL_GPU_INDEXELEMENTSIZE_16BIT; uint32_t fem_index_count = 0;
+    uint32_t fem_n01 = 0, fem_n2 = 0, fem_base01 = 0, fem_base2 = 0;
 };
 
 constexpr uint32_t kStride = 84;   // SkinVertex 52 + 4 unused + tangent float4 (56) + binormal float3 (72)
